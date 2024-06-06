@@ -20,4 +20,5 @@ A rhythm delay with space.
   - A pair of settings, and each tap's settings are an interpolation between these two.
     This is more flexible, but also more CPU intensive.
   - Individual settings for each tap.
-    This is the most flexible, but also the most tedious to dail in.
+    This is the most flexible, but also the most tedious to dial in.
+- Optionally, each tap can have it's own auxiliary output.
