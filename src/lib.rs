@@ -24,8 +24,7 @@ struct Del2 {
     delay_write_index: usize,
     samples_since_last_event: u32,
     timing_last_event: u32,
-    // TODO: use the max_delay_seconds param with a conversion fn
-    max_delay_samples: u32,
+    time_out_tap_samples: u32,
     delay_buffer_size: u32,
     counting_state: CountingState,
 }
@@ -38,7 +37,8 @@ struct Del2Params {
     /// gain parameter is stored as linear gain while the values are displayed in decibels.
     #[id = "gain"]
     pub gain: FloatParam,
-    pub max_delay_seconds: FloatParam,
+    #[id = "time_out_tap_seconds"]
+    pub time_out_tap_seconds: FloatParam,
 }
 
 #[derive(PartialEq)]
@@ -63,7 +63,7 @@ impl Default for Del2 {
             delay_write_index: 0,
             samples_since_last_event: 0,
             timing_last_event: 0,
-            max_delay_samples: 0,
+            time_out_tap_samples: 0,
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
         }
@@ -96,15 +96,15 @@ impl Default for Del2Params {
             // `.with_step_size(0.1)` function to get internal rounding.
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            max_delay_seconds: FloatParam::new(
-                "maximum delay time",
+            time_out_tap_seconds: FloatParam::new(
+                "maximum tap time",
                 3.0,
                 FloatRange::Linear {
                     min: 0.0,
                     max: MAX_TAP_SECONDS as f32,
                 },
             )
-            .with_unit(" Sec"),
+            .with_unit(" seconds"),
         }
     }
 }
@@ -157,8 +157,8 @@ impl Plugin for Del2 {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = buffer_config.sample_rate;
-        self.max_delay_samples =
-            (self.sample_rate as f64 * self.params.max_delay_seconds.value() as f64) as u32;
+        self.time_out_tap_samples =
+            (self.sample_rate as f64 * self.params.time_out_tap_seconds.value() as f64) as u32;
 
         // TODO: check for correctness in all cases!
         // Calculate delay buffer size based on both min and max buffer sizes
@@ -199,8 +199,8 @@ impl Plugin for Del2 {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         // TODO: put behind a should_update with a callback?
-        self.max_delay_samples =
-            (self.sample_rate as f64 * self.params.max_delay_seconds.value() as f64) as u32;
+        self.time_out_tap_samples =
+            (self.sample_rate as f64 * self.params.time_out_tap_seconds.value() as f64) as u32;
         // process midi
         let mut next_event = context.next_event();
         // process midi events
@@ -239,7 +239,7 @@ impl Plugin for Del2 {
             // TODO: no dry signal yet
             *out_l = 0.0;
             *out_r = 0.0;
-            for tap in 0..MAX_NR_TAPS {
+            for tap in 0..self.current_tap {
                 let delay_time = self.delay_times_array[tap] as isize;
                 let read_index = write_index - delay_time;
                 let velocity_squared = f32::powi(self.velocity_array[tap], 2);
@@ -253,6 +253,8 @@ impl Plugin for Del2 {
 
         self.delay_write_index =
             (self.delay_write_index + buffer_samples) % self.delay_buffer_size as usize;
+
+        // old end
 
         ProcessStatus::Normal
     }
@@ -275,7 +277,7 @@ impl Del2 {
                 self.counting_state = CountingState::CountingInBuffer;
             }
         }
-        if self.samples_since_last_event <= self.max_delay_samples {
+        if self.samples_since_last_event <= self.time_out_tap_samples {
             if self.current_tap < MAX_NR_TAPS
                 && self.counting_state != CountingState::TimeOut
                 && self.samples_since_last_event > 0
@@ -314,7 +316,7 @@ impl Del2 {
             }
         }
 
-        if self.samples_since_last_event > self.max_delay_samples {
+        if self.samples_since_last_event > self.time_out_tap_samples {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
