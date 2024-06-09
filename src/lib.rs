@@ -239,14 +239,10 @@ impl Plugin for Del2 {
             *out_r = 0.0;
             for tap in 0..MAX_NR_TAPS {
                 let delay_time = self.delay_times_array[tap] as isize;
-                if delay_time > 0 {
-                    let read_index = write_index - delay_time;
-                    *out_l += self.delay_buffer[0][read_index];
-                    *out_r += self.delay_buffer[1][read_index];
-                    let velocity_squared = f32::powi(self.velocity_array[tap], 2);
-                    *out_l *= velocity_squared;
-                    *out_r *= velocity_squared;
-                }
+                let read_index = write_index - delay_time;
+                let velocity_squared = f32::powi(self.velocity_array[tap], 2);
+                *out_l += self.delay_buffer[0][read_index] * velocity_squared;
+                *out_r += self.delay_buffer[1][read_index] * velocity_squared;
             }
             *out_l *= gain;
             *out_r *= gain;
