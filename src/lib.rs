@@ -37,7 +37,7 @@ struct Del2Params {
     /// gain parameter is stored as linear gain while the values are displayed in decibels.
     #[id = "gain"]
     pub gain: FloatParam,
-    pub max_delay_seconds: IntParam,
+    pub max_delay_seconds: FloatParam,
 }
 
 #[derive(PartialEq)]
@@ -95,14 +95,15 @@ impl Default for Del2Params {
             // `.with_step_size(0.1)` function to get internal rounding.
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            max_delay_seconds: IntParam::new(
+            max_delay_seconds: FloatParam::new(
                 "maximum delay time",
-                3,
-                IntRange::Linear {
-                    min: 0,
-                    max: MAX_TAP_SECONDS as i32,
+                3.0,
+                FloatRange::Linear {
+                    min: 0.0,
+                    max: MAX_TAP_SECONDS as f32,
                 },
-            ),
+            )
+            .with_unit(" Sec"),
         }
     }
 }
@@ -158,6 +159,7 @@ impl Plugin for Del2 {
         self.max_delay_samples =
             (self.sample_rate as f64 * self.params.max_delay_seconds.value() as f64) as u32;
 
+        // TODO: check for correctness in all cases!
         // Calculate delay buffer size based on both min and max buffer sizes
         let calculate_buffer_size = |buffer_size: u32| -> u32 {
             (((self.max_delay_samples * MAX_NR_TAPS as u32) as f64 / buffer_size as f64).ceil()
@@ -167,7 +169,7 @@ impl Plugin for Del2 {
         };
 
         let delay_buffer_size_min =
-            calculate_buffer_size(buffer_config.min_buffer_size.unwrap_or(0));
+            calculate_buffer_size(buffer_config.min_buffer_size.unwrap_or(1));
         let delay_buffer_size_max = calculate_buffer_size(buffer_config.max_buffer_size);
 
         // Use the larger of the two calculated sizes
@@ -232,6 +234,7 @@ impl Plugin for Del2 {
             let mut chan = channel_samples.into_iter();
             let out_l = chan.next().unwrap();
             let out_r = chan.next().unwrap();
+            // TODO: no dry signal yet
             *out_l = 0.0;
             *out_r = 0.0;
             for tap in 0..MAX_NR_TAPS {
@@ -240,6 +243,9 @@ impl Plugin for Del2 {
                     let read_index = write_index - delay_time;
                     *out_l += self.delay_buffer[0][read_index];
                     *out_r += self.delay_buffer[1][read_index];
+                    let velocity_squared = f32::powi(self.velocity_array[tap], 2);
+                    *out_l *= velocity_squared;
+                    *out_r *= velocity_squared;
                 }
             }
             *out_l *= gain;
@@ -280,6 +286,7 @@ impl Del2 {
             if self.current_tap < MAX_NR_TAPS
                 && self.counting_state != CountingState::TimeOut
                 && self.samples_since_last_event > 0
+                && velocity > 0.0
             {
                 if self.current_tap > 0 {
                     self.delay_times_array[self.current_tap] = self.samples_since_last_event
@@ -290,6 +297,7 @@ impl Del2 {
                 self.velocity_array[self.current_tap] = velocity;
                 // println!("current_tap: {}", self.current_tap);
                 // println!("times: {:#?}", self.delay_times_array);
+                // println!("velocities: {:#?}", self.velocity_array);
                 self.current_tap += 1;
             };
             self.timing_last_event = timing;
