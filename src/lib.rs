@@ -11,7 +11,8 @@ const MAX_TAP_SECONDS: usize = 10;
 const MAX_NR_TAPS: usize = 8;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * MAX_NR_TAPS;
 const MAX_SAMPLE_RATE: usize = 192000;
-pub const MAX_BLOCK_SIZE: usize = 128;
+const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
+const DSP_BLOCK_SIZE: usize = 128;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -52,8 +53,8 @@ impl Default for Del2 {
         Self {
             params: Arc::new(Del2Params::default()),
             delay_buffer: [
-                BMRingBuf::<f32>::from_len(TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE),
-                BMRingBuf::<f32>::from_len(TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE),
+                BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
+                BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
             velocity_array: [0.0; MAX_NR_TAPS],
             delay_times_array: [0; MAX_NR_TAPS],
@@ -162,9 +163,7 @@ impl Plugin for Del2 {
         // TODO: check for correctness in all cases!
         // Calculate delay buffer size based on both min and max buffer sizes
         let calculate_buffer_size = |buffer_size: u32| -> u32 {
-            (((self.max_delay_samples * MAX_NR_TAPS as u32) as f64 / buffer_size as f64).ceil()
-                as u32
-                * buffer_size)
+            ((TOTAL_DELAY_SAMPLES as f64 / buffer_size as f64).ceil() as u32 * buffer_size)
                 .next_power_of_two()
         };
 
@@ -199,6 +198,9 @@ impl Plugin for Del2 {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        // TODO: put behind a should_update with a callback?
+        self.max_delay_samples =
+            (self.sample_rate as f64 * self.params.max_delay_seconds.value() as f64) as u32;
         // process midi
         let mut next_event = context.next_event();
         // process midi events
@@ -273,12 +275,7 @@ impl Del2 {
                 self.counting_state = CountingState::CountingInBuffer;
             }
         }
-        if self.samples_since_last_event > self.max_delay_samples {
-            self.counting_state = CountingState::TimeOut;
-            self.timing_last_event = 0;
-            self.samples_since_last_event = 0;
-            // println!("time out");
-        } else {
+        if self.samples_since_last_event <= self.max_delay_samples {
             if self.current_tap < MAX_NR_TAPS
                 && self.counting_state != CountingState::TimeOut
                 && self.samples_since_last_event > 0
@@ -297,6 +294,11 @@ impl Del2 {
                 self.current_tap += 1;
             };
             self.timing_last_event = timing;
+        } else {
+            self.counting_state = CountingState::TimeOut;
+            self.timing_last_event = 0;
+            self.samples_since_last_event = 0;
+            // println!("time out note on");
         };
     }
 
@@ -316,6 +318,7 @@ impl Del2 {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
+            // println!("time out no_more_events");
         };
     }
 }
