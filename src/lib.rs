@@ -217,8 +217,9 @@ impl Plugin for Del2 {
         let buffer_samples = buffer.samples();
         self.no_more_events(buffer_samples as u32);
 
-        // fill delay buffer
+        // for (_, block) in buffer.iter_blocks(DSP_BLOCK_SIZE) {
         for (_, block) in buffer.iter_blocks(buffer_samples) {
+            let block_len = block.samples();
             let mut block_channels = block.into_iter();
 
             let out_l = block_channels.next().unwrap();
@@ -226,36 +227,30 @@ impl Plugin for Del2 {
 
             self.delay_buffer[0].write_latest(out_l, self.delay_write_index as isize);
             self.delay_buffer[1].write_latest(out_r, self.delay_write_index as isize);
-        }
 
-        let mut write_index = self.delay_write_index as isize;
-
-        // process audio
-        for channel_samples in buffer.iter_samples() {
-            let gain = self.params.gain.smoothed.next();
-            let mut chan = channel_samples.into_iter();
-            let out_l = chan.next().unwrap();
-            let out_r = chan.next().unwrap();
             // TODO: no dry signal yet
-            *out_l = 0.0;
-            *out_r = 0.0;
+            out_l.fill(0.0);
+            out_r.fill(0.0);
+
             for tap in 0..self.current_tap {
                 let delay_time = self.delay_times_array[tap] as isize;
-                let read_index = write_index - delay_time;
+                let read_index = self.delay_write_index as isize - delay_time;
                 let velocity_squared = f32::powi(self.velocity_array[tap], 2);
-                *out_l += self.delay_buffer[0][read_index] * velocity_squared;
-                *out_r += self.delay_buffer[1][read_index] * velocity_squared;
+                // Temporary buffers to hold the read values for processing
+                let mut temp_l = vec![0.0; block_len];
+                let mut temp_r = vec![0.0; block_len];
+                self.delay_buffer[0].read_into(&mut temp_l, read_index);
+                self.delay_buffer[1].read_into(&mut temp_r, read_index);
+                // Accumulate the contributions
+                for i in 0..block_len {
+                    out_l[i] += temp_l[i] * velocity_squared;
+                    out_r[i] += temp_r[i] * velocity_squared;
+                }
             }
-            *out_l *= gain;
-            *out_r *= gain;
-            write_index += 1;
+
+            self.delay_write_index =
+                (self.delay_write_index + block_len) % self.delay_buffer_size as usize;
         }
-
-        self.delay_write_index =
-            (self.delay_write_index + buffer_samples) % self.delay_buffer_size as usize;
-
-        // old end
-
         ProcessStatus::Normal
     }
 }
@@ -290,7 +285,7 @@ impl Del2 {
                     self.delay_times_array[self.current_tap] = self.samples_since_last_event;
                 }
                 self.velocity_array[self.current_tap] = velocity;
-                // println!("current_tap: {}", self.current_tap);
+                println!("current_tap: {}", self.current_tap);
                 // println!("times: {:#?}", self.delay_times_array);
                 // println!("velocities: {:#?}", self.velocity_array);
                 self.current_tap += 1;
