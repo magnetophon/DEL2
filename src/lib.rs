@@ -1,6 +1,9 @@
 use bit_mask_ring_buf::BMRingBuf;
 use nih_plug::prelude::*;
+use nih_plug_vizia::ViziaState;
 use std::sync::Arc;
+
+mod editor;
 
 // This is a shortened version of the gain example with most comments removed, check out
 // https://github.com/robbert-vdh/nih-plug/blob/master/plugins/examples/gain/src/lib.rs to get
@@ -33,10 +36,8 @@ struct Del2 {
 
 #[derive(Params)]
 struct Del2Params {
-    /// The parameter's ID is used to identify the parameter in the wrappred plugin API. As long as
-    /// these IDs remain constant, you can rename and reorder these fields as you wish. The
-    /// parameters are exposed to the host in the same order they were defined. In this case, this
-    /// gain parameter is stored as linear gain while the values are displayed in decibels.
+    #[persist = "editor-state"]
+    editor_state: Arc<ViziaState>,
     #[id = "gain"]
     pub gain: FloatParam,
     #[id = "time_out_tap_seconds"]
@@ -78,6 +79,7 @@ impl Default for Del2 {
 impl Default for Del2Params {
     fn default() -> Self {
         Self {
+            editor_state: editor::default_state(),
             // This gain is stored as linear gain. NIH-plug comes with useful conversion functions
             // to treat these kinds of parameters as if we were dealing with decibels. Storing this
             // as decibels is easier to work with, but requires a conversion for every sample.
@@ -109,7 +111,8 @@ impl Default for Del2Params {
                     max: MAX_TAP_SECONDS as f32,
                 },
             )
-            .with_unit("s"),
+            .with_step_size(0.01)
+            .with_unit(" s"),
             debounce_tap_milliseconds: FloatParam::new(
                 "debounce time",
                 10.0,
@@ -119,7 +122,8 @@ impl Default for Del2Params {
                     factor: FloatRange::skew_factor(-2.0),
                 },
             )
-            .with_unit("ms"),
+            .with_step_size(0.01)
+            .with_unit(" ms"),
         }
     }
 }
@@ -163,6 +167,10 @@ impl Plugin for Del2 {
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
+    }
+
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        editor::create(self.params.clone(), self.params.editor_state.clone())
     }
 
     fn initialize(
