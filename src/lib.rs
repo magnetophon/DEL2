@@ -102,24 +102,24 @@ impl Default for Del2Params {
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
             time_out_tap_seconds: FloatParam::new(
-                "maximum tap time",
+                "max tap time",
                 3.0,
                 FloatRange::Linear {
                     min: 0.0,
                     max: MAX_TAP_SECONDS as f32,
                 },
             )
-            .with_unit(" seconds"),
+            .with_unit("s"),
             debounce_tap_milliseconds: FloatParam::new(
                 "debounce time",
-                0.0,
+                10.0,
                 FloatRange::Skewed {
                     min: 0.0,
                     max: MAX_DEBOUNCE_MILLISECONDS,
                     factor: FloatRange::skew_factor(-2.0),
                 },
             )
-            .with_unit(" seconds"),
+            .with_unit("ms"),
         }
     }
 }
