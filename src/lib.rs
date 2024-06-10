@@ -8,7 +8,8 @@ use std::sync::Arc;
 
 // max seconds per tap
 const MAX_TAP_SECONDS: usize = 10;
-const MAX_NR_TAPS: usize = 8;
+const MAX_DEBOUNCE_MILLISECONDS: f32 = 1000.0;
+const MAX_NR_TAPS: usize = 16;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * MAX_NR_TAPS;
 const MAX_SAMPLE_RATE: usize = 192000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
@@ -25,6 +26,7 @@ struct Del2 {
     samples_since_last_event: u32,
     timing_last_event: u32,
     time_out_tap_samples: u32,
+    debounce_tap_samples: u32,
     delay_buffer_size: u32,
     counting_state: CountingState,
 }
@@ -39,6 +41,8 @@ struct Del2Params {
     pub gain: FloatParam,
     #[id = "time_out_tap_seconds"]
     pub time_out_tap_seconds: FloatParam,
+    #[id = "debounce_tap_milliseconds"]
+    pub debounce_tap_milliseconds: FloatParam,
 }
 
 #[derive(PartialEq)]
@@ -64,6 +68,7 @@ impl Default for Del2 {
             samples_since_last_event: 0,
             timing_last_event: 0,
             time_out_tap_samples: 0,
+            debounce_tap_samples: 0,
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
         }
@@ -102,6 +107,16 @@ impl Default for Del2Params {
                 FloatRange::Linear {
                     min: 0.0,
                     max: MAX_TAP_SECONDS as f32,
+                },
+            )
+            .with_unit(" seconds"),
+            debounce_tap_milliseconds: FloatParam::new(
+                "debounce time",
+                0.0,
+                FloatRange::Skewed {
+                    min: 0.0,
+                    max: MAX_DEBOUNCE_MILLISECONDS,
+                    factor: FloatRange::skew_factor(-2.0),
                 },
             )
             .with_unit(" seconds"),
@@ -157,8 +172,6 @@ impl Plugin for Del2 {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = buffer_config.sample_rate;
-        self.time_out_tap_samples =
-            (self.sample_rate as f64 * self.params.time_out_tap_seconds.value() as f64) as u32;
 
         // TODO: check for correctness in all cases!
         // Calculate delay buffer size based on both min and max buffer sizes
@@ -201,6 +214,9 @@ impl Plugin for Del2 {
         // TODO: put behind a should_update with a callback?
         self.time_out_tap_samples =
             (self.sample_rate as f64 * self.params.time_out_tap_seconds.value() as f64) as u32;
+        self.debounce_tap_samples = (self.sample_rate as f64
+            * self.params.debounce_tap_milliseconds.value() as f64
+            * 0.001) as u32;
         // process midi
         let mut next_event = context.next_event();
         // process midi events
@@ -217,8 +233,8 @@ impl Plugin for Del2 {
         let buffer_samples = buffer.samples();
         self.no_more_events(buffer_samples as u32);
 
-        // for (_, block) in buffer.iter_blocks(DSP_BLOCK_SIZE) {
-        for (_, block) in buffer.iter_blocks(buffer_samples) {
+        for (_, block) in buffer.iter_blocks(DSP_BLOCK_SIZE) {
+            // for (_, block) in buffer.iter_blocks(buffer_samples) {
             let block_len = block.samples();
             let mut block_channels = block.into_iter();
 
@@ -262,14 +278,28 @@ impl Del2 {
                 self.delay_times_array.iter_mut().for_each(|x| *x = 0);
                 self.velocity_array.iter_mut().for_each(|x| *x = 0.0);
                 self.current_tap = 0;
+                self.timing_last_event = timing;
                 self.counting_state = CountingState::CountingInBuffer;
             }
             CountingState::CountingInBuffer => {
-                self.samples_since_last_event = timing - self.timing_last_event;
+                if (timing - self.timing_last_event) > self.debounce_tap_samples {
+                    self.samples_since_last_event = timing - self.timing_last_event;
+                    self.timing_last_event = timing;
+                } else {
+                    // println!("debounce in!");
+                    return;
+                }
             }
             CountingState::CountingAcrossBuffer => {
-                self.samples_since_last_event += timing;
-                self.counting_state = CountingState::CountingInBuffer;
+                if (self.samples_since_last_event + timing) > self.debounce_tap_samples {
+                    self.samples_since_last_event += timing;
+                    self.timing_last_event = timing;
+                    // println!("across to in buffer!");
+                    self.counting_state = CountingState::CountingInBuffer;
+                } else {
+                    // println!("debounce across!");
+                    return;
+                }
             }
         }
         if self.samples_since_last_event <= self.time_out_tap_samples {
@@ -285,12 +315,11 @@ impl Del2 {
                     self.delay_times_array[self.current_tap] = self.samples_since_last_event;
                 }
                 self.velocity_array[self.current_tap] = velocity;
-                println!("current_tap: {}", self.current_tap);
+                // println!("current_tap: {}", self.current_tap);
                 // println!("times: {:#?}", self.delay_times_array);
                 // println!("velocities: {:#?}", self.velocity_array);
                 self.current_tap += 1;
             };
-            self.timing_last_event = timing;
         } else {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
