@@ -1,5 +1,6 @@
 use bit_mask_ring_buf::BMRingBuf;
 use nih_plug::prelude::*;
+use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::sync::Arc;
 
@@ -21,10 +22,8 @@ const DSP_BLOCK_SIZE: usize = 128;
 struct Del2 {
     params: Arc<Del2Params>,
     delay_buffer: [BMRingBuf<f32>; 2],
-    velocity_array: [f32; MAX_NR_TAPS],
-    delay_times_array: [u32; MAX_NR_TAPS],
+    delay_graph_data: DelayGraphData,
     sample_rate: f32,
-    current_tap: usize,
     delay_write_index: usize,
     samples_since_last_event: u32,
     timing_last_event: u32,
@@ -32,6 +31,20 @@ struct Del2 {
     debounce_tap_samples: u32,
     delay_buffer_size: u32,
     counting_state: CountingState,
+}
+
+#[derive(Clone)]
+struct DelayGraphData {
+    velocity_array: [f32; MAX_NR_TAPS],
+    delay_times_array: [u32; MAX_NR_TAPS],
+    current_tap: usize,
+}
+impl Data for DelayGraphData {
+    fn same(&self, other: &Self) -> bool {
+        self.velocity_array == other.velocity_array
+            && self.delay_times_array == other.delay_times_array
+            && self.current_tap == other.current_tap
+    }
 }
 
 #[derive(Params)]
@@ -44,6 +57,20 @@ struct Del2Params {
     pub time_out_tap_seconds: FloatParam,
     #[id = "debounce_tap_milliseconds"]
     pub debounce_tap_milliseconds: FloatParam,
+    #[id = "zoom_mode"]
+    zoom_mode: EnumParam<ZoomMode>,
+}
+
+#[derive(Enum, Debug, PartialEq)]
+enum ZoomMode {
+    /// Show the length of the taps relative to each other.
+    #[id = "relative"]
+    #[name = "relative"]
+    Relative,
+    /// Show the absolute length of the taps
+    #[id = "absolute"]
+    #[name = "absolute"]
+    Absolute,
 }
 
 #[derive(PartialEq)]
@@ -61,10 +88,8 @@ impl Default for Del2 {
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
-            velocity_array: [0.0; MAX_NR_TAPS],
-            delay_times_array: [0; MAX_NR_TAPS],
+            delay_graph_data: DelayGraphData::default(),
             sample_rate: 1.0,
-            current_tap: 0,
             delay_write_index: 0,
             samples_since_last_event: 0,
             timing_last_event: 0,
@@ -72,6 +97,16 @@ impl Default for Del2 {
             debounce_tap_samples: 0,
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
+        }
+    }
+}
+
+impl Default for DelayGraphData {
+    fn default() -> Self {
+        Self {
+            velocity_array: [0.0; MAX_NR_TAPS],
+            delay_times_array: [0; MAX_NR_TAPS],
+            current_tap: 0,
         }
     }
 }
@@ -124,6 +159,9 @@ impl Default for Del2Params {
             )
             .with_step_size(0.01)
             .with_unit(" ms"),
+            zoom_mode: EnumParam::new("zoom_mode", ZoomMode::Relative)
+                .hide()
+                .hide_in_generic_ui(),
         }
     }
 }
@@ -170,7 +208,11 @@ impl Plugin for Del2 {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        editor::create(self.params.clone(), self.params.editor_state.clone())
+        editor::create(
+            self.params.clone(),
+            self.delay_graph_data.clone(),
+            self.params.editor_state.clone(),
+        )
     }
 
     fn initialize(
@@ -256,10 +298,10 @@ impl Plugin for Del2 {
             out_l.fill(0.0);
             out_r.fill(0.0);
 
-            for tap in 0..self.current_tap {
-                let delay_time = self.delay_times_array[tap] as isize;
+            for tap in 0..self.delay_graph_data.current_tap {
+                let delay_time = self.delay_graph_data.delay_times_array[tap] as isize;
                 let read_index = self.delay_write_index as isize - delay_time;
-                let velocity_squared = f32::powi(self.velocity_array[tap], 2);
+                let velocity_squared = f32::powi(self.delay_graph_data.velocity_array[tap], 2);
                 // Temporary buffers to hold the read values for processing
                 let mut temp_l = vec![0.0; block_len];
                 let mut temp_r = vec![0.0; block_len];
@@ -283,9 +325,15 @@ impl Del2 {
     fn note_on(&mut self, timing: u32, velocity: f32) {
         match self.counting_state {
             CountingState::TimeOut => {
-                self.delay_times_array.iter_mut().for_each(|x| *x = 0);
-                self.velocity_array.iter_mut().for_each(|x| *x = 0.0);
-                self.current_tap = 0;
+                self.delay_graph_data
+                    .delay_times_array
+                    .iter_mut()
+                    .for_each(|x| *x = 0);
+                self.delay_graph_data
+                    .velocity_array
+                    .iter_mut()
+                    .for_each(|x| *x = 0.0);
+                self.delay_graph_data.current_tap = 0;
                 self.timing_last_event = timing;
                 self.counting_state = CountingState::CountingInBuffer;
             }
@@ -311,22 +359,25 @@ impl Del2 {
             }
         }
         if self.samples_since_last_event <= self.time_out_tap_samples {
-            if self.current_tap < MAX_NR_TAPS
+            if self.delay_graph_data.current_tap < MAX_NR_TAPS
                 && self.counting_state != CountingState::TimeOut
                 && self.samples_since_last_event > 0
                 && velocity > 0.0
             {
-                if self.current_tap > 0 {
-                    self.delay_times_array[self.current_tap] = self.samples_since_last_event
-                        + self.delay_times_array[self.current_tap - 1];
+                if self.delay_graph_data.current_tap > 0 {
+                    self.delay_graph_data.delay_times_array[self.delay_graph_data.current_tap] =
+                        self.samples_since_last_event
+                            + self.delay_graph_data.delay_times_array
+                                [self.delay_graph_data.current_tap - 1];
                 } else {
-                    self.delay_times_array[self.current_tap] = self.samples_since_last_event;
+                    self.delay_graph_data.delay_times_array[self.delay_graph_data.current_tap] =
+                        self.samples_since_last_event;
                 }
-                self.velocity_array[self.current_tap] = velocity;
-                // println!("current_tap: {}", self.current_tap);
-                // println!("times: {:#?}", self.delay_times_array);
-                // println!("velocities: {:#?}", self.velocity_array);
-                self.current_tap += 1;
+                self.delay_graph_data.velocity_array[self.delay_graph_data.current_tap] = velocity;
+                // println!("current_tap: {}", self.delay_graph_data.current_tap);
+                // println!("times: {:#?}", self.delay_graph_data.delay_times_array);
+                // println!("velocities: {:#?}", self.delay_graph_data.velocity_array);
+                self.delay_graph_data.current_tap += 1;
             };
         } else {
             self.counting_state = CountingState::TimeOut;
