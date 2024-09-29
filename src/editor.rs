@@ -8,8 +8,9 @@ use std::sync::{Arc, Mutex};
 use crate::Del2Params;
 // use crate::DelayGraphData;
 // use crate::ZoomMode;
-use crate::MAX_NR_TAPS;
-use crate::TOTAL_DELAY_SAMPLES;
+// use crate::MAX_NR_TAPS;
+// use crate::TOTAL_DELAY_SAMPLES;
+use crate::MAX_SAMPLE_RATE;
 // use crate::WaveformBufferOutput;
 use crate::DelayGraphDataOutput;
 
@@ -119,14 +120,6 @@ impl View for DelayGraph {
         let delay_data = delay_data.read();
         // Get the bounding box of the current view.
         let bounds = cx.bounds();
-        let attack = 9.0;
-        // self.delay_data.get(cx).attack.value();
-        let attack_shape = 9.0;
-        // self.delay_data.get(cx).attack_shape.value();
-        let release = 9.0;
-        // self.delay_data.get(cx).release.value();
-        let release_shape = 9.0;
-        // self.delay_data.get(cx).release_shape.value();
         // let zoom_mode =
         // self.delay_data.get(cx).zoom_mode.value();
 
@@ -157,45 +150,32 @@ impl View for DelayGraph {
         // Fill with background color
         let paint = vg::Paint::color(background_color);
         canvas.fill_path(&path, &paint);
+        if delay_data.current_tap > 0 {
+            let max_delay = delay_data.delay_times_array[delay_data.current_tap - 1];
+            // println!("current_tap: {}", delay_data.current_tap);
+            // println!("max_delay: {}", max_delay);
+            // println!(
+            // "delay_data.delay_times_array: {:?}",
+            // delay_data.delay_times_array
+            // );
 
-        // add the attack / release curve
-        canvas.stroke_path(
-            &{
-                // let x = bounds.x + border_width * 1.0;
-                // let y = bounds.y + border_width * 1.5;
-                // let w = bounds.w - border_width * 2.0;
-                // let h = bounds.h - border_width * 3.0;
-                // let max_delay_samples =
-                // match zoom_mode {
-                // ZoomMode::Relative => 192000,
-                // ZoomMode::Absolute => 192000*2,
-                // };
-
-                // let mut start = 0.0;
-                // let mut end = w;
-                // if zoom_mode == ZoomMode::Absolute {
-                // start = ((max_attack - attack) / max_attack) * center;
-                // end = center + ((release / max_release) * (w - center));
-                // }
-
-                let mut path = vg::Path::new();
-                for i in 0..MAX_NR_TAPS {
-                    let time =
-                        (delay_data.delay_times_array[i] as f32 / TOTAL_DELAY_SAMPLES as f32) * w;
-                    if time > 0.0 {
-                        println!("time: {}", time);
+            canvas.stroke_path(
+                &{
+                    let mut path = vg::Path::new();
+                    for i in 0..delay_data.current_tap {
+                        // TODO: make the MAX_DELAY offset a more smart thing
+                        let time = (delay_data.delay_times_array[i] as f32
+                            / (max_delay as f32 + MAX_SAMPLE_RATE as f32))
+                            * w;
+                        // println!("time: {}", time/w);
                         path.move_to(x + time, y + h);
                         path.line_to(x + time, y);
-                        // path.move_to(x+w, y+h);
-                        // path.line_to(x, y);
-                    };
-                }
-                // path.line_to(x + end, y);
-                // path.line_to(x + w, y);
-                path
-            },
-            &vg::Paint::color(outline_color.into()).with_line_width(border_width),
-        );
+                    }
+                    path
+                },
+                &vg::Paint::color(outline_color.into()).with_line_width(border_width),
+            );
+        };
         // add outline
         canvas.stroke_path(
             &{
