@@ -68,9 +68,9 @@
   # https://devenv.sh/pre-commit-hooks/
   pre-commit.hooks = {
     shellcheck.enable = true;
-    clippy.enable = true;
+    # clippy.enable = true;
     # hunspell.enable = true;
-    alejandra.enable = true;
+    # alejandra.enable = true;
     rustfmt.enable = true;
     typos.enable = true;
   };

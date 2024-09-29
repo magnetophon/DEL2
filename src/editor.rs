@@ -3,18 +3,21 @@ use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::Del2Params;
-use crate::DelayGraphData;
-use crate::ZoomMode;
+// use crate::DelayGraphData;
+// use crate::ZoomMode;
 use crate::MAX_NR_TAPS;
 use crate::TOTAL_DELAY_SAMPLES;
+// use crate::WaveformBufferOutput;
+use crate::DelayGraphDataOutput;
 
-#[derive(Lens)]
-struct Data {
-    params: Arc<Del2Params>,
-    delay_data: DelayGraphData,
+#[derive(Lens, Clone)]
+pub(crate) struct Data {
+    pub(crate) params: Arc<Del2Params>,
+    pub(crate) delay_data: Arc<Mutex<DelayGraphDataOutput>>,
+    // pub waveform_buffer_output: Arc<Mutex<WaveformBufferOutput>>,
 }
 
 impl Model for Data {}
@@ -25,19 +28,16 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
 }
 
 pub(crate) fn create(
-    params: Arc<Del2Params>,
-    delay_data: DelayGraphData,
+    // params: Arc<Del2Params>,
+    editor_data: Data,
+    // buffer_output: Arc<Mutex<WaveformBufferOutput>>,
     editor_state: Arc<ViziaState>,
 ) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
         assets::register_noto_sans_thin(cx);
 
-        Data {
-            params: params.clone(),
-            delay_data: delay_data.clone(),
-        }
-        .build(cx);
+        editor_data.clone().build(cx);
 
         HStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
@@ -60,8 +60,8 @@ pub(crate) fn create(
             .child_left(Stretch(1.0))
             .child_right(Stretch(1.0));
             DelayGraph::new(cx, Data::delay_data)
-                // .background_color(Color::green())
-                    .border_color(Color::grey())
+            // .background_color(Color::green())
+                .border_color(Color::grey())
                     .outline_color(Color::red())
                     .border_width(Pixels(1.0))
             // .child_right(Stretch(1.0))
@@ -79,27 +79,44 @@ pub(crate) fn create(
 //                             DelayGraph                            //
 ///////////////////////////////////////////////////////////////////////////////
 
-pub struct DelayGraph<DelayDataL: Lens<Target = DelayGraphData>> {
-    delay_data: DelayDataL,
+pub struct DelayGraph {
+    delay_data: Arc<Mutex<DelayGraphDataOutput>>,
 }
 
-impl<DelayDataL: Lens<Target = DelayGraphData>> DelayGraph<DelayDataL> {
-    pub fn new(cx: &mut Context, delay_data: DelayDataL) -> Handle<Self> {
-        Self { delay_data }
-            .build(cx, |_cx| {
-                // If we want the view to contain other views we can build those here.
-            })
-            // Redraw when lensed data changes
-            .bind(delay_data, |mut handle, _| handle.needs_redraw())
+// impl<DelayDataL: Lens<Target = DelayGraphData>> DelayGraph<DelayDataL> {
+//     pub fn new(cx: &mut Context, delay_data: DelayDataL) -> Handle<Self> {
+//         Self { delay_data }
+//         .build(cx, |_cx| {
+//             // If we want the view to contain other views we can build those here.
+//         })
+//         // Redraw when lensed data changes
+//         .bind(delay_data, |mut handle, _| handle.needs_redraw())
+//     }
+// }
+
+impl DelayGraph {
+    pub fn new<DelayDataL>(cx: &mut Context, delay_data: DelayDataL) -> Handle<Self>
+    where
+        // DelayDataL: Lens<Target = DelayGraphData>,
+        DelayDataL: Lens<Target = Arc<Mutex<DelayGraphDataOutput>>>,
+        // LRecordingProgress: Lens<Target = Arc<Mutex<f32>>>,
+    {
+        Self {
+            delay_data: delay_data.get(cx),
+        }
+        .build(cx, |_cx| ())
     }
 }
-impl<DelayDataL: Lens<Target = DelayGraphData>> View for DelayGraph<DelayDataL> {
+
+impl View for DelayGraph {
     // for css:
     fn element(&self) -> Option<&'static str> {
         Some("delay-graph")
     }
 
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+        let mut delay_data = self.delay_data.lock().unwrap();
+        let delay_data = delay_data.read();
         // Get the bounding box of the current view.
         let bounds = cx.bounds();
         let attack = 9.0;
@@ -163,9 +180,8 @@ impl<DelayDataL: Lens<Target = DelayGraphData>> View for DelayGraph<DelayDataL> 
 
                 let mut path = vg::Path::new();
                 for i in 0..MAX_NR_TAPS {
-                    let time = (self.delay_data.get(cx).delay_times_array[i] as f32
-                        / TOTAL_DELAY_SAMPLES as f32)
-                        * w;
+                    let time =
+                        (delay_data.delay_times_array[i] as f32 / TOTAL_DELAY_SAMPLES as f32) * w;
                     if time > 0.0 {
                         println!("time: {}", time);
                         path.move_to(x + time, y + h);
