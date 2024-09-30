@@ -25,7 +25,6 @@ struct Del2 {
     delay_write_index: usize,
     samples_since_last_event: u32,
     timing_last_event: u32,
-    time_out_tap_samples: u32,
     debounce_tap_samples: u32,
     delay_buffer_size: u32,
     counting_state: CountingState,
@@ -35,8 +34,9 @@ struct Del2 {
 pub struct DelayData {
     velocity_array: [f32; MAX_NR_TAPS],
     delay_times_array: [u32; MAX_NR_TAPS],
-    current_time: u32,
     current_tap: usize,
+    current_time: u32,
+    time_out_samples: u32,
 }
 pub type DelayDataInput = triple_buffer::Input<DelayData>;
 pub type DelayDataOutput = triple_buffer::Output<DelayData>;
@@ -55,8 +55,8 @@ struct Del2Params {
     editor_state: Arc<ViziaState>,
     #[id = "gain"]
     pub gain: FloatParam,
-    #[id = "time_out_tap_seconds"]
-    pub time_out_tap_seconds: FloatParam,
+    #[id = "time_out_seconds"]
+    pub time_out_seconds: FloatParam,
     #[id = "debounce_tap_milliseconds"]
     pub debounce_tap_milliseconds: FloatParam,
     #[id = "zoom_mode"]
@@ -100,7 +100,6 @@ impl Default for Del2 {
             delay_write_index: 0,
             samples_since_last_event: 0,
             timing_last_event: 0,
-            time_out_tap_samples: 0,
             debounce_tap_samples: 0,
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
@@ -113,8 +112,9 @@ impl Default for DelayData {
         Self {
             velocity_array: [0.0; MAX_NR_TAPS],
             delay_times_array: [0; MAX_NR_TAPS],
-            current_time: 0,
             current_tap: 0,
+            current_time: 0,
+            time_out_samples: 0,
         }
     }
 }
@@ -146,7 +146,7 @@ impl Default for Del2Params {
             // `.with_step_size(0.1)` function to get internal rounding.
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            time_out_tap_seconds: FloatParam::new(
+            time_out_seconds: FloatParam::new(
                 "max tap time",
                 3.0,
                 FloatRange::Linear {
@@ -272,8 +272,8 @@ impl Plugin for Del2 {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         // TODO: put behind a should_update with a callback?
-        self.time_out_tap_samples =
-            (self.sample_rate as f64 * self.params.time_out_tap_seconds.value() as f64) as u32;
+        self.delay_data.time_out_samples =
+            (self.sample_rate as f64 * self.params.time_out_seconds.value() as f64) as u32;
         self.debounce_tap_samples = (self.sample_rate as f64
             * self.params.debounce_tap_milliseconds.value() as f64
             * 0.001) as u32;
@@ -376,7 +376,7 @@ impl Del2 {
                 }
             }
         }
-        if self.samples_since_last_event <= self.time_out_tap_samples {
+        if self.samples_since_last_event <= self.delay_data.time_out_samples {
             if self.delay_data.current_tap < MAX_NR_TAPS
                 && self.counting_state != CountingState::TimeOut
                 && self.samples_since_last_event > 0
@@ -416,7 +416,7 @@ impl Del2 {
             }
         }
 
-        if self.samples_since_last_event > self.time_out_tap_samples {
+        if self.samples_since_last_event > self.delay_data.time_out_samples {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
