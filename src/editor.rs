@@ -53,10 +53,10 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
             DelayGraph::new(cx, Data::delay_data)
             // .background_color(Color::green())
                 .border_color(Color::grey())
-                    .outline_color(Color::red())
-                    .border_width(Pixels(1.0))
+                .outline_color(Color::black())
+                .border_width(Pixels(1.0))
             // .child_right(Stretch(1.0))
-                    .width(Pixels(400.0))
+                .width(Pixels(400.0))
             // .height(Pixels(200.0))
                 ;
             ResizeHandle::new(cx)
@@ -135,12 +135,12 @@ impl View for DelayGraph {
                     let mut path = vg::Path::new();
                     for i in 0..delay_data.current_tap {
                         // TODO: make the MAX_SAMPLE_RATE offset smarter
-                        let time = (delay_data.delay_times_array[i] as f32
+                        let x_offset = (delay_data.delay_times_array[i] as f32
                             / (max_delay as f32 + MAX_SAMPLE_RATE as f32))
                             * w;
-                        // println!("time: {}", time/w);
-                        path.move_to(x + time, y + h);
-                        path.line_to(x + time, y);
+                        let y_offset = h - (delay_data.velocity_array[i] * h);
+                        path.move_to(x + x_offset, y + h);
+                        path.line_to(x + x_offset, y + y_offset);
                     }
                     path
                 },
