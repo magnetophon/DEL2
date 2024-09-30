@@ -127,24 +127,43 @@ impl View for DelayGraph {
         // Fill with background color
         let paint = vg::Paint::color(background_color);
         canvas.fill_path(&path, &paint);
+        let mut max_delay = 0;
         if delay_data.current_tap > 0 {
-            let max_delay = delay_data.delay_times_array[delay_data.current_tap - 1];
+            max_delay = delay_data.delay_times_array[delay_data.current_tap - 1];
+        }
 
+        // draw delay taps
+        canvas.stroke_path(
+            &{
+                let mut path = vg::Path::new();
+                for i in 0..delay_data.current_tap {
+                    // TODO: make the MAX_SAMPLE_RATE offset smarter
+                    let x_offset = (delay_data.delay_times_array[i] as f32
+                        / (max_delay as f32 + MAX_SAMPLE_RATE as f32))
+                        * w;
+                    let y_offset = h - (delay_data.velocity_array[i] * h);
+                    path.move_to(x + x_offset, y + h);
+                    path.line_to(x + x_offset, y + y_offset);
+                }
+                path
+            },
+            &vg::Paint::color(outline_color.into()).with_line_width(border_width),
+        );
+
+        // draw current time
+        if delay_data.current_time > max_delay {
             canvas.stroke_path(
                 &{
                     let mut path = vg::Path::new();
-                    for i in 0..delay_data.current_tap {
-                        // TODO: make the MAX_SAMPLE_RATE offset smarter
-                        let x_offset = (delay_data.delay_times_array[i] as f32
-                            / (max_delay as f32 + MAX_SAMPLE_RATE as f32))
-                            * w;
-                        let y_offset = h - (delay_data.velocity_array[i] * h);
-                        path.move_to(x + x_offset, y + h);
-                        path.line_to(x + x_offset, y + y_offset);
-                    }
+                    // TODO: make the MAX_SAMPLE_RATE offset smarter
+                    let x_offset = (delay_data.current_time as f32
+                        / (max_delay as f32 + MAX_SAMPLE_RATE as f32))
+                        * w;
+                    path.move_to(x + x_offset, y + h);
+                    path.line_to(x + x_offset, y);
                     path
                 },
-                &vg::Paint::color(outline_color.into()).with_line_width(border_width),
+                &vg::Paint::color(Color::red().into()).with_line_width(border_width),
             );
         };
         // add outline

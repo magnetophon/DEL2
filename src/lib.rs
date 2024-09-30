@@ -35,6 +35,7 @@ struct Del2 {
 pub struct DelayData {
     velocity_array: [f32; MAX_NR_TAPS],
     delay_times_array: [u32; MAX_NR_TAPS],
+    current_time: u32,
     current_tap: usize,
 }
 pub type DelayDataInput = triple_buffer::Input<DelayData>;
@@ -112,6 +113,7 @@ impl Default for DelayData {
         Self {
             velocity_array: [0.0; MAX_NR_TAPS],
             delay_times_array: [0; MAX_NR_TAPS],
+            current_time: 0,
             current_tap: 0,
         }
     }
@@ -291,6 +293,15 @@ impl Plugin for Del2 {
         let buffer_samples = buffer.samples();
         self.no_more_events(buffer_samples as u32);
 
+        if self.delay_data.current_tap > 0 {
+            self.delay_data.current_time = self.delay_data.delay_times_array
+                [self.delay_data.current_tap - 1]
+                + self.samples_since_last_event;
+        } else {
+            self.delay_data.current_time = self.samples_since_last_event;
+        };
+        self.delay_data_input.write(self.delay_data.clone());
+
         for (_, block) in buffer.iter_blocks(buffer_samples) {
             let block_len = block.samples();
             let mut block_channels = block.into_iter();
@@ -391,8 +402,6 @@ impl Del2 {
             self.samples_since_last_event = 0;
             // println!("time out note on");
         };
-
-        self.delay_data_input.write(self.delay_data.clone());
     }
 
     fn no_more_events(&mut self, buffer_samples: u32) {
