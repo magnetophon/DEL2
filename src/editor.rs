@@ -6,19 +6,14 @@ use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 use std::sync::{Arc, Mutex};
 
 use crate::Del2Params;
-// use crate::DelayGraphData;
 // use crate::ZoomMode;
-// use crate::MAX_NR_TAPS;
-// use crate::TOTAL_DELAY_SAMPLES;
+use crate::DelayDataOutput;
 use crate::MAX_SAMPLE_RATE;
-// use crate::WaveformBufferOutput;
-use crate::DelayGraphDataOutput;
 
 #[derive(Lens, Clone)]
 pub(crate) struct Data {
     pub(crate) params: Arc<Del2Params>,
-    pub(crate) delay_data: Arc<Mutex<DelayGraphDataOutput>>,
-    // pub waveform_buffer_output: Arc<Mutex<WaveformBufferOutput>>,
+    pub(crate) delay_data: Arc<Mutex<DelayDataOutput>>,
 }
 
 impl Model for Data {}
@@ -28,12 +23,7 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
     ViziaState::new(|| (600, 220))
 }
 
-pub(crate) fn create(
-    // params: Arc<Del2Params>,
-    editor_data: Data,
-    // buffer_output: Arc<Mutex<WaveformBufferOutput>>,
-    editor_state: Arc<ViziaState>,
-) -> Option<Box<dyn Editor>> {
+pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
         assets::register_noto_sans_thin(cx);
@@ -81,26 +71,13 @@ pub(crate) fn create(
 ///////////////////////////////////////////////////////////////////////////////
 
 pub struct DelayGraph {
-    delay_data: Arc<Mutex<DelayGraphDataOutput>>,
+    delay_data: Arc<Mutex<DelayDataOutput>>,
 }
-
-// impl<DelayDataL: Lens<Target = DelayGraphData>> DelayGraph<DelayDataL> {
-//     pub fn new(cx: &mut Context, delay_data: DelayDataL) -> Handle<Self> {
-//         Self { delay_data }
-//         .build(cx, |_cx| {
-//             // If we want the view to contain other views we can build those here.
-//         })
-//         // Redraw when lensed data changes
-//         .bind(delay_data, |mut handle, _| handle.needs_redraw())
-//     }
-// }
 
 impl DelayGraph {
     pub fn new<DelayDataL>(cx: &mut Context, delay_data: DelayDataL) -> Handle<Self>
     where
-        // DelayDataL: Lens<Target = DelayGraphData>,
-        DelayDataL: Lens<Target = Arc<Mutex<DelayGraphDataOutput>>>,
-        // LRecordingProgress: Lens<Target = Arc<Mutex<f32>>>,
+        DelayDataL: Lens<Target = Arc<Mutex<DelayDataOutput>>>,
     {
         Self {
             delay_data: delay_data.get(cx),
@@ -152,18 +129,12 @@ impl View for DelayGraph {
         canvas.fill_path(&path, &paint);
         if delay_data.current_tap > 0 {
             let max_delay = delay_data.delay_times_array[delay_data.current_tap - 1];
-            // println!("current_tap: {}", delay_data.current_tap);
-            // println!("max_delay: {}", max_delay);
-            // println!(
-            // "delay_data.delay_times_array: {:?}",
-            // delay_data.delay_times_array
-            // );
 
             canvas.stroke_path(
                 &{
                     let mut path = vg::Path::new();
                     for i in 0..delay_data.current_tap {
-                        // TODO: make the MAX_DELAY offset a more smart thing
+                        // TODO: make the MAX_SAMPLE_RATE offset smarter
                         let time = (delay_data.delay_times_array[i] as f32
                             / (max_delay as f32 + MAX_SAMPLE_RATE as f32))
                             * w;

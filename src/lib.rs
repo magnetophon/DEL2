@@ -7,10 +7,6 @@ use triple_buffer::TripleBuffer;
 
 mod editor;
 
-// This is a shortened version of the gain example with most comments removed, check out
-// https://github.com/robbert-vdh/nih-plug/blob/master/plugins/examples/gain/src/lib.rs to get
-// started
-
 // max seconds per tap
 const MAX_TAP_SECONDS: usize = 10;
 const MAX_DEBOUNCE_MILLISECONDS: f32 = 1000.0;
@@ -18,20 +14,13 @@ const MAX_NR_TAPS: usize = 16;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * MAX_NR_TAPS;
 const MAX_SAMPLE_RATE: usize = 192000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
-const DSP_BLOCK_SIZE: usize = 128;
-
-pub type WaveformBuffer = Vec<f32>;
-pub type WaveformBufferInput = triple_buffer::Input<WaveformBuffer>;
-pub type WaveformBufferOutput = triple_buffer::Output<WaveformBuffer>;
 
 struct Del2 {
     params: Arc<Del2Params>,
     delay_buffer: [BMRingBuf<f32>; 2],
-    delay_graph_data: DelayGraphData,
-    delay_graph_data_input: DelayGraphDataInput,
-    delay_graph_data_output: Arc<Mutex<DelayGraphDataOutput>>,
-    // waveform_buffer_input: WaveformBufferInput,
-    // waveform_buffer_output: Arc<Mutex<WaveformBufferOutput>>,
+    delay_data: DelayData,
+    delay_data_input: DelayDataInput,
+    delay_data_output: Arc<Mutex<DelayDataOutput>>,
     sample_rate: f32,
     delay_write_index: usize,
     samples_since_last_event: u32,
@@ -43,15 +32,15 @@ struct Del2 {
 }
 
 #[derive(Clone)]
-pub struct DelayGraphData {
+pub struct DelayData {
     velocity_array: [f32; MAX_NR_TAPS],
     delay_times_array: [u32; MAX_NR_TAPS],
     current_tap: usize,
 }
-pub type DelayGraphDataInput = triple_buffer::Input<DelayGraphData>;
-pub type DelayGraphDataOutput = triple_buffer::Output<DelayGraphData>;
+pub type DelayDataInput = triple_buffer::Input<DelayData>;
+pub type DelayDataOutput = triple_buffer::Output<DelayData>;
 
-impl Data for DelayGraphData {
+impl Data for DelayData {
     fn same(&self, other: &Self) -> bool {
         self.velocity_array == other.velocity_array
             && self.delay_times_array == other.delay_times_array
@@ -94,10 +83,8 @@ enum CountingState {
 
 impl Default for Del2 {
     fn default() -> Self {
-        // let initial_waveform_buffer: Vec<f32> = Vec::new();
-        let initial_delay_data: DelayGraphData = DelayGraphData::default();
-        let (delay_graph_data_input, delay_graph_data_output) =
-            TripleBuffer::new(&initial_delay_data).split();
+        let initial_delay_data: DelayData = DelayData::default();
+        let (delay_data_input, delay_data_output) = TripleBuffer::new(&initial_delay_data).split();
 
         Self {
             params: Arc::new(Del2Params::default()),
@@ -105,11 +92,9 @@ impl Default for Del2 {
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
-            delay_graph_data: initial_delay_data,
-            delay_graph_data_input,
-            delay_graph_data_output: Arc::new(Mutex::new(delay_graph_data_output)),
-            // waveform_buffer_input,
-            // waveform_buffer_output: Arc::new(Mutex::new(waveform_buffer_output)),
+            delay_data: initial_delay_data,
+            delay_data_input,
+            delay_data_output: Arc::new(Mutex::new(delay_data_output)),
             sample_rate: 1.0,
             delay_write_index: 0,
             samples_since_last_event: 0,
@@ -122,7 +107,7 @@ impl Default for Del2 {
     }
 }
 
-impl Default for DelayGraphData {
+impl Default for DelayData {
     fn default() -> Self {
         Self {
             velocity_array: [0.0; MAX_NR_TAPS],
@@ -228,36 +213,15 @@ impl Plugin for Del2 {
         self.params.clone()
     }
 
-    // fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-    //     editor::create(
-    //         self.params.clone(),
-    //         self.delay_graph_data.clone(),
-    //         self.waveform_buffer_output.clone(),
-    //         self.params.editor_state.clone(),
-    //     )
-    // }
-
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         editor::create(
             editor::Data {
                 params: self.params.clone(),
-                delay_data: self.delay_graph_data_output.clone(),
-                // waveform_buffer_output: self.waveform_buffer_output.clone(),
+                delay_data: self.delay_data_output.clone(),
             },
             self.params.editor_state.clone(),
         )
     }
-    // fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-    // editor::create(
-    // editor::Data {
-    // buffer_output: self.waveform_buffer_output.clone(),
-    // recording_progress: self.recording_progress.clone(),
-    // command_sender: self.command_sender.clone(),
-    // is_info_visible: false,
-    // },
-    // self.params.editor_state.clone(),
-    // )
-    // }
 
     fn initialize(
         &mut self,
@@ -324,14 +288,10 @@ impl Plugin for Del2 {
             next_event = context.next_event();
         }
 
-        // let mut delay_graph_data = self.delay_graph_data_output.lock().unwrap();
-        // let mut delay_graph_data = self.delay_graph_data_input.clone();
-
         let buffer_samples = buffer.samples();
         self.no_more_events(buffer_samples as u32);
 
-        for (_, block) in buffer.iter_blocks(DSP_BLOCK_SIZE) {
-            // for (_, block) in buffer.iter_blocks(buffer_samples) {
+        for (_, block) in buffer.iter_blocks(buffer_samples) {
             let block_len = block.samples();
             let mut block_channels = block.into_iter();
 
@@ -345,11 +305,10 @@ impl Plugin for Del2 {
             out_l.fill(0.0);
             out_r.fill(0.0);
 
-            // for tap in 0..self.delay_graph_data_input.current_tap {
-            for tap in 0..self.delay_graph_data.current_tap {
-                let delay_time = self.delay_graph_data.delay_times_array[tap] as isize;
+            for tap in 0..self.delay_data.current_tap {
+                let delay_time = self.delay_data.delay_times_array[tap] as isize;
                 let read_index = self.delay_write_index as isize - delay_time;
-                let velocity_squared = f32::powi(self.delay_graph_data.velocity_array[tap], 2);
+                let velocity_squared = f32::powi(self.delay_data.velocity_array[tap], 2);
                 // Temporary buffers to hold the read values for processing
                 let mut temp_l = vec![0.0; block_len];
                 let mut temp_r = vec![0.0; block_len];
@@ -373,15 +332,15 @@ impl Del2 {
     fn note_on(&mut self, timing: u32, velocity: f32) {
         match self.counting_state {
             CountingState::TimeOut => {
-                self.delay_graph_data
+                self.delay_data
                     .delay_times_array
                     .iter_mut()
                     .for_each(|x| *x = 0);
-                self.delay_graph_data
+                self.delay_data
                     .velocity_array
                     .iter_mut()
                     .for_each(|x| *x = 0.0);
-                self.delay_graph_data.current_tap = 0;
+                self.delay_data.current_tap = 0;
                 self.timing_last_event = timing;
                 self.counting_state = CountingState::CountingInBuffer;
             }
@@ -407,25 +366,24 @@ impl Del2 {
             }
         }
         if self.samples_since_last_event <= self.time_out_tap_samples {
-            if self.delay_graph_data.current_tap < MAX_NR_TAPS
+            if self.delay_data.current_tap < MAX_NR_TAPS
                 && self.counting_state != CountingState::TimeOut
                 && self.samples_since_last_event > 0
                 && velocity > 0.0
             {
-                if self.delay_graph_data.current_tap > 0 {
-                    self.delay_graph_data.delay_times_array[self.delay_graph_data.current_tap] =
-                        self.samples_since_last_event
-                            + self.delay_graph_data.delay_times_array
-                                [self.delay_graph_data.current_tap - 1];
+                if self.delay_data.current_tap > 0 {
+                    self.delay_data.delay_times_array[self.delay_data.current_tap] = self
+                        .samples_since_last_event
+                        + self.delay_data.delay_times_array[self.delay_data.current_tap - 1];
                 } else {
-                    self.delay_graph_data.delay_times_array[self.delay_graph_data.current_tap] =
+                    self.delay_data.delay_times_array[self.delay_data.current_tap] =
                         self.samples_since_last_event;
                 }
-                self.delay_graph_data.velocity_array[self.delay_graph_data.current_tap] = velocity;
-                // println!("current_tap: {}", self.delay_graph_data.current_tap);
-                // println!("times: {:#?}", self.delay_graph_data.delay_times_array);
-                // println!("velocities: {:#?}", self.delay_graph_data.velocity_array);
-                self.delay_graph_data.current_tap += 1;
+                self.delay_data.velocity_array[self.delay_data.current_tap] = velocity;
+                // println!("current_tap: {}", self.delay_data.current_tap);
+                // println!("times: {:#?}", self.delay_data.delay_times_array);
+                // println!("velocities: {:#?}", self.delay_data.velocity_array);
+                self.delay_data.current_tap += 1;
             };
         } else {
             self.counting_state = CountingState::TimeOut;
@@ -434,8 +392,7 @@ impl Del2 {
             // println!("time out note on");
         };
 
-        self.delay_graph_data_input
-            .write(self.delay_graph_data.clone());
+        self.delay_data_input.write(self.delay_data.clone());
     }
 
     fn no_more_events(&mut self, buffer_samples: u32) {
