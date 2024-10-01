@@ -8,7 +8,6 @@ use std::sync::{Arc, Mutex};
 use crate::Del2Params;
 // use crate::ZoomMode;
 use crate::DelayDataOutput;
-use crate::MAX_SAMPLE_RATE;
 
 #[derive(Lens, Clone)]
 pub(crate) struct Data {
