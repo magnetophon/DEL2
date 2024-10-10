@@ -4,7 +4,24 @@
   config,
   inputs,
   ...
-}: {
+}:
+
+# let
+# faustSrc = pkgs.fetchFromGitHub {
+# owner = "crop2000";
+# repo = "faust";
+# rev = "b6dd1e0d86a15846641a857f8943978f58413411";
+# fetchSubmodules = true;
+# sha256 = "sha256-vHl1FWrnU2wvsXIOijKotIqLSbHRLpm7P6HdHyP0Po8="; # Placeholder - replace with the actual hash
+# };
+
+# faust =  pkgs.faust.overrideAttrs (oldAttrs: {
+# version = "sized_io";
+# src = faustSrc;
+# });
+
+# in
+{
   # https://devenv.sh/basics/
   env.GREET = "magnetophon";
 
