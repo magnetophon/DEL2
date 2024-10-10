@@ -1,8 +1,11 @@
+#![feature(portable_simd)]
 use bit_mask_ring_buf::BMRingBuf;
 use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
+use std::simd::f32x4;
 use std::sync::{Arc, Mutex};
+use synfx_dsp::fh_va::{FilterParams, LadderFilter};
 use triple_buffer::TripleBuffer;
 
 mod editor;
@@ -17,6 +20,10 @@ const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
 
 struct Del2 {
     params: Arc<Del2Params>,
+
+    filter_params: Arc<FilterParams>,
+    ladder: LadderFilter,
+
     delay_buffer: [BMRingBuf<f32>; 2],
     delay_data: DelayData,
     delay_data_input: DelayDataInput,
@@ -28,6 +35,13 @@ struct Del2 {
     debounce_tap_samples: u32,
     delay_buffer_size: u32,
     counting_state: CountingState,
+
+    should_update_filter: Arc<std::sync::atomic::AtomicBool>,
+
+    // upsampler: HalfbandFilter,
+    // downsampler: HalfbandFilter,
+    // dc_filter: preprocess::DcFilter,
+    oversample_factor: usize,
 }
 
 #[derive(Clone)]
@@ -86,9 +100,17 @@ impl Default for Del2 {
     fn default() -> Self {
         let initial_delay_data: DelayData = DelayData::default();
         let (delay_data_input, delay_data_output) = TripleBuffer::new(&initial_delay_data).split();
+        let should_update_filter = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // let filter_params = Arc::new(FilterParams::new(should_update_filter.clone()));
+        let filter_params = Arc::new(FilterParams::new());
+
+        let ladder = LadderFilter::new(filter_params.clone());
 
         Self {
             params: Arc::new(Del2Params::default()),
+            filter_params,
+
+            ladder,
             delay_buffer: [
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
@@ -103,6 +125,12 @@ impl Default for Del2 {
             debounce_tap_samples: 0,
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
+
+            should_update_filter,
+            // upsampler: HalfbandFilter::new(8, true),
+            // downsampler: HalfbandFilter::new(8, true),
+            // dc_filter: preprocess::DcFilter::default(),
+            oversample_factor: 2,
         }
     }
 }
@@ -259,8 +287,7 @@ impl Plugin for Del2 {
     }
 
     fn reset(&mut self) {
-        // TODO
-
+        self.ladder.s = [f32x4::splat(0.); 4];
         // Reset buffers and envelopes here. This can be called from the audio thread and may not
         // allocate. You can remove this function if you do not need it.
     }
@@ -331,6 +358,7 @@ impl Plugin for Del2 {
                     out_r[i] += temp_r[i] * velocity_squared;
                 }
             }
+            self.ladder.tick_newton([out_l, out_r]);
 
             self.delay_write_index =
                 (self.delay_write_index + block_len) % self.delay_buffer_size as usize;
