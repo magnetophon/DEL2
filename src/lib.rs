@@ -22,7 +22,7 @@ struct Del2 {
     params: Arc<Del2Params>,
 
     filter_params: Arc<FilterParams>,
-    ladder: LadderFilter,
+    ladders: [LadderFilter; MAX_NR_TAPS],
 
     delay_buffer: [BMRingBuf<f32>; 2],
     delay_data: DelayData,
@@ -35,13 +35,6 @@ struct Del2 {
     debounce_tap_samples: u32,
     delay_buffer_size: u32,
     counting_state: CountingState,
-
-    // should_update_filter: Arc<std::sync::atomic::AtomicBool>,
-
-    // upsampler: HalfbandFilter,
-    // downsampler: HalfbandFilter,
-    // dc_filter: preprocess::DcFilter,
-    oversample_factor: usize,
 }
 
 // for use in graph
@@ -57,6 +50,7 @@ pub type DelayDataInput = triple_buffer::Input<DelayData>;
 pub type DelayDataOutput = triple_buffer::Output<DelayData>;
 
 impl Data for DelayData {
+    // #[inline(always)]
     fn same(&self, other: &Self) -> bool {
         self.velocity_array == other.velocity_array
             && self.delay_times_array == other.delay_times_array
@@ -101,17 +95,23 @@ impl Default for Del2 {
     fn default() -> Self {
         let initial_delay_data: DelayData = DelayData::default();
         let (delay_data_input, delay_data_output) = TripleBuffer::new(&initial_delay_data).split();
-        // let should_update_filter = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        // let filter_params = Arc::new(FilterParams::new(should_update_filter.clone()));
         let filter_params = Arc::new(FilterParams::new());
-
-        let ladder = LadderFilter::new(filter_params.clone());
 
         Self {
             params: Arc::new(Del2Params::default()),
-            filter_params,
+            filter_params: filter_params.clone(),
 
-            ladder,
+            // TODO: make dependent on MAX_NR_TAPS
+            ladders: [
+                LadderFilter::new(filter_params.clone()),
+                LadderFilter::new(filter_params.clone()),
+                LadderFilter::new(filter_params.clone()),
+                LadderFilter::new(filter_params.clone()),
+                LadderFilter::new(filter_params.clone()),
+                LadderFilter::new(filter_params.clone()),
+                LadderFilter::new(filter_params.clone()),
+                LadderFilter::new(filter_params.clone()),
+            ],
             delay_buffer: [
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
@@ -126,12 +126,6 @@ impl Default for Del2 {
             debounce_tap_samples: 0,
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
-
-            // should_update_filter,
-            // upsampler: HalfbandFilter::new(8, true),
-            // downsampler: HalfbandFilter::new(8, true),
-            // dc_filter: preprocess::DcFilter::default(),
-            oversample_factor: 2,
         }
     }
 }
@@ -288,7 +282,9 @@ impl Plugin for Del2 {
     }
 
     fn reset(&mut self) {
-        self.ladder.s = [f32x4::splat(0.); 4];
+        for i in 0..MAX_NR_TAPS {
+            self.ladders[i].s = [f32x4::splat(0.); 4];
+        }
         // Reset buffers and envelopes here. This can be called from the audio thread and may not
         // allocate. You can remove this function if you do not need it.
     }
@@ -356,9 +352,9 @@ impl Plugin for Del2 {
                 self.delay_buffer[1].read_into(&mut temp_r, read_index);
                 // Accumulate the contributions
                 for i in 0..block_len {
-                    let mut frame = f32x4::from_array([temp_l[i], temp_r[i], 0.0, 0.0]);
+                    let frame = f32x4::from_array([temp_l[i], temp_r[i], 0.0, 0.0]);
 
-                    let processed = self.ladder.tick_newton(frame);
+                    let processed = self.ladders[tap].tick_newton(frame);
                     let frame_out = *processed.as_array();
                     out_l[i] += frame_out[0] * velocity_squared;
                     out_r[i] += frame_out[1] * velocity_squared;
@@ -374,6 +370,7 @@ impl Plugin for Del2 {
 }
 
 impl Del2 {
+    // #[inline(always)]
     fn note_on(&mut self, timing: u32, velocity: f32) {
         match self.counting_state {
             CountingState::TimeOut => {
@@ -438,6 +435,7 @@ impl Del2 {
         };
     }
 
+    // #[inline(always)]
     fn no_more_events(&mut self, buffer_samples: u32) {
         match self.counting_state {
             CountingState::TimeOut => {}
