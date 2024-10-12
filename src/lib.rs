@@ -356,8 +356,12 @@ impl Plugin for Del2 {
                 self.delay_buffer[1].read_into(&mut temp_r, read_index);
                 // Accumulate the contributions
                 for i in 0..block_len {
-                    out_l[i] += temp_l[i] * velocity_squared;
-                    out_r[i] += temp_r[i] * velocity_squared;
+                    let mut frame = f32x4::from_array([temp_l[i], temp_r[i], 0.0, 0.0]);
+
+                    let processed = self.ladder.tick_newton(frame);
+                    let frame_out = *processed.as_array();
+                    out_l[i] += frame_out[0] * velocity_squared;
+                    out_r[i] += frame_out[1] * velocity_squared;
                 }
             }
 
@@ -365,16 +369,6 @@ impl Plugin for Del2 {
                 (self.delay_write_index + block_len) % self.delay_buffer_size as usize;
         }
 
-        for mut channel_samples in buffer.iter_samples() {
-            let in_l = *channel_samples.get_mut(0).unwrap();
-            let in_r = *channel_samples.get_mut(1).unwrap();
-            let mut frame = f32x4::from_array([in_l, in_r, 0.0, 0.0]);
-
-            let processed = self.ladder.tick_newton(frame);
-            let frame_out = *processed.as_array();
-            *channel_samples.get_mut(0).unwrap() = frame_out[0];
-            *channel_samples.get_mut(1).unwrap() = frame_out[1];
-        }
         ProcessStatus::Normal
     }
 }
