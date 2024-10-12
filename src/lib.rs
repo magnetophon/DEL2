@@ -13,7 +13,7 @@ mod editor;
 // max seconds per tap
 const MAX_TAP_SECONDS: usize = 10;
 const MAX_DEBOUNCE_MILLISECONDS: f32 = 1000.0;
-const MAX_NR_TAPS: usize = 16;
+const MAX_NR_TAPS: usize = 8;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * MAX_NR_TAPS;
 const MAX_SAMPLE_RATE: usize = 192000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
@@ -36,7 +36,7 @@ struct Del2 {
     delay_buffer_size: u32,
     counting_state: CountingState,
 
-    should_update_filter: Arc<std::sync::atomic::AtomicBool>,
+    // should_update_filter: Arc<std::sync::atomic::AtomicBool>,
 
     // upsampler: HalfbandFilter,
     // downsampler: HalfbandFilter,
@@ -44,6 +44,7 @@ struct Del2 {
     oversample_factor: usize,
 }
 
+// for use in graph
 #[derive(Clone)]
 pub struct DelayData {
     velocity_array: [f32; MAX_NR_TAPS],
@@ -100,7 +101,7 @@ impl Default for Del2 {
     fn default() -> Self {
         let initial_delay_data: DelayData = DelayData::default();
         let (delay_data_input, delay_data_output) = TripleBuffer::new(&initial_delay_data).split();
-        let should_update_filter = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // let should_update_filter = Arc::new(std::sync::atomic::AtomicBool::new(false));
         // let filter_params = Arc::new(FilterParams::new(should_update_filter.clone()));
         let filter_params = Arc::new(FilterParams::new());
 
@@ -126,7 +127,7 @@ impl Default for Del2 {
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
 
-            should_update_filter,
+            // should_update_filter,
             // upsampler: HalfbandFilter::new(8, true),
             // downsampler: HalfbandFilter::new(8, true),
             // dc_filter: preprocess::DcFilter::default(),
@@ -317,6 +318,7 @@ impl Plugin for Del2 {
             next_event = context.next_event();
         }
 
+        // the actual delay
         let buffer_samples = buffer.samples();
         self.no_more_events(buffer_samples as u32);
 
@@ -358,10 +360,20 @@ impl Plugin for Del2 {
                     out_r[i] += temp_r[i] * velocity_squared;
                 }
             }
-            self.ladder.tick_newton([out_l, out_r]);
 
             self.delay_write_index =
                 (self.delay_write_index + block_len) % self.delay_buffer_size as usize;
+        }
+
+        for mut channel_samples in buffer.iter_samples() {
+            let in_l = *channel_samples.get_mut(0).unwrap();
+            let in_r = *channel_samples.get_mut(1).unwrap();
+            let mut frame = f32x4::from_array([in_l, in_r, 0.0, 0.0]);
+
+            let processed = self.ladder.tick_newton(frame);
+            let frame_out = *processed.as_array();
+            *channel_samples.get_mut(0).unwrap() = frame_out[0];
+            *channel_samples.get_mut(1).unwrap() = frame_out[1];
         }
         ProcessStatus::Normal
     }
