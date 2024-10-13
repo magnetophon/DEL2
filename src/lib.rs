@@ -387,7 +387,9 @@ impl Del2 {
                 self.counting_state = CountingState::CountingInBuffer;
             }
             CountingState::CountingInBuffer => {
-                if (timing - self.timing_last_event) > self.debounce_tap_samples {
+                if (timing - self.timing_last_event) > self.debounce_tap_samples
+                    && self.delay_data.current_tap < MAX_NR_TAPS
+                {
                     self.samples_since_last_event = timing - self.timing_last_event;
                     self.timing_last_event = timing;
                 } else {
@@ -396,7 +398,9 @@ impl Del2 {
                 }
             }
             CountingState::CountingAcrossBuffer => {
-                if (self.samples_since_last_event + timing) > self.debounce_tap_samples {
+                if (self.samples_since_last_event + timing) > self.debounce_tap_samples
+                    && self.delay_data.current_tap < MAX_NR_TAPS
+                {
                     self.samples_since_last_event += timing;
                     self.timing_last_event = timing;
                     // println!("across to in buffer!");
