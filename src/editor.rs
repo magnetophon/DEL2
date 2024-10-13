@@ -6,7 +6,6 @@ use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 use std::sync::{Arc, Mutex};
 
 use crate::Del2Params;
-// use crate::ZoomMode;
 use crate::DelayDataOutput;
 
 #[derive(Lens, Clone)]

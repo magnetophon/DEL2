@@ -68,20 +68,6 @@ struct Del2Params {
     pub time_out_seconds: FloatParam,
     #[id = "debounce_tap_milliseconds"]
     pub debounce_tap_milliseconds: FloatParam,
-    #[id = "zoom_mode"]
-    zoom_mode: EnumParam<ZoomMode>,
-}
-
-#[derive(Enum, Debug, PartialEq)]
-enum ZoomMode {
-    /// Show the length of the taps relative to each other.
-    #[id = "relative"]
-    #[name = "relative"]
-    Relative,
-    /// Show the absolute length of the taps
-    #[id = "absolute"]
-    #[name = "absolute"]
-    Absolute,
 }
 
 #[derive(PartialEq)]
@@ -190,9 +176,6 @@ impl Default for Del2Params {
             )
             .with_step_size(0.01)
             .with_unit(" ms"),
-            zoom_mode: EnumParam::new("zoom_mode", ZoomMode::Relative)
-                .hide()
-                .hide_in_generic_ui(),
         }
     }
 }
