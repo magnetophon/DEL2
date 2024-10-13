@@ -336,7 +336,7 @@ impl Plugin for Del2 {
                 // Accumulate the contributions
                 for i in 0..block_len {
                     let frame = f32x4::from_array([temp_l[i], temp_r[i], 0.0, 0.0]);
-
+                    // TODO: dc-filter, upsample, downsample
                     let processed = self.ladders[tap].tick_newton(frame);
                     let frame_out = *processed.as_array();
                     out_l[i] += frame_out[0] * velocity_squared;

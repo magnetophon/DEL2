@@ -84,6 +84,7 @@ impl DelayGraph {
     }
 }
 
+// TODO: add grid to show bars & beats
 impl View for DelayGraph {
     // for css:
     fn element(&self) -> Option<&'static str> {
@@ -128,14 +129,15 @@ impl View for DelayGraph {
         if delay_data.current_tap > 0 {
             max_delay = delay_data.delay_times_array[delay_data.current_tap - 1];
         }
-        let x_factor = (max_delay as f32 + delay_data.time_out_samples as f32) / (w - line_width);
+        let x_factor =
+            1.0 / ((max_delay as f32 + delay_data.time_out_samples as f32) / (w - line_width));
 
         // draw delay taps
         canvas.stroke_path(
             &{
                 let mut path = vg::Path::new();
                 for i in 0..delay_data.current_tap {
-                    let x_offset = delay_data.delay_times_array[i] as f32 / x_factor;
+                    let x_offset = delay_data.delay_times_array[i] as f32 * x_factor;
                     let y_offset = h - (delay_data.velocity_array[i] * h);
                     path.move_to(x + x_offset, y + h);
                     path.line_to(x + x_offset, y + y_offset);
@@ -150,7 +152,7 @@ impl View for DelayGraph {
             canvas.stroke_path(
                 &{
                     let mut path = vg::Path::new();
-                    let x_offset = delay_data.current_time as f32 / x_factor;
+                    let x_offset = delay_data.current_time as f32 * x_factor;
                     path.move_to(x + x_offset, y + h);
                     path.line_to(x + x_offset, y);
                     path
