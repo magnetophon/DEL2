@@ -4,8 +4,8 @@ use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::simd::f32x4;
-use std::sync::{Arc, Mutex};
-use synfx_dsp::fh_va::{FilterParams, LadderFilter};
+use std::sync::{atomic::AtomicBool, Arc, Mutex};
+use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode, SvfMode};
 use triple_buffer::TripleBuffer;
 
 mod editor;
@@ -17,11 +17,13 @@ const MAX_NR_TAPS: usize = 8;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * MAX_NR_TAPS;
 const MAX_SAMPLE_RATE: usize = 192000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
+const VELOCITY_BOTTOM_NAME_PREFIX: &str = "Bottom Velocity";
+const VELOCITY_TOP_NAME_PREFIX: &str = "Top Velocity";
 
 struct Del2 {
     params: Arc<Del2Params>,
+    filter_params: [FilterParams; MAX_NR_TAPS],
 
-    filter_params: Arc<FilterParams>,
     ladders: [LadderFilter; MAX_NR_TAPS],
 
     delay_buffer: [BMRingBuf<f32>; 2],
@@ -35,6 +37,7 @@ struct Del2 {
     debounce_tap_samples: u32,
     delay_buffer_size: u32,
     counting_state: CountingState,
+    should_update_filter: Arc<std::sync::atomic::AtomicBool>,
 }
 
 // for use in graph
@@ -57,7 +60,7 @@ impl Data for DelayData {
             && self.current_tap == other.current_tap
     }
 }
-
+/// All the parameters
 #[derive(Params)]
 struct Del2Params {
     #[persist = "editor-state"]
@@ -68,6 +71,107 @@ struct Del2Params {
     pub time_out_seconds: FloatParam,
     #[id = "debounce_tap_milliseconds"]
     pub debounce_tap_milliseconds: FloatParam,
+    #[nested(group = "taps")]
+    pub taps: TapsSetParams,
+}
+
+/// Contains the top and bottom tap parameters.
+#[derive(Params)]
+pub struct TapsSetParams {
+    #[nested(id_prefix = "velocity_bottom", group = "velocity_bottom")]
+    pub velocity_bottom: Arc<TapGuiParams>,
+    #[nested(id_prefix = "velocity_top", group = "velocity_top")]
+    pub velocity_top: Arc<TapGuiParams>,
+}
+
+impl TapsSetParams {
+    pub fn default() -> Self {
+        TapsSetParams {
+            velocity_bottom: Arc::new(TapGuiParams::new(
+                VELOCITY_BOTTOM_NAME_PREFIX,
+                Arc::new(AtomicBool::new(true)),
+            )),
+            velocity_top: Arc::new(TapGuiParams::new(
+                VELOCITY_TOP_NAME_PREFIX,
+                Arc::new(AtomicBool::new(true)),
+            )),
+        }
+    }
+}
+
+/// This struct contains the parameters for either the top or bottom tap. The `Params`
+/// trait is implemented manually to avoid copy-pasting parameters for both types of compressor.
+/// Both versions will have a parameter ID and a parameter name prefix to distinguish them.
+#[derive(Params)]
+pub struct TapGuiParams {
+    #[id = "cutoff"]
+    pub cutoff: FloatParam,
+    #[id = "res"]
+    pub res: FloatParam,
+    #[id = "drive"]
+    pub drive: FloatParam,
+    #[id = "slope"]
+    pub slope: EnumParam<LadderSlope>,
+}
+
+impl TapGuiParams {
+    /// Create a new [`TapSetParams`] object with a prefix for all parameter names.
+    //TODO: Changing any of the threshold, ratio, or knee parameters causes the passed atomics to be updated.
+    //TODO: These should be taken from a [`CompressorBank`] so the parameters are linked to it.
+    pub fn new(name_prefix: &str, should_update_filter: Arc<AtomicBool>) -> Self {
+        TapGuiParams {
+            cutoff: FloatParam::new(
+                format!("{name_prefix} Cutoff"),
+                1000.0,
+                FloatRange::Skewed {
+                    min: 5.0, // This must never reach 0
+                    max: 20_000.0,
+                    factor: FloatRange::skew_factor(-2.5),
+                },
+            )
+            .with_smoother(SmoothingStyle::Logarithmic(20.0))
+            .with_unit(" Hz")
+            .with_value_to_string(formatters::v2s_f32_rounded(0))
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter.clone();
+                move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
+            })),
+            res: FloatParam::new(
+                format!("{name_prefix} Res"),
+                0.5,
+                FloatRange::Linear { min: 0., max: 1. },
+            )
+            .with_smoother(SmoothingStyle::Linear(20.0))
+            .with_value_to_string(formatters::v2s_f32_rounded(2))
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter;
+                move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
+            })),
+            // TODO: with_value_to_string should actually convert it to db
+            drive: FloatParam::new(
+                "{name_prefix} Drive",
+                1.0,
+                FloatRange::Skewed {
+                    min: 1.0, // This must never reach 0
+                    max: 15.8490,
+                    factor: FloatRange::skew_factor(-1.2),
+                },
+            )
+            .with_smoother(SmoothingStyle::Logarithmic(100.0))
+            .with_unit(" dB")
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(2)),
+
+            slope: EnumParam::new("{name_prefix} Slope", LadderSlope::LP6),
+        }
+    }
+}
+
+#[derive(Enum, Debug, PartialEq, Eq)]
+pub enum LadderSlope {
+    LP6,
+    LP12,
+    LP18,
+    LP24,
 }
 
 #[derive(PartialEq)]
@@ -81,13 +185,15 @@ impl Default for Del2 {
     fn default() -> Self {
         let initial_delay_data: DelayData = DelayData::default();
         let (delay_data_input, delay_data_output) = TripleBuffer::new(&initial_delay_data).split();
-        let filter_params = Arc::new(FilterParams::new());
+
+        let filter_params = array_init::array_init(|_| FilterParams::new());
+        let should_update_filter = Arc::new(std::sync::atomic::AtomicBool::new(true));
         // Create an array of LadderFilter using const generics
-        let ladders = array_init::array_init(|_| LadderFilter::new(filter_params.clone()));
+        let ladders =
+            array_init::array_init(|_| LadderFilter::new(filter_params[0].clone().into()));
         Self {
             params: Arc::new(Del2Params::default()),
-            filter_params: filter_params,
-
+            filter_params,
             ladders,
             delay_buffer: [
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
@@ -103,6 +209,7 @@ impl Default for Del2 {
             debounce_tap_samples: 0,
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
+            should_update_filter,
         }
     }
 }
@@ -167,6 +274,7 @@ impl Default for Del2Params {
             )
             .with_step_size(0.01)
             .with_unit(" ms"),
+            taps: TapsSetParams::default(),
         }
     }
 }
@@ -269,6 +377,32 @@ impl Plugin for Del2 {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        if self
+            .should_update_filter
+            .compare_exchange(
+                true,
+                false,
+                std::sync::atomic::Ordering::Acquire,
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .is_ok()
+        {
+            println!(
+                "bottom cutoff: {:?}",
+                self.params.taps.velocity_bottom.cutoff.value()
+            );
+            println!(
+                "bottom res: {:?}",
+                self.params.taps.velocity_bottom.res.value()
+            );
+            println!("sample_rate: {:?}", self.sample_rate);
+            for i in 0..MAX_NR_TAPS {
+                self.filter_params[i].set_sample_rate(self.sample_rate);
+                self.filter_params[i].set_resonance(self.params.taps.velocity_bottom.res.value());
+                self.filter_params[i]
+                    .set_frequency(self.params.taps.velocity_bottom.cutoff.value());
+            }
+        };
         // TODO: put behind a should_update with a callback?
         self.delay_data.time_out_samples =
             (self.sample_rate as f64 * self.params.time_out_seconds.value() as f64) as u32;
@@ -318,7 +452,8 @@ impl Plugin for Del2 {
             for tap in 0..self.delay_data.current_tap {
                 let delay_time = self.delay_data.delay_times_array[tap] as isize;
                 let read_index = self.delay_write_index as isize - delay_time;
-                let velocity_squared = f32::powi(self.delay_data.velocity_array[tap], 2);
+                let velocity = self.delay_data.velocity_array[tap];
+                let velocity_squared = f32::powi(velocity, 2);
                 // Temporary buffers to hold the read values for processing
                 let mut temp_l = vec![0.0; block_len];
                 let mut temp_r = vec![0.0; block_len];
@@ -332,6 +467,8 @@ impl Plugin for Del2 {
                     let frame_out = *processed.as_array();
                     out_l[i] += frame_out[0] * velocity_squared;
                     out_r[i] += frame_out[1] * velocity_squared;
+                    // out_l[i] += temp_l[i] * velocity_squared;
+                    // out_r[i] += temp_r[i] * velocity_squared;
                 }
             }
 
