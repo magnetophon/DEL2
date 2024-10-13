@@ -96,8 +96,6 @@ impl View for DelayGraph {
         let delay_data = delay_data.read();
         // Get the bounding box of the current view.
         let bounds = cx.bounds();
-        // let zoom_mode =
-        // self.delay_data.get(cx).zoom_mode.value();
 
         let border_color = cx.border_color();
         let outline_color = cx.outline_color();
@@ -107,6 +105,7 @@ impl View for DelayGraph {
         let mut border_color: vg::Color = border_color.into();
         border_color.set_alphaf(border_color.a * opacity);
         let border_width = cx.border_width();
+        let line_width = cx.scale_factor();
 
         let x = bounds.x + border_width / 2.0;
         let y = bounds.y + border_width / 2.0;
@@ -130,7 +129,7 @@ impl View for DelayGraph {
         if delay_data.current_tap > 0 {
             max_delay = delay_data.delay_times_array[delay_data.current_tap - 1];
         }
-        let x_factor = (max_delay as f32 + delay_data.time_out_samples as f32) / w;
+        let x_factor = (max_delay as f32 + delay_data.time_out_samples as f32) / (w - line_width);
 
         // draw delay taps
         canvas.stroke_path(
@@ -144,7 +143,7 @@ impl View for DelayGraph {
                 }
                 path
             },
-            &vg::Paint::color(outline_color.into()).with_line_width(border_width),
+            &vg::Paint::color(outline_color.into()).with_line_width(line_width),
         );
 
         // draw current time
@@ -157,7 +156,7 @@ impl View for DelayGraph {
                     path.line_to(x + x_offset, y);
                     path
                 },
-                &vg::Paint::color(Color::red().into()).with_line_width(border_width),
+                &vg::Paint::color(Color::red().into()).with_line_width(line_width),
             );
         };
         // add outline
