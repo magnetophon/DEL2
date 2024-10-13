@@ -86,7 +86,7 @@ impl Default for Del2 {
         let ladders = array_init::array_init(|_| LadderFilter::new(filter_params.clone()));
         Self {
             params: Arc::new(Del2Params::default()),
-            filter_params: filter_params.clone(),
+            filter_params: filter_params,
 
             ladders,
             delay_buffer: [
