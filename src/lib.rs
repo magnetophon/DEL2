@@ -82,22 +82,13 @@ impl Default for Del2 {
         let initial_delay_data: DelayData = DelayData::default();
         let (delay_data_input, delay_data_output) = TripleBuffer::new(&initial_delay_data).split();
         let filter_params = Arc::new(FilterParams::new());
-
+        // Create an array of LadderFilter using const generics
+        let ladders = array_init::array_init(|_| LadderFilter::new(filter_params.clone()));
         Self {
             params: Arc::new(Del2Params::default()),
             filter_params: filter_params.clone(),
 
-            // TODO: make dependent on MAX_NR_TAPS
-            ladders: [
-                LadderFilter::new(filter_params.clone()),
-                LadderFilter::new(filter_params.clone()),
-                LadderFilter::new(filter_params.clone()),
-                LadderFilter::new(filter_params.clone()),
-                LadderFilter::new(filter_params.clone()),
-                LadderFilter::new(filter_params.clone()),
-                LadderFilter::new(filter_params.clone()),
-                LadderFilter::new(filter_params.clone()),
-            ],
+            ladders,
             delay_buffer: [
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),

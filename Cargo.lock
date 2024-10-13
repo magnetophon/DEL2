@@ -6,6 +6,7 @@ version = 4
 name = "DEL2"
 version = "0.1.0"
 dependencies = [
+ "array-init",
  "bit_mask_ring_buf",
  "nih_plug",
  "nih_plug_vizia",
@@ -162,6 +163,12 @@ name = "anymap"
 version = "1.0.0-beta.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f1f8f5a6f3d50d89e3797d7593a50f96bb2aaa20ca0cc7be1fb673232c91d72"
+
+[[package]]
+name = "array-init"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d62b7694a562cdf5a74227903507c56ab2cc8bdd1f781ed5cb4cf9c9f810bfc"
 
 [[package]]
 name = "arrayvec"
