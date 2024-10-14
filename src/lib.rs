@@ -38,7 +38,7 @@ struct Del2 {
     debounce_tap_samples: u32,
     delay_buffer_size: u32,
     counting_state: CountingState,
-    should_update_filter: Arc<std::sync::atomic::AtomicBool>,
+    should_update_filter: Arc<AtomicBool>,
 }
 
 // for use in graph
@@ -86,15 +86,15 @@ pub struct TapsSetParams {
 }
 
 impl TapsSetParams {
-    pub fn default() -> Self {
+    pub fn new(should_update_filter: Arc<AtomicBool>) -> Self {
         TapsSetParams {
             velocity_bottom: Arc::new(TapGuiParams::new(
                 VELOCITY_BOTTOM_NAME_PREFIX,
-                Arc::new(AtomicBool::new(true)),
+                should_update_filter.clone(),
             )),
             velocity_top: Arc::new(TapGuiParams::new(
                 VELOCITY_TOP_NAME_PREFIX,
-                Arc::new(AtomicBool::new(true)),
+                should_update_filter.clone(),
             )),
         }
     }
@@ -188,11 +188,11 @@ impl Default for Del2 {
         let (delay_data_input, delay_data_output) = TripleBuffer::new(&initial_delay_data).split();
 
         let filter_params = array_init(|_| Arc::new(FilterParams::new()));
-        let should_update_filter = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let should_update_filter = Arc::new(AtomicBool::new(true));
         let ladders: [LadderFilter; MAX_NR_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
         Self {
-            params: Arc::new(Del2Params::default()),
+            params: Arc::new(Del2Params::new(should_update_filter.clone())),
             filter_params,
             ladders,
             delay_buffer: [
@@ -226,8 +226,8 @@ impl Default for DelayData {
     }
 }
 
-impl Default for Del2Params {
-    fn default() -> Self {
+impl Del2Params {
+    fn new(should_update_filter: Arc<AtomicBool>) -> Self {
         Self {
             editor_state: editor::default_state(),
             // This gain is stored as linear gain. NIH-plug comes with useful conversion functions
@@ -274,7 +274,7 @@ impl Default for Del2Params {
             )
             .with_step_size(0.01)
             .with_unit(" ms"),
-            taps: TapsSetParams::default(),
+            taps: TapsSetParams::new(should_update_filter.clone()),
         }
     }
 }
