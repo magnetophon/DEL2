@@ -3,18 +3,6 @@
 version = 4
 
 [[package]]
-name = "DEL2"
-version = "0.1.0"
-dependencies = [
- "array-init",
- "bit_mask_ring_buf",
- "nih_plug",
- "nih_plug_vizia",
- "synfx-dsp",
- "triple_buffer",
-]
-
-[[package]]
 name = "accesskit"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -892,6 +880,18 @@ checksum = "13b588ba4ac1a99f7f2964d24b3d896ddc6bf847ee3855dbd4366f058cfcd331"
 dependencies = [
  "quote",
  "syn 2.0.79",
+]
+
+[[package]]
+name = "del2"
+version = "0.1.0"
+dependencies = [
+ "array-init",
+ "bit_mask_ring_buf",
+ "nih_plug",
+ "nih_plug_vizia",
+ "synfx-dsp",
+ "triple_buffer",
 ]
 
 [[package]]

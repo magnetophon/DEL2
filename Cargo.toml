@@ -1,5 +1,5 @@
 [package]
-name = "DEL2"
+name = "del2"
 version = "0.1.0"
 edition = "2021"
 authors = ["Bart Brouns <bart@magnetophon.nl>"]

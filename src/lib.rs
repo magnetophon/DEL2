@@ -7,7 +7,7 @@ use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::simd::f32x4;
 use std::sync::{atomic::AtomicBool, Arc, Mutex};
-use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode, SvfMode};
+use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode};
 use triple_buffer::TripleBuffer;
 
 mod editor;
@@ -479,7 +479,7 @@ impl Plugin for Del2 {
             for tap in 0..self.delay_data.current_tap {
                 let delay_time = self.delay_data.delay_times_array[tap] as isize;
                 let read_index = self.delay_write_index as isize - delay_time;
-                let velocity = self.delay_data.velocity_array[tap];
+                // let velocity = self.delay_data.velocity_array[tap];
                 let recip_drive = 1.0 / self.filter_params[tap].clone().drive;
                 // Temporary buffers to hold the read values for processing
                 let mut temp_l = vec![0.0; block_len];
@@ -632,7 +632,7 @@ impl Vst3Plugin for Del2 {
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
-struct MyLadderMode(LadderMode);
+pub struct MyLadderMode(LadderMode);
 
 impl MyLadderMode {
     // Define the order of modes for interpolation
