@@ -151,7 +151,7 @@ impl TapGuiParams {
             })),
             // TODO: with_value_to_string should actually convert it to db
             drive: FloatParam::new(
-                "{name_prefix} Drive",
+                format!("{name_prefix} Drive"),
                 1.0,
                 FloatRange::Skewed {
                     min: 1.0, // This must never reach 0
@@ -163,7 +163,7 @@ impl TapGuiParams {
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2)),
 
-            slope: EnumParam::new("{name_prefix} Slope", LadderSlope::LP6),
+            slope: EnumParam::new(format!("{name_prefix} Slope"), LadderSlope::LP6),
         }
     }
 }

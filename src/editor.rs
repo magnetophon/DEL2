@@ -8,6 +8,8 @@ use std::sync::{Arc, Mutex};
 use crate::Del2Params;
 use crate::DelayDataOutput;
 
+const COLUMN_WIDTH: Units = Pixels(250.0);
+
 #[derive(Lens, Clone)]
 pub(crate) struct Data {
     pub(crate) params: Arc<Del2Params>,
@@ -18,7 +20,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (600, 220))
+    ViziaState::new(|| (900, 450))
 }
 
 pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -44,6 +46,55 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                 ParamSlider::new(cx, Data::params, |params| &params.time_out_seconds);
                 Label::new(cx, "debounce");
                 ParamSlider::new(cx, Data::params, |params| &params.debounce_tap_milliseconds);
+                Label::new(cx, "filters")
+                    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                    .font_weight(FontWeightKeyword::Thin)
+                    .font_size(20.0)
+                    .height(Pixels(50.0))
+                    .child_top(Stretch(1.0))
+                    .child_bottom(Pixels(0.0));
+
+                HStack::new(cx, |cx| {
+                    make_column(cx, "Bottom Velocity", |cx| {
+                        // We don't want to show the 'Upwards' prefix here, but it should still be in
+                        // the parameter name so the parameter list makes sense
+                        let velocity_bottom_params =
+                            Data::params.map(|p| p.taps.velocity_bottom.clone());
+                        GenericUi::new_custom(cx, velocity_bottom_params, |cx, param_ptr| {
+                            HStack::new(cx, |cx| {
+                                Label::new(
+                                    cx,
+                                    unsafe { param_ptr.name() }
+                                        .strip_prefix("Bottom Velocity ")
+                                        .expect("Expected parameter name prefix, this is a bug"),
+                                )
+                                .class("label");
+
+                                GenericUi::draw_widget(cx, velocity_bottom_params, param_ptr);
+                            })
+                            .class("row");
+                        });
+                    });
+
+                    make_column(cx, "Top Velocity", |cx| {
+                        let velocity_top_params = Data::params.map(|p| p.taps.velocity_top.clone());
+                        GenericUi::new_custom(cx, velocity_top_params, |cx, param_ptr| {
+                            HStack::new(cx, |cx| {
+                                Label::new(
+                                    cx,
+                                    unsafe { param_ptr.name() }
+                                        .strip_prefix("Top Velocity ")
+                                        .expect("Expected parameter name prefix, this is a bug"),
+                                )
+                                .class("label");
+
+                                GenericUi::draw_widget(cx, velocity_top_params, param_ptr);
+                            })
+                            .class("row");
+                        });
+                    });
+                })
+                .size(Auto);
             })
             // .row_between(Pixels(0.0))
             .child_left(Stretch(1.0))
@@ -170,4 +221,21 @@ impl View for DelayGraph {
             &vg::Paint::color(border_color).with_line_width(border_width),
         );
     }
+}
+
+fn make_column(cx: &mut Context, title: &str, contents: impl FnOnce(&mut Context)) {
+    VStack::new(cx, |cx| {
+        Label::new(cx, title)
+            .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+            .font_weight(FontWeightKeyword::Thin)
+            .font_size(23.0)
+            .left(Stretch(1.0))
+            // This should align nicely with the right edge of the slider
+            .right(Pixels(7.0))
+            .bottom(Pixels(-10.0));
+
+        contents(cx);
+    })
+    .width(COLUMN_WIDTH)
+    .height(Auto);
 }
