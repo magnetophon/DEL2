@@ -151,12 +151,14 @@ impl TapGuiParams {
                 1.0,
                 FloatRange::Skewed {
                     min: 1.0, // This must never reach 0
-                    max: 15.8490,
+                    // max: 15.8490, // 24 dB
+                    max: 251.188643, // 48 dB
                     factor: FloatRange::skew_factor(-1.2),
                 },
             )
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            .with_string_to_value(formatters::s2v_f32_gain_to_db())
             // not strictly needed, but the easy way out.  TODO:  fix
             .with_callback(Arc::new({
                 let should_update_filter = should_update_filter.clone();
@@ -443,10 +445,10 @@ impl Plugin for Del2 {
                     let top_cutoff = top_velocity.cutoff.value();
                     let cutoff = Del2::log_interpolate(bottom_cutoff, top_cutoff, velocity);
 
-                    let bottom_drive_db = Del2::lin_to_db(bottom_velocity.drive.value());
-                    let top_drive_db = Del2::lin_to_db(top_velocity.drive.value());
+                    let bottom_drive_db = util::gain_to_db(bottom_velocity.drive.value());
+                    let top_drive_db = util::gain_to_db(top_velocity.drive.value());
                     let drive_db = Del2::lerp(bottom_drive_db, top_drive_db, velocity);
-                    let drive = Del2::db_to_lin(drive_db);
+                    let drive = util::db_to_gain(drive_db);
 
                     let bottom_mode = bottom_velocity.mode.value();
                     let top_mode = top_velocity.mode.value();
@@ -602,14 +604,6 @@ impl Del2 {
     #[inline]
     fn log_interpolate(a: f32, b: f32, x: f32) -> f32 {
         a * (b / a).powf(x)
-    }
-    #[inline]
-    fn lin_to_db(linear: f32) -> f32 {
-        20.0 * linear.max(f32::MIN_POSITIVE).log10()
-    }
-    #[inline]
-    fn db_to_lin(db: f32) -> f32 {
-        10.0_f32.powf(db * 0.05)
     }
 }
 
