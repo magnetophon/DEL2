@@ -419,15 +419,6 @@ impl Plugin for Del2 {
             )
             .is_ok()
         {
-            println!(
-                "bottom cutoff: {:?}",
-                self.params.taps.velocity_bottom.cutoff.value()
-            );
-            println!(
-                "bottom res: {:?}",
-                self.params.taps.velocity_bottom.res.value()
-            );
-            println!("sample_rate: {:?}", self.sample_rate);
             for tap in 0..MAX_NR_TAPS {
                 unsafe {
                     let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
@@ -437,7 +428,7 @@ impl Plugin for Del2 {
                     let res = Del2::lerp(bottom_res, top_res, velocity);
                     let bottom_cutoff = self.params.taps.velocity_bottom.cutoff.value();
                     let top_cutoff = self.params.taps.velocity_top.cutoff.value();
-                    let cutoff = Del2::lerp(bottom_cutoff, top_cutoff, velocity);
+                    let cutoff = Del2::log_interpolate(bottom_cutoff, top_cutoff, velocity);
                     filter_params.set_sample_rate(self.sample_rate);
                     filter_params.set_resonance(res);
                     filter_params.set_frequency(cutoff);
@@ -580,9 +571,13 @@ impl Del2 {
             // println!("time out no_more_events");
         };
     }
-    #[inline(always)]
-    fn lerp(a: f32, b: f32, t: f32) -> f32 {
-        a + (b - a) * t
+    #[inline]
+    fn lerp(a: f32, b: f32, x: f32) -> f32 {
+        a + (b - a) * x
+    }
+    #[inline]
+    fn log_interpolate(a: f32, b: f32, x: f32) -> f32 {
+        a * (b / a).powf(x)
     }
 }
 
