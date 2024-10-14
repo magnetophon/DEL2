@@ -145,10 +145,9 @@ impl TapGuiParams {
             .with_smoother(SmoothingStyle::Linear(20.0))
             .with_value_to_string(formatters::v2s_f32_rounded(2))
             .with_callback(Arc::new({
-                let should_update_filter = should_update_filter;
+                let should_update_filter = should_update_filter.clone();
                 move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
             })),
-            // TODO: with_value_to_string should actually convert it to db
             drive: FloatParam::new(
                 format!("{name_prefix} Drive"),
                 1.0,
@@ -160,7 +159,12 @@ impl TapGuiParams {
             )
             .with_smoother(SmoothingStyle::Logarithmic(100.0))
             .with_unit(" dB")
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(2)),
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            // not strictly needed, but the easy way out.  TODO:  fix
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter;
+                move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
+            })),
 
             slope: EnumParam::new(format!("{name_prefix} Slope"), LadderSlope::LP6),
         }
@@ -357,6 +361,13 @@ impl Plugin for Del2 {
             .iter_mut()
             .for_each(|buffer| buffer.clear_set_len(self.delay_buffer_size as usize));
 
+        for tap in 0..MAX_NR_TAPS {
+            unsafe {
+                let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
+                filter_params.set_sample_rate(self.sample_rate);
+            };
+        }
+
         // Resize buffers and perform other potentially expensive initialization operations here.
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
@@ -419,19 +430,34 @@ impl Plugin for Del2 {
             )
             .is_ok()
         {
-            for tap in 0..MAX_NR_TAPS {
+            for tap in 0..self.delay_data.current_tap {
+                let velocity = self.delay_data.velocity_array[tap];
+                let velocity_params = &self.params.taps;
+
                 unsafe {
                     let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
-                    let velocity = self.delay_data.velocity_array[tap];
-                    let bottom_res = self.params.taps.velocity_bottom.res.value();
-                    let top_res = self.params.taps.velocity_top.res.value();
+
+                    // Cache repeated calculations
+                    let bottom_velocity = &velocity_params.velocity_bottom;
+                    let top_velocity = &velocity_params.velocity_top;
+
+                    let bottom_res = bottom_velocity.res.value();
+                    let top_res = top_velocity.res.value();
                     let res = Del2::lerp(bottom_res, top_res, velocity);
-                    let bottom_cutoff = self.params.taps.velocity_bottom.cutoff.value();
-                    let top_cutoff = self.params.taps.velocity_top.cutoff.value();
+
+                    let bottom_cutoff = bottom_velocity.cutoff.value();
+                    let top_cutoff = top_velocity.cutoff.value();
                     let cutoff = Del2::log_interpolate(bottom_cutoff, top_cutoff, velocity);
-                    filter_params.set_sample_rate(self.sample_rate);
+
+                    let bottom_drive_db = Del2::lin_to_db(bottom_velocity.drive.value());
+                    let top_drive_db = Del2::lin_to_db(top_velocity.drive.value());
+                    let drive_db = Del2::lerp(bottom_drive_db, top_drive_db, velocity);
+                    let drive = Del2::db_to_lin(drive_db);
+
+                    // Updating filter parameters
                     filter_params.set_resonance(res);
                     filter_params.set_frequency(cutoff);
+                    filter_params.drive = drive;
                 }
             }
         };
@@ -455,6 +481,7 @@ impl Plugin for Del2 {
                 let read_index = self.delay_write_index as isize - delay_time;
                 let velocity = self.delay_data.velocity_array[tap];
                 let velocity_squared = f32::powi(velocity, 2);
+                let recip_drive = 1.0 / self.filter_params[tap].clone().drive;
                 // Temporary buffers to hold the read values for processing
                 let mut temp_l = vec![0.0; block_len];
                 let mut temp_r = vec![0.0; block_len];
@@ -468,8 +495,8 @@ impl Plugin for Del2 {
                     let frame_out = *processed.as_array();
                     // out_l[i] += frame_out[0] * velocity_squared;
                     // out_r[i] += frame_out[1] * velocity_squared;
-                    out_l[i] += frame_out[0];
-                    out_r[i] += frame_out[1];
+                    out_l[i] += frame_out[0] * recip_drive;
+                    out_r[i] += frame_out[1] * recip_drive;
                 }
             }
 
@@ -578,6 +605,14 @@ impl Del2 {
     #[inline]
     fn log_interpolate(a: f32, b: f32, x: f32) -> f32 {
         a * (b / a).powf(x)
+    }
+    #[inline]
+    fn lin_to_db(linear: f32) -> f32 {
+        20.0 * linear.max(f32::MIN_POSITIVE).log10()
+    }
+    #[inline]
+    fn db_to_lin(db: f32) -> f32 {
+        10.0_f32.powf(db * 0.05)
     }
 }
 
