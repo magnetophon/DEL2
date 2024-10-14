@@ -111,8 +111,8 @@ pub struct TapGuiParams {
     pub res: FloatParam,
     #[id = "drive"]
     pub drive: FloatParam,
-    #[id = "slope"]
-    pub slope: EnumParam<MyLadderMode>,
+    #[id = "mode"]
+    pub mode: EnumParam<MyLadderMode>,
 }
 
 impl TapGuiParams {
@@ -163,7 +163,7 @@ impl TapGuiParams {
                 move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
             })),
 
-            slope: EnumParam::new(format!("{name_prefix} Slope"), MyLadderMode::lp6())
+            mode: EnumParam::new(format!("{name_prefix} Mode"), MyLadderMode::lp6())
                 // not strictly needed, but the easy way out.  TODO:  fix
                 .with_callback(Arc::new({
                     let should_update_filter = should_update_filter.clone();
@@ -448,16 +448,16 @@ impl Plugin for Del2 {
                     let drive_db = Del2::lerp(bottom_drive_db, top_drive_db, velocity);
                     let drive = Del2::db_to_lin(drive_db);
 
-                    let bottom_slope = bottom_velocity.slope.value();
-                    let top_slope = top_velocity.slope.value();
-                    let slope = MyLadderMode::lerp(bottom_slope, top_slope, velocity);
-                    // println!("slope {}: {}", tap, slope);
+                    let bottom_mode = bottom_velocity.mode.value();
+                    let top_mode = top_velocity.mode.value();
+                    let mode = MyLadderMode::lerp(bottom_mode, top_mode, velocity);
+                    // println!("mode {}: {}", tap, mode);
                     // Updating filter parameters
                     filter_params.set_resonance(res);
                     filter_params.set_frequency(cutoff);
                     filter_params.drive = drive;
-                    filter_params.ladder_mode = slope;
-                    self.ladders[tap].set_mix(slope);
+                    filter_params.ladder_mode = mode;
+                    self.ladders[tap].set_mix(mode);
                 }
             }
         };
@@ -480,7 +480,6 @@ impl Plugin for Del2 {
                 let delay_time = self.delay_data.delay_times_array[tap] as isize;
                 let read_index = self.delay_write_index as isize - delay_time;
                 let velocity = self.delay_data.velocity_array[tap];
-                let velocity_squared = f32::powi(velocity, 2);
                 let recip_drive = 1.0 / self.filter_params[tap].clone().drive;
                 // Temporary buffers to hold the read values for processing
                 let mut temp_l = vec![0.0; block_len];
@@ -493,8 +492,6 @@ impl Plugin for Del2 {
                     // TODO: dc-filter, upsample, downsample
                     let processed = self.ladders[tap].tick_newton(frame);
                     let frame_out = *processed.as_array();
-                    // out_l[i] += frame_out[0] * velocity_squared;
-                    // out_r[i] += frame_out[1] * velocity_squared;
                     out_l[i] += frame_out[0] * recip_drive;
                     out_r[i] += frame_out[1] * recip_drive;
                 }
@@ -638,17 +635,9 @@ impl Vst3Plugin for Del2 {
 struct MyLadderMode(LadderMode);
 
 impl MyLadderMode {
-    fn from_ladder_mode(mode: LadderMode) -> Self {
-        MyLadderMode(mode)
-    }
-
-    // Optionally, add convenience functions if needed
-    fn lp6() -> Self {
-        MyLadderMode(LadderMode::LP6)
-    }
-    fn lerp(start: MyLadderMode, end: MyLadderMode, t: f32) -> LadderMode {
-        // Define the order of modes for interpolation
-        let sequence = [
+    // Define the order of modes for interpolation
+    fn sequence() -> &'static [LadderMode] {
+        &[
             LadderMode::LP6,
             LadderMode::LP12,
             LadderMode::LP18,
@@ -660,42 +649,41 @@ impl MyLadderMode {
             LadderMode::HP18,
             LadderMode::HP24,
             LadderMode::N12,
-        ];
+        ]
+    }
 
-        // Extract the underlying LadderMode values
-        let start_mode = start.0;
-        let end_mode = end.0;
+    fn index(&self) -> Option<usize> {
+        Self::sequence().iter().position(|&mode| mode == self.0)
+    }
 
-        // Ensure t is clamped between 0 and 1
+    fn lerp(start: MyLadderMode, end: MyLadderMode, t: f32) -> LadderMode {
+        let start_index = start.index().unwrap_or(0);
+        let end_index = end.index().unwrap_or(Self::sequence().len() - 1);
+
         let t = t.max(0.0).min(1.0);
 
-        // Determine start and end indices
-        let start_index = sequence.iter().position(|&x| x == start_mode).unwrap_or(0);
-        let end_index = sequence
-            .iter()
-            .position(|&x| x == end_mode)
-            .unwrap_or(sequence.len() - 1);
-
-        // Calculate interpolated index
         let interpolated_index =
             (start_index as f32 + t * (end_index as f32 - start_index as f32)).round() as usize;
 
-        // Ensure the index falls within valid bounds
-        sequence[interpolated_index.min(sequence.len() - 1)]
+        Self::from_index(interpolated_index).0
+    }
+
+    fn lp6() -> Self {
+        MyLadderMode(LadderMode::LP6)
     }
 }
 
 impl Enum for MyLadderMode {
     fn variants() -> &'static [&'static str] {
         &[
-            "LP6", "LP12", "LP18", "LP24", "HP6", "HP12", "HP18", "HP24", "BP12", "BP24", "N12",
+            "LP6", "LP12", "LP18", "LP24", "BP12", "BP24", "HP6", "HP12", "HP18", "HP24", "N12",
         ]
     }
 
     fn ids() -> Option<&'static [&'static str]> {
         Some(&[
-            "lp6_id", "lp12_id", "lp18_id", "lp24_id", "hp6_id", "hp12_id", "hp18_id", "hp24_id",
-            "bp12_id", "bp24_id", "n12_id",
+            "lp6_id", "lp12_id", "lp18_id", "lp24_id", "bp12_id", "bp24_id", "hp6_id", "hp12_id",
+            "hp18_id", "hp24_id", "n12_id",
         ])
     }
 
@@ -705,12 +693,12 @@ impl Enum for MyLadderMode {
             LadderMode::LP12 => 1,
             LadderMode::LP18 => 2,
             LadderMode::LP24 => 3,
-            LadderMode::HP6 => 4,
-            LadderMode::HP12 => 5,
-            LadderMode::HP18 => 6,
-            LadderMode::HP24 => 7,
-            LadderMode::BP12 => 8,
-            LadderMode::BP24 => 9,
+            LadderMode::BP12 => 4,
+            LadderMode::BP24 => 5,
+            LadderMode::HP6 => 6,
+            LadderMode::HP12 => 7,
+            LadderMode::HP18 => 8,
+            LadderMode::HP24 => 9,
             LadderMode::N12 => 10,
         }
     }
@@ -721,12 +709,12 @@ impl Enum for MyLadderMode {
             1 => LadderMode::LP12,
             2 => LadderMode::LP18,
             3 => LadderMode::LP24,
-            4 => LadderMode::HP6,
-            5 => LadderMode::HP12,
-            6 => LadderMode::HP18,
-            7 => LadderMode::HP24,
-            8 => LadderMode::BP12,
-            9 => LadderMode::BP24,
+            4 => LadderMode::BP12,
+            5 => LadderMode::BP24,
+            6 => LadderMode::HP6,
+            7 => LadderMode::HP12,
+            8 => LadderMode::HP18,
+            9 => LadderMode::HP24,
             10 => LadderMode::N12,
             _ => panic!("Invalid index for LadderMode"),
         })
