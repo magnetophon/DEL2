@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 #![feature(portable_simd)]
 #![feature(get_mut_unchecked)]
 use array_init::array_init;
