@@ -377,35 +377,6 @@ impl Plugin for Del2 {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        if self
-            .should_update_filter
-            .compare_exchange(
-                true,
-                false,
-                std::sync::atomic::Ordering::Acquire,
-                std::sync::atomic::Ordering::Relaxed,
-            )
-            .is_ok()
-        {
-            println!(
-                "bottom cutoff: {:?}",
-                self.params.taps.velocity_bottom.cutoff.value()
-            );
-            println!(
-                "bottom res: {:?}",
-                self.params.taps.velocity_bottom.res.value()
-            );
-            println!("sample_rate: {:?}", self.sample_rate);
-            for i in 0..MAX_NR_TAPS {
-                unsafe {
-                    let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[i]);
-                    filter_params.set_sample_rate(self.sample_rate);
-                    filter_params.set_resonance(self.params.taps.velocity_bottom.res.value());
-                    filter_params.set_frequency(self.params.taps.velocity_bottom.cutoff.value());
-                    // .set_frequency(20.0);
-                }
-            }
-        };
         // TODO: put behind a should_update with a callback?
         self.delay_data.time_out_samples =
             (self.sample_rate as f64 * self.params.time_out_seconds.value() as f64) as u32;
@@ -438,6 +409,42 @@ impl Plugin for Del2 {
         };
         self.delay_data_input.write(self.delay_data.clone());
 
+        if self
+            .should_update_filter
+            .compare_exchange(
+                true,
+                false,
+                std::sync::atomic::Ordering::Acquire,
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .is_ok()
+        {
+            println!(
+                "bottom cutoff: {:?}",
+                self.params.taps.velocity_bottom.cutoff.value()
+            );
+            println!(
+                "bottom res: {:?}",
+                self.params.taps.velocity_bottom.res.value()
+            );
+            println!("sample_rate: {:?}", self.sample_rate);
+            for tap in 0..MAX_NR_TAPS {
+                unsafe {
+                    let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
+                    let velocity = self.delay_data.velocity_array[tap];
+                    let bottom_res = self.params.taps.velocity_bottom.res.value();
+                    let top_res = self.params.taps.velocity_top.res.value();
+                    let res = Del2::lerp(bottom_res, top_res, velocity);
+                    let bottom_cutoff = self.params.taps.velocity_bottom.cutoff.value();
+                    let top_cutoff = self.params.taps.velocity_top.cutoff.value();
+                    let cutoff = Del2::lerp(bottom_cutoff, top_cutoff, velocity);
+                    filter_params.set_sample_rate(self.sample_rate);
+                    filter_params.set_resonance(res);
+                    filter_params.set_frequency(cutoff);
+                }
+            }
+        };
+
         for (_, block) in buffer.iter_blocks(buffer_samples) {
             let block_len = block.samples();
             let mut block_channels = block.into_iter();
@@ -468,10 +475,10 @@ impl Plugin for Del2 {
                     // TODO: dc-filter, upsample, downsample
                     let processed = self.ladders[tap].tick_newton(frame);
                     let frame_out = *processed.as_array();
-                    out_l[i] += frame_out[0] * velocity_squared;
-                    out_r[i] += frame_out[1] * velocity_squared;
-                    // out_l[i] += temp_l[i] * velocity_squared;
-                    // out_r[i] += temp_r[i] * velocity_squared;
+                    // out_l[i] += frame_out[0] * velocity_squared;
+                    // out_r[i] += frame_out[1] * velocity_squared;
+                    out_l[i] += frame_out[0];
+                    out_r[i] += frame_out[1];
                 }
             }
 
@@ -572,6 +579,10 @@ impl Del2 {
             self.samples_since_last_event = 0;
             // println!("time out no_more_events");
         };
+    }
+    #[inline(always)]
+    fn lerp(a: f32, b: f32, t: f32) -> f32 {
+        a + (b - a) * t
     }
 }
 
