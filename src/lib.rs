@@ -112,7 +112,7 @@ pub struct TapGuiParams {
     #[id = "drive"]
     pub drive: FloatParam,
     #[id = "slope"]
-    pub slope: EnumParam<LadderSlope>,
+    pub slope: EnumParam<MyLadderMode>,
 }
 
 impl TapGuiParams {
@@ -130,7 +130,6 @@ impl TapGuiParams {
                     factor: FloatRange::skew_factor(-2.5),
                 },
             )
-            .with_smoother(SmoothingStyle::Logarithmic(20.0))
             .with_unit(" Hz")
             .with_value_to_string(formatters::v2s_f32_rounded(0))
             .with_callback(Arc::new({
@@ -142,7 +141,6 @@ impl TapGuiParams {
                 0.5,
                 FloatRange::Linear { min: 0., max: 1. },
             )
-            .with_smoother(SmoothingStyle::Linear(20.0))
             .with_value_to_string(formatters::v2s_f32_rounded(2))
             .with_callback(Arc::new({
                 let should_update_filter = should_update_filter.clone();
@@ -157,26 +155,22 @@ impl TapGuiParams {
                     factor: FloatRange::skew_factor(-1.2),
                 },
             )
-            .with_smoother(SmoothingStyle::Logarithmic(100.0))
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             // not strictly needed, but the easy way out.  TODO:  fix
             .with_callback(Arc::new({
-                let should_update_filter = should_update_filter;
+                let should_update_filter = should_update_filter.clone();
                 move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
             })),
 
-            slope: EnumParam::new(format!("{name_prefix} Slope"), LadderSlope::LP6),
+            slope: EnumParam::new(format!("{name_prefix} Slope"), MyLadderMode::lp6())
+                // not strictly needed, but the easy way out.  TODO:  fix
+                .with_callback(Arc::new({
+                    let should_update_filter = should_update_filter.clone();
+                    move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
+                })),
         }
     }
-}
-
-#[derive(Enum, Debug, PartialEq, Eq)]
-pub enum LadderSlope {
-    LP6,
-    LP12,
-    LP18,
-    LP24,
 }
 
 #[derive(PartialEq)]
@@ -454,10 +448,16 @@ impl Plugin for Del2 {
                     let drive_db = Del2::lerp(bottom_drive_db, top_drive_db, velocity);
                     let drive = Del2::db_to_lin(drive_db);
 
+                    let bottom_slope = bottom_velocity.slope.value();
+                    let top_slope = top_velocity.slope.value();
+                    let slope = MyLadderMode::lerp(bottom_slope, top_slope, velocity);
+                    // println!("slope {}: {}", tap, slope);
                     // Updating filter parameters
                     filter_params.set_resonance(res);
                     filter_params.set_frequency(cutoff);
                     filter_params.drive = drive;
+                    filter_params.ladder_mode = slope;
+                    self.ladders[tap].set_mix(slope);
                 }
             }
         };
@@ -632,6 +632,105 @@ impl Vst3Plugin for Del2 {
     // And also don't forget to change these categories
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
         &[Vst3SubCategory::Fx, Vst3SubCategory::Dynamics];
+}
+
+#[derive(PartialEq, Debug, Clone, Copy)]
+struct MyLadderMode(LadderMode);
+
+impl MyLadderMode {
+    fn from_ladder_mode(mode: LadderMode) -> Self {
+        MyLadderMode(mode)
+    }
+
+    // Optionally, add convenience functions if needed
+    fn lp6() -> Self {
+        MyLadderMode(LadderMode::LP6)
+    }
+    fn lerp(start: MyLadderMode, end: MyLadderMode, t: f32) -> LadderMode {
+        // Define the order of modes for interpolation
+        let sequence = [
+            LadderMode::LP6,
+            LadderMode::LP12,
+            LadderMode::LP18,
+            LadderMode::LP24,
+            LadderMode::BP12,
+            LadderMode::BP24,
+            LadderMode::HP6,
+            LadderMode::HP12,
+            LadderMode::HP18,
+            LadderMode::HP24,
+            LadderMode::N12,
+        ];
+
+        // Extract the underlying LadderMode values
+        let start_mode = start.0;
+        let end_mode = end.0;
+
+        // Ensure t is clamped between 0 and 1
+        let t = t.max(0.0).min(1.0);
+
+        // Determine start and end indices
+        let start_index = sequence.iter().position(|&x| x == start_mode).unwrap_or(0);
+        let end_index = sequence
+            .iter()
+            .position(|&x| x == end_mode)
+            .unwrap_or(sequence.len() - 1);
+
+        // Calculate interpolated index
+        let interpolated_index =
+            (start_index as f32 + t * (end_index as f32 - start_index as f32)).round() as usize;
+
+        // Ensure the index falls within valid bounds
+        sequence[interpolated_index.min(sequence.len() - 1)]
+    }
+}
+
+impl Enum for MyLadderMode {
+    fn variants() -> &'static [&'static str] {
+        &[
+            "LP6", "LP12", "LP18", "LP24", "HP6", "HP12", "HP18", "HP24", "BP12", "BP24", "N12",
+        ]
+    }
+
+    fn ids() -> Option<&'static [&'static str]> {
+        Some(&[
+            "lp6_id", "lp12_id", "lp18_id", "lp24_id", "hp6_id", "hp12_id", "hp18_id", "hp24_id",
+            "bp12_id", "bp24_id", "n12_id",
+        ])
+    }
+
+    fn to_index(self) -> usize {
+        match self.0 {
+            LadderMode::LP6 => 0,
+            LadderMode::LP12 => 1,
+            LadderMode::LP18 => 2,
+            LadderMode::LP24 => 3,
+            LadderMode::HP6 => 4,
+            LadderMode::HP12 => 5,
+            LadderMode::HP18 => 6,
+            LadderMode::HP24 => 7,
+            LadderMode::BP12 => 8,
+            LadderMode::BP24 => 9,
+            LadderMode::N12 => 10,
+        }
+    }
+
+    fn from_index(index: usize) -> Self {
+        MyLadderMode(match index {
+            0 => LadderMode::LP6,
+            1 => LadderMode::LP12,
+            2 => LadderMode::LP18,
+            3 => LadderMode::LP24,
+            4 => LadderMode::HP6,
+            5 => LadderMode::HP12,
+            6 => LadderMode::HP18,
+            7 => LadderMode::HP24,
+            8 => LadderMode::BP12,
+            9 => LadderMode::BP24,
+            10 => LadderMode::N12,
+            _ => panic!("Invalid index for LadderMode"),
+        })
+    }
 }
 
 nih_export_clap!(Del2);
