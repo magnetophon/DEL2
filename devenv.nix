@@ -29,9 +29,9 @@
   packages = with pkgs; [
     git
     # lldb
-    # cargo
-    # rustc
-    # rustfmt
+    cargo
+    rustc
+    rustfmt
     # rust-analyzer
     # clippy
     # cargo-watch
