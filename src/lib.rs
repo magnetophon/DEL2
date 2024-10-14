@@ -1,4 +1,5 @@
 #![feature(portable_simd)]
+#![feature(get_mut_unchecked)]
 use array_init::array_init;
 use bit_mask_ring_buf::BMRingBuf;
 use nih_plug::prelude::*;
@@ -23,8 +24,8 @@ const VELOCITY_TOP_NAME_PREFIX: &str = "Top Velocity";
 
 struct Del2 {
     params: Arc<Del2Params>,
-    filter_params: [Arc<Mutex<FilterParams>>; MAX_NR_TAPS],
-    // filter_params: [Arc<FilterParams>; MAX_NR_TAPS],
+    // filter_params: [Arc<Mutex<FilterParams>>; MAX_NR_TAPS],
+    filter_params: [Arc<FilterParams>; MAX_NR_TAPS],
     ladders: [LadderFilter; MAX_NR_TAPS],
 
     delay_buffer: [BMRingBuf<f32>; 2],
@@ -187,13 +188,13 @@ impl Default for Del2 {
         let initial_delay_data: DelayData = DelayData::default();
         let (delay_data_input, delay_data_output) = TripleBuffer::new(&initial_delay_data).split();
 
-        let filter_params = array_init(|_| Arc::new(Mutex::new(FilterParams::new())));
-        // let filter_params = array_init(|_| Arc::new(FilterParams::new()));
+        // let filter_params = array_init(|_| Arc::new(Mutex::new(FilterParams::new())));
+        let filter_params = array_init(|_| Arc::new(FilterParams::new()));
         let should_update_filter = Arc::new(std::sync::atomic::AtomicBool::new(true));
         let ladders: [LadderFilter; MAX_NR_TAPS] = array_init(|i| {
-            let param_clone = filter_params[i].lock().unwrap().clone();
-            LadderFilter::new(Arc::new(param_clone))
-            // LadderFilter::new(filter_params[i].clone())
+            // let param_clone = filter_params[i].lock().unwrap().clone();
+            // LadderFilter::new(Arc::new(param_clone))
+            LadderFilter::new(filter_params[i].clone())
         });
         Self {
             params: Arc::new(Del2Params::default()),
@@ -401,13 +402,17 @@ impl Plugin for Del2 {
             );
             println!("sample_rate: {:?}", self.sample_rate);
             for i in 0..MAX_NR_TAPS {
-                let mut filter_params = self.filter_params[i].lock().unwrap();
-                // let filter_params = &self.filter_params[i];
-                filter_params.set_sample_rate(self.sample_rate);
-                filter_params.set_resonance(self.params.taps.velocity_bottom.res.value());
-                filter_params
-                    // .set_frequency(self.params.taps.velocity_bottom.cutoff.value());
-                    .set_frequency(20.0);
+                // let mut filter_params = self.filter_params[i].lock().unwrap();
+
+                unsafe {
+                    let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[i]);
+                    // let filter_params = &self.filter_params[i];
+                    filter_params.set_sample_rate(self.sample_rate);
+                    filter_params.set_resonance(self.params.taps.velocity_bottom.res.value());
+                    filter_params
+                        // .set_frequency(self.params.taps.velocity_bottom.cutoff.value());
+                        .set_frequency(20.0);
+                }
             }
         };
         // TODO: put behind a should_update with a callback?
