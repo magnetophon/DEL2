@@ -34,8 +34,8 @@ struct Del2 {
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
     // delay read buffers
-    temp_l: [f32; MAX_SOUNDCARD_BUFFER_SIZE],
-    temp_r: [f32; MAX_SOUNDCARD_BUFFER_SIZE],
+    temp_l: Vec<f32>,
+    temp_r: Vec<f32>,
 
     delay_data: DelayData,
     delay_data_input: DelayDataInput,
@@ -208,8 +208,8 @@ impl Default for Del2 {
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
-            temp_l: [0.0; MAX_SOUNDCARD_BUFFER_SIZE],
-            temp_r: [0.0; MAX_SOUNDCARD_BUFFER_SIZE],
+            temp_l: vec![0.0; MAX_SOUNDCARD_BUFFER_SIZE],
+            temp_r: vec![0.0; MAX_SOUNDCARD_BUFFER_SIZE],
 
             delay_data: initial_delay_data,
             delay_data_input,
@@ -348,7 +348,15 @@ impl Plugin for Del2 {
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
+        // Resize buffers and perform other potentially expensive initialization operations here.
+        // The `reset()` function is always called right after this function. You can remove this
+        // function if you do not need it.
         self.sample_rate = buffer_config.sample_rate;
+        // Either we resize here, or in the audio thread
+        // If we don't, we are slower.
+        let max_buffer_size = buffer_config.max_buffer_size as usize;
+        self.temp_l.resize(max_buffer_size, 0.0);
+        self.temp_r.resize(max_buffer_size, 0.0);
 
         // TODO: check for correctness in all cases!
         // Calculate delay buffer size based on both min and max buffer sizes
@@ -376,9 +384,6 @@ impl Plugin for Del2 {
             };
         }
 
-        // Resize buffers and perform other potentially expensive initialization operations here.
-        // The `reset()` function is always called right after this function. You can remove this
-        // function if you do not need it.
         true
     }
 
@@ -477,6 +482,10 @@ impl Plugin for Del2 {
 
         for (_, block) in buffer.iter_blocks(buffer_samples) {
             let block_len = block.samples();
+            // Either we resize here, or in the initialization fn
+            // If we don't, we are slower.
+            // self.temp_l.resize(block_len, 0.0);
+            // self.temp_r.resize(block_len, 0.0);
             let mut block_channels = block.into_iter();
 
             let out_l = block_channels.next().unwrap();
