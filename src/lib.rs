@@ -9,6 +9,7 @@ use nih_plug_vizia::ViziaState;
 use std::simd::f32x4;
 use std::sync::{atomic::AtomicBool, Arc, Mutex};
 use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode};
+use synfx_dsp::tanh_levien;
 use triple_buffer::TripleBuffer;
 
 mod editor;
@@ -29,7 +30,7 @@ const MAX_SOUNDCARD_BUFFER_SIZE: usize = 32768;
 struct Del2 {
     params: Arc<Del2Params>,
     filter_params: [Arc<FilterParams>; MAX_NR_TAPS],
-    ladders: [LadderFilter; MAX_NR_TAPS],
+    ladders: [MyFilterWrapper; MAX_NR_TAPS],
 
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
@@ -200,8 +201,13 @@ impl Default for Del2 {
 
         let filter_params = array_init(|_| Arc::new(FilterParams::new()));
         let should_update_filter = Arc::new(AtomicBool::new(false));
-        let ladders: [LadderFilter; MAX_NR_TAPS] =
-            array_init(|i| LadderFilter::new(filter_params[i].clone()));
+        // let ladders: [LadderFilter; MAX_NR_TAPS] =
+        // array_init(|i| LadderFilter::new(filter_params[i].clone()));
+        let ladders: [MyFilterWrapper; MAX_NR_TAPS] = array_init(|i| {
+            // Construct the LadderFilter and wrap it with MyFilterWrapper
+            let ladder_filter = LadderFilter::new(filter_params[i].clone());
+            MyFilterWrapper::new(ladder_filter)
+        });
         Self {
             params: Arc::new(Del2Params::new(should_update_filter.clone())),
             filter_params,
@@ -389,7 +395,7 @@ impl Plugin for Del2 {
 
     fn reset(&mut self) {
         for i in 0..MAX_NR_TAPS {
-            self.ladders[i].s = [f32x4::splat(0.); 4];
+            self.ladders[i].inner.s = [f32x4::splat(0.); 4];
         }
         // Reset buffers and envelopes here. This can be called from the audio thread and may not
         // allocate. You can remove this function if you do not need it.
@@ -581,7 +587,7 @@ impl Del2 {
             filter_params.set_frequency(cutoff);
             filter_params.drive = drive;
             filter_params.ladder_mode = mode;
-            self.ladders[tap].set_mix(mode);
+            self.ladders[tap].inner.set_mix(mode);
         }
     }
 
@@ -666,7 +672,7 @@ impl Del2 {
             frame.as_mut_array()[3] *= pre_filter_gain2;
 
             // Process the frame through the filter
-            let processed = self.ladders[tap].tick_newton(frame);
+            let processed = self.ladders[tap].tick_newton_custom(frame);
             let mut frame_out = *processed.as_array();
 
             // Apply the compensation post-filter by adjusting it using the post-filter gain
@@ -847,6 +853,113 @@ impl Enum for MyLadderMode {
             10 => LadderMode::N12,
             _ => panic!("Invalid index for LadderMode"),
         })
+    }
+}
+
+struct MyFilterWrapper {
+    inner: LadderFilter,
+}
+impl MyFilterWrapper {
+    pub fn new(inner: LadderFilter) -> Self {
+        MyFilterWrapper { inner }
+    }
+
+    /// performs a complete filter process (newton-raphson method)
+    pub fn tick_newton_custom(&mut self, input: f32x4) -> f32x4 {
+        // perform filter process
+        let out = self.run_filter_newton_custom(input * f32x4::splat(self.inner.params.drive));
+        // update ic1eq and ic2eq for next sample
+        self.update_state();
+        out
+    }
+
+    // Override the specific function with the new logic
+    fn run_filter_newton_custom(&mut self, input: f32x4) -> f32x4 {
+        //d// println!(
+        //d//     "sr={} cutoff={}, res={}, drive={}",
+        //d//     self.params.sample_rate, self.params.cutoff, self.params.res, self.params.drive
+        //d// );
+        // ---------- setup ----------
+        // load in g and k from parameters
+        let g = f32x4::splat(self.inner.params.g);
+        let k = f32x4::splat(self.inner.params.k_ladder);
+        //d// println!("input={:?} G={:?}, K={:?}", input.as_array(), g.as_array(), k.as_array());
+        // a[n] is the fixed-pivot approximation for whatever is being processed nonlinearly
+        let mut v_est: [f32x4; 4];
+        let mut temp: [f32x4; 4] = [f32x4::splat(0.); 4];
+
+        // use state as estimate
+        v_est = [
+            self.inner.s[0],
+            self.inner.s[1],
+            self.inner.s[2],
+            self.inner.s[3],
+        ];
+
+        let mut tanh_input = crate::tanh_levien(input - k * v_est[3]);
+        let mut tanh_y1_est = crate::tanh_levien(v_est[0]);
+        let mut tanh_y2_est = crate::tanh_levien(v_est[1]);
+        let mut tanh_y3_est = crate::tanh_levien(v_est[2]);
+        let mut tanh_y4_est = crate::tanh_levien(v_est[3]);
+        let mut residue = [
+            g * (tanh_input - tanh_y1_est) + self.inner.s[0] - v_est[0],
+            g * (tanh_y1_est - tanh_y2_est) + self.inner.s[1] - v_est[1],
+            g * (tanh_y2_est - tanh_y3_est) + self.inner.s[2] - v_est[2],
+            g * (tanh_y3_est - tanh_y4_est) + self.inner.s[3] - v_est[3],
+        ];
+        // let max_error = 0.00001;
+        let max_error = f32x4::splat(0.00001);
+
+        // f32x4.lt(max_error) returns a mask.
+        while residue[0].abs().simd_gt(max_error).any()
+            || residue[1].abs().simd_gt(max_error).any()
+            || residue[2].abs().simd_gt(max_error).any()
+            || residue[3].abs().simd_gt(max_error).any()
+        // && n_iterations < 9
+        {
+            let one = f32x4::splat(1.);
+            // jacobian matrix
+            let j10 = g * (one - tanh_y1_est * tanh_y1_est);
+            let j00 = -j10 - one;
+            let j03 = -g * k * (one - tanh_input * tanh_input);
+            let j21 = g * (one - tanh_y2_est * tanh_y2_est);
+            let j11 = -j21 - one;
+            let j32 = g * (one - tanh_y3_est * tanh_y3_est);
+            let j22 = -j32 - one;
+            let j33 = -g * (one - tanh_y4_est * tanh_y4_est) - one;
+
+            temp[0] = (((j22 * residue[3] - j32 * residue[2]) * j11
+                + j21 * j32 * (-j10 * v_est[0] + residue[1]))
+                * j03
+                + j11 * j22 * j33 * (j00 * v_est[0] - residue[0]))
+                / (j00 * j11 * j22 * j33 - j03 * j10 * j21 * j32);
+
+            temp[1] = (j10 * v_est[0] - j10 * temp[0] + j11 * v_est[1] - residue[1]) / (j11);
+            temp[2] = (j21 * v_est[1] - j21 * temp[1] + j22 * v_est[2] - residue[2]) / (j22);
+            temp[3] = (j32 * v_est[2] - j32 * temp[2] + j33 * v_est[3] - residue[3]) / (j33);
+
+            v_est = temp;
+            tanh_input = crate::tanh_levien(input - k * v_est[3]);
+            tanh_y1_est = crate::tanh_levien(v_est[0]);
+            tanh_y2_est = crate::tanh_levien(v_est[1]);
+            tanh_y3_est = crate::tanh_levien(v_est[2]);
+            tanh_y4_est = crate::tanh_levien(v_est[3]);
+
+            residue = [
+                g * (tanh_input - tanh_y1_est) + self.inner.s[0] - v_est[0],
+                g * (tanh_y1_est - tanh_y2_est) + self.inner.s[1] - v_est[1],
+                g * (tanh_y2_est - tanh_y3_est) + self.inner.s[2] - v_est[2],
+                g * (tanh_y3_est - tanh_y4_est) + self.inner.s[3] - v_est[3],
+            ];
+            // n_iterations += 1;
+        }
+        self.inner.vout = v_est;
+        self.inner.pole_mix(input - k * self.inner.vout[3])
+    }
+
+    // Delegation of other methods as needed
+    pub fn update_state(&self) {
+        self.inner.update_state();
     }
 }
 
