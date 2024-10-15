@@ -63,7 +63,6 @@ pub type DelayDataInput = triple_buffer::Input<DelayData>;
 pub type DelayDataOutput = triple_buffer::Output<DelayData>;
 
 impl Data for DelayData {
-    // #[inline(always)]
     fn same(&self, other: &Self) -> bool {
         self.velocity_array == other.velocity_array
             && self.delay_times_array == other.delay_times_array
@@ -401,121 +400,43 @@ impl Plugin for Del2 {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        self.update_timing_parameters();
+
+        self.process_midi_events(context);
+        self.prepare_for_delay(buffer.samples());
+
+        if self.should_update_filter() {
+            for tap in 0..self.delay_data.current_tap {
+                self.update_filter(tap);
+            }
+        }
+
+        self.process_audio_blocks(buffer);
+        ProcessStatus::Normal
+    }
+}
+
+impl Del2 {
+    // #[inline]
+    fn update_timing_parameters(&mut self) {
         self.delay_data.time_out_samples =
             (self.sample_rate as f64 * self.params.time_out_seconds.value() as f64) as u32;
         self.debounce_tap_samples = (self.sample_rate as f64
             * self.params.debounce_tap_milliseconds.value() as f64
             * 0.001) as u32;
-        // process midi
-        let mut next_event = context.next_event();
-        // process midi events
-        while let Some(event) = next_event {
+    }
+
+    fn process_midi_events(&mut self, context: &mut impl ProcessContext<Self>) {
+        while let Some(event) = context.next_event() {
             if let NoteEvent::NoteOn {
                 timing, velocity, ..
             } = event
             {
                 self.note_on(timing, velocity);
             }
-            next_event = context.next_event();
         }
-
-        // the actual delay
-        let buffer_samples = buffer.samples();
-        self.no_more_events(buffer_samples as u32);
-
-        if self.delay_data.current_tap > 0 {
-            self.delay_data.current_time = self.delay_data.delay_times_array
-                [self.delay_data.current_tap - 1]
-                + self.samples_since_last_event;
-        } else {
-            self.delay_data.current_time = self.samples_since_last_event;
-        };
-        self.delay_data_input.write(self.delay_data.clone());
-
-        if self
-            .should_update_filter
-            .compare_exchange(
-                true,
-                false,
-                std::sync::atomic::Ordering::Acquire,
-                std::sync::atomic::Ordering::Relaxed,
-            )
-            .is_ok()
-        {
-            for tap in 0..self.delay_data.current_tap {
-                self.update_filter(tap);
-            }
-        };
-
-        for (_, block) in buffer.iter_blocks(buffer_samples) {
-            let block_len = block.samples();
-            // Either we resize here, or in the initialization fn
-            // If we don't, we are slower.
-            // self.temp_l.resize(block_len, 0.0);
-            // self.temp_r.resize(block_len, 0.0);
-            let mut block_channels = block.into_iter();
-
-            let out_l = block_channels.next().unwrap();
-            let out_r = block_channels.next().unwrap();
-
-            self.delay_buffer[0].write_latest(out_l, self.delay_write_index as isize);
-            self.delay_buffer[1].write_latest(out_r, self.delay_write_index as isize);
-
-            // TODO: no dry signal yet
-            // Clear output buffers for accumulated results
-            out_l.fill(0.0);
-            out_r.fill(0.0);
-
-            for tap in 0..self.delay_data.current_tap {
-                let delay_time = self.delay_data.delay_times_array[tap] as isize;
-                // - 1 because we process 2 stereo samples at a time
-                let read_index = self.delay_write_index as isize - (delay_time - 1).max(0);
-                // let velocity = self.delay_data.velocity_array[tap];
-                let recip_drive = 1.0 / self.filter_params[tap].clone().drive;
-
-                self.delay_buffer[0].read_into(&mut self.temp_l, read_index);
-                self.delay_buffer[1].read_into(&mut self.temp_r, read_index);
-
-                // TODO: in this configuration, the filter does not work fully correctly.
-                // You can't process a sample without having processed the sample that came before it, otherwise the filter states won't be correct.
-                // The correct sollution, is to process 2 stereo taps at a time.
-                // For that we need to feed two different parameter values to the filter, one for each tap.
-                // No idea how...
-
-                // Process audio in blocks of 2 samples, using 4 channels at a time
-                for i in (0..block_len).step_by(2) {
-                    // Prepare the frame with two stereo pairs
-                    let frame = f32x4::from_array([
-                        self.temp_l[i],
-                        self.temp_r[i],
-                        self.temp_l.get(i + 1).copied().unwrap_or(0.0),
-                        self.temp_r.get(i + 1).copied().unwrap_or(0.0),
-                    ]);
-
-                    // Process the frame
-                    let processed = self.ladders[tap].tick_newton(frame);
-                    let frame_out = *processed.as_array();
-
-                    // Accumulate the processed results
-                    out_l[i] += frame_out[0] * recip_drive;
-                    out_r[i] += frame_out[1] * recip_drive;
-                    if i + 1 < block_len {
-                        out_l[i + 1] += frame_out[2] * recip_drive;
-                        out_r[i + 1] += frame_out[3] * recip_drive;
-                    }
-                }
-            }
-
-            self.delay_write_index =
-                (self.delay_write_index + block_len) % self.delay_buffer_size as usize;
-        }
-
-        ProcessStatus::Normal
     }
-}
 
-impl Del2 {
-    // #[inline(always)]
     fn note_on(&mut self, timing: u32, velocity: f32) {
         match self.counting_state {
             CountingState::TimeOut => {
@@ -584,7 +505,19 @@ impl Del2 {
         };
     }
 
-    // #[inline(always)]
+    fn prepare_for_delay(&mut self, buffer_samples: usize) {
+        self.no_more_events(buffer_samples as u32);
+
+        if self.delay_data.current_tap > 0 {
+            self.delay_data.current_time = self.delay_data.delay_times_array
+                [self.delay_data.current_tap - 1]
+                + self.samples_since_last_event;
+        } else {
+            self.delay_data.current_time = self.samples_since_last_event;
+        }
+        self.delay_data_input.write(self.delay_data.clone());
+    }
+
     fn no_more_events(&mut self, buffer_samples: u32) {
         match self.counting_state {
             CountingState::TimeOut => {}
@@ -604,7 +537,16 @@ impl Del2 {
             // println!("time out no_more_events");
         };
     }
-    #[inline]
+    fn should_update_filter(&mut self) -> bool {
+        self.should_update_filter
+            .compare_exchange(
+                true,
+                false,
+                std::sync::atomic::Ordering::Acquire,
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .is_ok()
+    }
     fn update_filter(&mut self, tap: usize) {
         let velocity = self.delay_data.velocity_array[tap];
         let velocity_params = &self.params.taps;
@@ -642,13 +584,93 @@ impl Del2 {
         }
     }
 
-    #[inline]
     fn lerp(a: f32, b: f32, x: f32) -> f32 {
         a + (b - a) * x
     }
-    #[inline]
     fn log_interpolate(a: f32, b: f32, x: f32) -> f32 {
         a * (b / a).powf(x)
+    }
+
+    fn process_audio_blocks(&mut self, buffer: &mut Buffer) {
+        for (_, block) in buffer.iter_blocks(buffer.samples()) {
+            let block_len = block.samples();
+            let mut block_channels = block.into_iter();
+
+            let out_l = block_channels.next().expect("Left output channel missing");
+            let out_r = block_channels.next().expect("Right output channel missing");
+
+            self.delay_buffer[0].write_latest(out_l, self.delay_write_index as isize);
+            self.delay_buffer[1].write_latest(out_r, self.delay_write_index as isize);
+
+            out_l.fill(0.0);
+            out_r.fill(0.0);
+
+            for tap in 0..self.delay_data.current_tap {
+                self.process_tap(block_len, tap, out_l, out_r);
+            }
+
+            self.delay_write_index =
+                (self.delay_write_index + block_len) % self.delay_buffer_size as usize;
+        }
+    }
+
+    // #[inline]
+    fn process_tap(&mut self, block_len: usize, tap: usize, out_l: &mut [f32], out_r: &mut [f32]) {
+        let delay_time = self.delay_data.delay_times_array[tap] as isize;
+        let read_index = self.delay_write_index as isize - (delay_time - 1).max(0);
+        let recip_drive = 1.0 / self.filter_params[tap].clone().drive;
+
+        self.read_buffers_into_temp(read_index);
+        self.process_audio(block_len, tap, out_l, out_r, recip_drive);
+    }
+
+    fn read_buffers_into_temp(&mut self, read_index: isize) {
+        self.delay_buffer[0].read_into(&mut self.temp_l, read_index);
+        self.delay_buffer[1].read_into(&mut self.temp_r, read_index);
+    }
+
+    fn process_audio(
+        &mut self,
+        block_len: usize,
+        tap: usize,
+        out_l: &mut [f32],
+        out_r: &mut [f32],
+        recip_drive: f32,
+    ) {
+        for i in (0..block_len).step_by(2) {
+            let frame = self.make_stereo_frame(i);
+            let processed = self.ladders[tap].tick_newton(frame);
+            let frame_out = *processed.as_array();
+
+            Del2::accumulate_processed_results(i, block_len, out_l, out_r, frame_out, recip_drive);
+        }
+    }
+
+    // #[inline]
+    fn make_stereo_frame(&self, index: usize) -> f32x4 {
+        f32x4::from_array([
+            self.temp_l[index],
+            self.temp_r[index],
+            self.temp_l.get(index + 1).copied().unwrap_or(0.0),
+            self.temp_r.get(index + 1).copied().unwrap_or(0.0),
+        ])
+    }
+
+    // #[inline]
+    fn accumulate_processed_results(
+        i: usize,
+        block_len: usize,
+        out_l: &mut [f32],
+        out_r: &mut [f32],
+        frame_out: [f32; 4],
+        recip_drive: f32,
+    ) {
+        out_l[i] += frame_out[0] * recip_drive;
+        out_r[i] += frame_out[1] * recip_drive;
+        if i + 1 < block_len {
+            out_l[i + 1] += frame_out[2] * recip_drive;
+            out_r[i + 1] += frame_out[3] * recip_drive;
+        }
     }
 }
 
