@@ -347,41 +347,19 @@ impl Plugin for Del2 {
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
-        // Resize buffers and perform other potentially expensive initialization operations here.
-        // The `reset()` function is always called right after this function. You can remove this
-        // function if you do not need it.
+        // Set the sample rate from the buffer configuration
         self.sample_rate = buffer_config.sample_rate;
+
+        // Resize temporary buffers for left and right channels to maximum buffer size
         // Either we resize here, or in the audio thread
         // If we don't, we are slower.
-        let max_buffer_size = buffer_config.max_buffer_size as usize;
-        self.temp_l.resize(max_buffer_size, 0.0);
-        self.temp_r.resize(max_buffer_size, 0.0);
+        self.resize_temp_buffers(buffer_config.max_buffer_size);
 
-        // TODO: check for correctness in all cases!
-        // Calculate delay buffer size based on both min and max buffer sizes
-        let calculate_buffer_size = |buffer_size: u32| -> u32 {
-            ((TOTAL_DELAY_SAMPLES as f64 / buffer_size as f64).ceil() as u32 * buffer_size)
-                .next_power_of_two()
-        };
+        // Calculate and set the delay buffer size
+        self.set_delay_buffer_size(buffer_config);
 
-        let delay_buffer_size_min =
-            calculate_buffer_size(buffer_config.min_buffer_size.unwrap_or(1));
-        let delay_buffer_size_max = calculate_buffer_size(buffer_config.max_buffer_size);
-
-        // Use the larger of the two calculated sizes
-        self.delay_buffer_size = u32::max(delay_buffer_size_min, delay_buffer_size_max);
-
-        // Apply the calculated size to both buffers in the array
-        self.delay_buffer
-            .iter_mut()
-            .for_each(|buffer| buffer.clear_set_len(self.delay_buffer_size as usize));
-
-        for tap in 0..MAX_NR_TAPS {
-            unsafe {
-                let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
-                filter_params.set_sample_rate(self.sample_rate);
-            };
-        }
+        // Initialize filter parameters for each tap
+        self.initialize_filter_parameters();
 
         true
     }
@@ -596,8 +574,7 @@ impl Del2 {
             let block_len = block.samples();
             // Either we resize here, or in the initialization fn
             // If we don't, we are slower.
-            // self.temp_l.resize(block_len, 0.0);
-            // self.temp_r.resize(block_len, 0.0);
+            // self.resize_temp_buffers(block_len);
             let mut block_channels = block.into_iter();
 
             let out_l = block_channels.next().expect("Left output channel missing");
@@ -679,6 +656,42 @@ impl Del2 {
         if i + 1 < block_len {
             out_l[i + 1] += frame_out[2] * recip_drive;
             out_r[i + 1] += frame_out[3] * recip_drive;
+        }
+    }
+    // for fn initialize():
+
+    // Either we resize in the audio thread, or in the initialization fn
+    // If we don't, we are slower.
+    fn resize_temp_buffers(&mut self, max_buffer_size: u32) {
+        let max_size = max_buffer_size as usize;
+        self.temp_l.resize(max_size, 0.0);
+        self.temp_r.resize(max_size, 0.0);
+    }
+
+    fn calculate_buffer_size(&self, buffer_size: u32) -> u32 {
+        ((TOTAL_DELAY_SAMPLES as f64 / buffer_size as f64).ceil() as u32 * buffer_size)
+            .next_power_of_two()
+    }
+
+    fn set_delay_buffer_size(&mut self, buffer_config: &BufferConfig) {
+        let min_size = self.calculate_buffer_size(buffer_config.min_buffer_size.unwrap_or(1));
+        let max_size = self.calculate_buffer_size(buffer_config.max_buffer_size);
+
+        self.delay_buffer_size = u32::max(min_size, max_size);
+
+        // Apply the calculated size to the delay buffers
+        self.delay_buffer
+            .iter_mut()
+            .for_each(|buffer| buffer.clear_set_len(self.delay_buffer_size as usize));
+    }
+
+    fn initialize_filter_parameters(&mut self) {
+        for tap in 0..MAX_NR_TAPS {
+            unsafe {
+                // Safety: Assumes exclusive access is guaranteed beforehand.
+                let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
+                filter_params.set_sample_rate(self.sample_rate);
+            }
         }
     }
 }
