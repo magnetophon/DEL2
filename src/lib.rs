@@ -594,6 +594,10 @@ impl Del2 {
     fn process_audio_blocks(&mut self, buffer: &mut Buffer) {
         for (_, block) in buffer.iter_blocks(buffer.samples()) {
             let block_len = block.samples();
+            // Either we resize here, or in the initialization fn
+            // If we don't, we are slower.
+            // self.temp_l.resize(block_len, 0.0);
+            // self.temp_r.resize(block_len, 0.0);
             let mut block_channels = block.into_iter();
 
             let out_l = block_channels.next().expect("Left output channel missing");
@@ -601,7 +605,7 @@ impl Del2 {
 
             self.delay_buffer[0].write_latest(out_l, self.delay_write_index as isize);
             self.delay_buffer[1].write_latest(out_r, self.delay_write_index as isize);
-
+            // TODO: no dry signal yet
             out_l.fill(0.0);
             out_r.fill(0.0);
 
@@ -637,6 +641,11 @@ impl Del2 {
         out_r: &mut [f32],
         recip_drive: f32,
     ) {
+        // TODO: in this configuration, the filter does not work fully correctly.
+        // You can't process a sample without having processed the sample that came before it, otherwise the filter states won't be correct.
+        // The correct sollution, is to process 2 stereo taps at a time.
+        // For that we need to feed two different parameter values to the filter, one for each tap.
+        // No idea how...
         for i in (0..block_len).step_by(2) {
             let frame = self.make_stereo_frame(i);
             let processed = self.ladders[tap].tick_newton(frame);
