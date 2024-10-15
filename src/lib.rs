@@ -76,6 +76,8 @@ struct Del2Params {
     editor_state: Arc<ViziaState>,
     #[id = "output_gain"]
     pub output_gain: FloatParam,
+    #[id = "global_drive"]
+    pub global_drive: FloatParam,
     #[id = "time_out_seconds"]
     pub time_out_seconds: FloatParam,
     #[id = "debounce_tap_milliseconds"]
@@ -160,7 +162,8 @@ impl TapGuiParams {
                 FloatRange::Skewed {
                     min: 1.0, // This must never reach 0
                     // max: 15.8490, // 24 dB
-                    max: 251.188643, // 48 dB
+                    max: 31.623, // 30 dB
+                    // max: 251.188643, // 48 dB
                     factor: FloatRange::skew_factor(-1.2),
                 },
             )
@@ -246,6 +249,26 @@ impl Del2Params {
             // as decibels is easier to work with, but requires a conversion for every sample.
             output_gain: FloatParam::new(
                 "output gain",
+                util::db_to_gain(0.0),
+                FloatRange::Skewed {
+                    min: util::db_to_gain(-30.0),
+                    max: util::db_to_gain(30.0),
+                    // This makes the range appear as if it was linear when displaying the values as
+                    // decibels
+                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
+                },
+            )
+            // Because the gain parameter is stored as linear gain instead of storing the value as
+            // decibels, we need logarithmic smoothing
+            .with_smoother(SmoothingStyle::Logarithmic(50.0))
+            .with_unit(" dB")
+            // There are many predefined formatters we can use here. If the gain was stored as
+            // decibels instead of as a linear gain value, we could have also used the
+            // `.with_step_size(0.1)` function to get internal rounding.
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            global_drive: FloatParam::new(
+                "global drive",
                 util::db_to_gain(0.0),
                 FloatRange::Skewed {
                     min: util::db_to_gain(-30.0),
@@ -621,16 +644,38 @@ impl Del2 {
         // The correct sollution, is to process 2 stereo taps at a time.
         // For that we need to feed two different parameter values to the filter, one for each tap.
         // No idea how...
+        // Loop through each sample, processing two channels at a time
         for i in (0..block_len).step_by(2) {
             let output_gain = self.params.output_gain.smoothed.next();
             let drive = self.filter_params[tap].clone().drive;
-            // divide by drive cause we want to compensate for the input gain
-            let gain = output_gain / drive;
-            let frame = self.make_stereo_frame(i);
-            let processed = self.ladders[tap].tick_newton(frame);
-            let frame_out = *processed.as_array();
 
-            Del2::accumulate_processed_results(i, block_len, out_l, out_r, frame_out, gain);
+            // Get a unique global_drive for each iteration for each frame
+            let pre_filter_gain1 = self.params.global_drive.smoothed.next();
+            let pre_filter_gain2 = self.params.global_drive.smoothed.next();
+
+            // Calculate post-filter gain compensation using the average of the two gains
+            let post_filter_gain1 = output_gain / (drive * pre_filter_gain1);
+            let post_filter_gain2 = output_gain / (drive * pre_filter_gain2);
+
+            let mut frame = self.make_stereo_frame(i);
+
+            // Apply global drive before filtering for each channel
+            frame.as_mut_array()[0] *= pre_filter_gain1;
+            frame.as_mut_array()[1] *= pre_filter_gain1;
+            frame.as_mut_array()[2] *= pre_filter_gain2;
+            frame.as_mut_array()[3] *= pre_filter_gain2;
+
+            // Process the frame through the filter
+            let processed = self.ladders[tap].tick_newton(frame);
+            let mut frame_out = *processed.as_array();
+
+            // Apply the compensation post-filter by adjusting it using the post-filter gain
+            frame_out[0] *= post_filter_gain1;
+            frame_out[1] *= post_filter_gain1;
+            frame_out[2] *= post_filter_gain2;
+            frame_out[3] *= post_filter_gain2;
+
+            Del2::accumulate_processed_results(i, block_len, out_l, out_r, frame_out);
         }
     }
 
@@ -651,13 +696,12 @@ impl Del2 {
         out_l: &mut [f32],
         out_r: &mut [f32],
         frame_out: [f32; 4],
-        gain: f32,
     ) {
-        out_l[i] += frame_out[0] * gain;
-        out_r[i] += frame_out[1] * gain;
+        out_l[i] += frame_out[0];
+        out_r[i] += frame_out[1];
         if i + 1 < block_len {
-            out_l[i + 1] += frame_out[2] * gain;
-            out_r[i + 1] += frame_out[3] * gain;
+            out_l[i + 1] += frame_out[2];
+            out_r[i + 1] += frame_out[3];
         }
     }
     // for fn initialize():

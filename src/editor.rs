@@ -42,6 +42,8 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
 
                 Label::new(cx, "output gain");
                 ParamSlider::new(cx, Data::params, |params| &params.output_gain);
+                Label::new(cx, "global drive");
+                ParamSlider::new(cx, Data::params, |params| &params.global_drive);
                 Label::new(cx, "time out");
                 ParamSlider::new(cx, Data::params, |params| &params.time_out_seconds);
                 Label::new(cx, "debounce");
