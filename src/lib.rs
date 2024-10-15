@@ -500,6 +500,12 @@ impl Plugin for Del2 {
                 self.delay_buffer[0].read_into(&mut self.temp_l, read_index);
                 self.delay_buffer[1].read_into(&mut self.temp_r, read_index);
 
+                // TODO: in this configuration, the filter does not work fully correctly.
+                // You can't process a sample without having processed the sample that came before it, otherwise the filter states won't be correct.
+                // The correct sollution, is to process 2 stereo taps at a time.
+                // For that we need to feed two different parameter values to the filter, one for each tap.
+                // No idea how...
+
                 // Process audio in blocks of 2 samples, using 4 channels at a time
                 for i in (0..block_len).step_by(2) {
                     // Prepare the frame with two stereo pairs
