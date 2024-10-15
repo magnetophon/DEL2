@@ -486,7 +486,8 @@ impl Plugin for Del2 {
 
             for tap in 0..self.delay_data.current_tap {
                 let delay_time = self.delay_data.delay_times_array[tap] as isize;
-                let read_index = self.delay_write_index as isize - delay_time;
+                // - 1 because we process 2 stereo samples at a time
+                let read_index = self.delay_write_index as isize - (delay_time - 1).max(0);
                 // let velocity = self.delay_data.velocity_array[tap];
                 let recip_drive = 1.0 / self.filter_params[tap].clone().drive;
 
