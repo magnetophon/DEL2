@@ -190,7 +190,7 @@ impl Default for Del2 {
         let (delay_data_input, delay_data_output) = TripleBuffer::new(&initial_delay_data).split();
 
         let filter_params = array_init(|_| Arc::new(FilterParams::new()));
-        let should_update_filter = Arc::new(AtomicBool::new(true));
+        let should_update_filter = Arc::new(AtomicBool::new(false));
         let ladders: [LadderFilter; MAX_NR_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
         Self {
@@ -583,10 +583,10 @@ impl Del2 {
                         self.samples_since_last_event;
                 }
                 self.delay_data.velocity_array[self.delay_data.current_tap] = velocity;
-                // println!("current_tap: {}", self.delay_data.current_tap);
-                // println!("times: {:#?}", self.delay_data.delay_times_array);
-                // println!("velocities: {:#?}", self.delay_data.velocity_array);
                 self.delay_data.current_tap += 1;
+                // we have a new tap, so we're interpolating new filter parameters
+                self.should_update_filter
+                    .store(true, std::sync::atomic::Ordering::Release);
             };
         } else {
             self.counting_state = CountingState::TimeOut;
