@@ -599,10 +599,9 @@ impl Del2 {
     fn process_tap(&mut self, block_len: usize, tap: usize, out_l: &mut [f32], out_r: &mut [f32]) {
         let delay_time = self.delay_data.delay_times_array[tap] as isize;
         let read_index = self.delay_write_index as isize - (delay_time - 1).max(0);
-        let recip_drive = 1.0 / self.filter_params[tap].clone().drive;
 
         self.read_buffers_into_temp(read_index);
-        self.process_audio(block_len, tap, out_l, out_r, recip_drive);
+        self.process_audio(block_len, tap, out_l, out_r);
     }
 
     fn read_buffers_into_temp(&mut self, read_index: isize) {
@@ -616,7 +615,6 @@ impl Del2 {
         tap: usize,
         out_l: &mut [f32],
         out_r: &mut [f32],
-        recip_drive: f32,
     ) {
         // TODO: in this configuration, the filter does not work fully correctly.
         // You can't process a sample without having processed the sample that came before it, otherwise the filter states won't be correct.
@@ -624,11 +622,15 @@ impl Del2 {
         // For that we need to feed two different parameter values to the filter, one for each tap.
         // No idea how...
         for i in (0..block_len).step_by(2) {
+            let output_gain = self.params.output_gain.smoothed.next();
+            let drive = self.filter_params[tap].clone().drive;
+            // divide by drive cause we want to compensate for the input gain
+            let gain = output_gain / drive;
             let frame = self.make_stereo_frame(i);
             let processed = self.ladders[tap].tick_newton(frame);
             let frame_out = *processed.as_array();
 
-            Del2::accumulate_processed_results(i, block_len, out_l, out_r, frame_out, recip_drive);
+            Del2::accumulate_processed_results(i, block_len, out_l, out_r, frame_out, gain);
         }
     }
 
@@ -649,13 +651,13 @@ impl Del2 {
         out_l: &mut [f32],
         out_r: &mut [f32],
         frame_out: [f32; 4],
-        recip_drive: f32,
+        gain: f32,
     ) {
-        out_l[i] += frame_out[0] * recip_drive;
-        out_r[i] += frame_out[1] * recip_drive;
+        out_l[i] += frame_out[0] * gain;
+        out_r[i] += frame_out[1] * gain;
         if i + 1 < block_len {
-            out_l[i + 1] += frame_out[2] * recip_drive;
-            out_r[i + 1] += frame_out[3] * recip_drive;
+            out_l[i + 1] += frame_out[2] * gain;
+            out_r[i + 1] += frame_out[3] * gain;
         }
     }
     // for fn initialize():
