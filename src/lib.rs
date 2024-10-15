@@ -75,8 +75,8 @@ impl Data for DelayData {
 struct Del2Params {
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
-    #[id = "gain"]
-    pub gain: FloatParam,
+    #[id = "output_gain"]
+    pub output_gain: FloatParam,
     #[id = "time_out_seconds"]
     pub time_out_seconds: FloatParam,
     #[id = "debounce_tap_milliseconds"]
@@ -245,8 +245,8 @@ impl Del2Params {
             // This gain is stored as linear gain. NIH-plug comes with useful conversion functions
             // to treat these kinds of parameters as if we were dealing with decibels. Storing this
             // as decibels is easier to work with, but requires a conversion for every sample.
-            gain: FloatParam::new(
-                "gain",
+            output_gain: FloatParam::new(
+                "output gain",
                 util::db_to_gain(0.0),
                 FloatRange::Skewed {
                     min: util::db_to_gain(-30.0),

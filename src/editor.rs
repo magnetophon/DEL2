@@ -40,8 +40,8 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                     .child_top(Stretch(1.0))
                     .child_bottom(Pixels(0.0));
 
-                Label::new(cx, "gain");
-                ParamSlider::new(cx, Data::params, |params| &params.gain);
+                Label::new(cx, "output gain");
+                ParamSlider::new(cx, Data::params, |params| &params.output_gain);
                 Label::new(cx, "time out");
                 ParamSlider::new(cx, Data::params, |params| &params.time_out_seconds);
                 Label::new(cx, "debounce");
