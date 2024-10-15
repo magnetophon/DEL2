@@ -1,4 +1,4 @@
-#![allow(non_snake_case)]
+// #![allow(non_snake_case)]
 #![feature(portable_simd)]
 #![feature(get_mut_unchecked)]
 use array_init::array_init;
@@ -28,6 +28,7 @@ struct Del2 {
     filter_params: [Arc<FilterParams>; MAX_NR_TAPS],
     ladders: [LadderFilter; MAX_NR_TAPS],
 
+    // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
     delay_data: DelayData,
     delay_data_input: DelayDataInput,
@@ -471,11 +472,15 @@ impl Plugin for Del2 {
 
             let out_l = block_channels.next().unwrap();
             let out_r = block_channels.next().unwrap();
+            // Temporary buffers to hold the read values for processing
+            let mut temp_l = vec![0.0; block_len];
+            let mut temp_r = vec![0.0; block_len];
 
             self.delay_buffer[0].write_latest(out_l, self.delay_write_index as isize);
             self.delay_buffer[1].write_latest(out_r, self.delay_write_index as isize);
 
             // TODO: no dry signal yet
+            // Clear output buffers for accumulated results
             out_l.fill(0.0);
             out_r.fill(0.0);
 
@@ -484,19 +489,31 @@ impl Plugin for Del2 {
                 let read_index = self.delay_write_index as isize - delay_time;
                 // let velocity = self.delay_data.velocity_array[tap];
                 let recip_drive = 1.0 / self.filter_params[tap].clone().drive;
-                // Temporary buffers to hold the read values for processing
-                let mut temp_l = vec![0.0; block_len];
-                let mut temp_r = vec![0.0; block_len];
+
                 self.delay_buffer[0].read_into(&mut temp_l, read_index);
                 self.delay_buffer[1].read_into(&mut temp_r, read_index);
-                // Accumulate the contributions
-                for i in 0..block_len {
-                    let frame = f32x4::from_array([temp_l[i], temp_r[i], 0.0, 0.0]);
-                    // TODO: dc-filter, upsample, downsample
+
+                // Process audio in blocks of 2 samples, using 4 channels at a time
+                for i in (0..block_len).step_by(2) {
+                    // Prepare the frame with two stereo pairs
+                    let frame = f32x4::from_array([
+                        temp_l[i],
+                        temp_r[i],
+                        temp_l.get(i + 1).copied().unwrap_or(0.0),
+                        temp_r.get(i + 1).copied().unwrap_or(0.0),
+                    ]);
+
+                    // Process the frame
                     let processed = self.ladders[tap].tick_newton(frame);
                     let frame_out = *processed.as_array();
+
+                    // Accumulate the processed results
                     out_l[i] += frame_out[0] * recip_drive;
                     out_r[i] += frame_out[1] * recip_drive;
+                    if i + 1 < block_len {
+                        out_l[i + 1] += frame_out[2] * recip_drive;
+                        out_r[i + 1] += frame_out[3] * recip_drive;
+                    }
                 }
             }
 
