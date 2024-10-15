@@ -3,22 +3,23 @@
 
 A rhythm delay with space.
 
+## Current features
+
+- Tap a rhythm into your delay using midi
+- Each delay tap has:
+  - a non-linear filters
+- The filter parameters are pair of settings, and each tap's settings are an interpolation between these two, depending on the velocity
+
 ## Planned features
 
-- Tap a rhythm into your delay, 
-  using midi, keyboard or side-channel audio.
-- Each delay tap has:
+- Tap the rhythm using your computer keyboard or side-channel audio
+- Expand the DSP per tap to:
   - two non-linear filters
   - a reverb
   - a panner, using either:
     - level
     - haas + eq + level 
     - HRTF
-- The parameters of the above effects can be:
-  - All the same, using one instance of the effects
-    This has the lowest CPU usage.
-  - A pair of settings, and each tap's settings are an interpolation between these two.
-    This is more flexible, but also more CPU intensive.
-  - Individual settings for each tap.
-    This is the most flexible, but also the most tedious to dial in.
-- Optionally, each tap can have it's own auxiliary output.
+- Compressor and ducker on the output
+- Optional individual settings per tap
+- Optional auxiliary outputs per tap
