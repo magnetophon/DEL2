@@ -443,40 +443,7 @@ impl Plugin for Del2 {
             .is_ok()
         {
             for tap in 0..self.delay_data.current_tap {
-                let velocity = self.delay_data.velocity_array[tap];
-                let velocity_params = &self.params.taps;
-
-                unsafe {
-                    let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
-
-                    // Cache repeated calculations
-                    let bottom_velocity = &velocity_params.velocity_bottom;
-                    let top_velocity = &velocity_params.velocity_top;
-
-                    let bottom_res = bottom_velocity.res.value();
-                    let top_res = top_velocity.res.value();
-                    let res = Del2::lerp(bottom_res, top_res, velocity);
-
-                    let bottom_cutoff = bottom_velocity.cutoff.value();
-                    let top_cutoff = top_velocity.cutoff.value();
-                    let cutoff = Del2::log_interpolate(bottom_cutoff, top_cutoff, velocity);
-
-                    let bottom_drive_db = util::gain_to_db(bottom_velocity.drive.value());
-                    let top_drive_db = util::gain_to_db(top_velocity.drive.value());
-                    let drive_db = Del2::lerp(bottom_drive_db, top_drive_db, velocity);
-                    let drive = util::db_to_gain(drive_db);
-
-                    let bottom_mode = bottom_velocity.mode.value();
-                    let top_mode = top_velocity.mode.value();
-                    let mode = MyLadderMode::lerp(bottom_mode, top_mode, velocity);
-                    // println!("mode {}: {}", tap, mode);
-                    // Updating filter parameters
-                    filter_params.set_resonance(res);
-                    filter_params.set_frequency(cutoff);
-                    filter_params.drive = drive;
-                    filter_params.ladder_mode = mode;
-                    self.ladders[tap].set_mix(mode);
-                }
+                self.update_filter(tap);
             }
         };
 
@@ -637,6 +604,44 @@ impl Del2 {
             // println!("time out no_more_events");
         };
     }
+    #[inline]
+    fn update_filter(&mut self, tap: usize) {
+        let velocity = self.delay_data.velocity_array[tap];
+        let velocity_params = &self.params.taps;
+
+        unsafe {
+            let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
+
+            // Cache repeated calculations
+            let bottom_velocity = &velocity_params.velocity_bottom;
+            let top_velocity = &velocity_params.velocity_top;
+
+            let bottom_res = bottom_velocity.res.value();
+            let top_res = top_velocity.res.value();
+            let res = Del2::lerp(bottom_res, top_res, velocity);
+
+            let bottom_cutoff = bottom_velocity.cutoff.value();
+            let top_cutoff = top_velocity.cutoff.value();
+            let cutoff = Del2::log_interpolate(bottom_cutoff, top_cutoff, velocity);
+
+            let bottom_drive_db = util::gain_to_db(bottom_velocity.drive.value());
+            let top_drive_db = util::gain_to_db(top_velocity.drive.value());
+            let drive_db = Del2::lerp(bottom_drive_db, top_drive_db, velocity);
+            let drive = util::db_to_gain(drive_db);
+
+            let bottom_mode = bottom_velocity.mode.value();
+            let top_mode = top_velocity.mode.value();
+            let mode = MyLadderMode::lerp(bottom_mode, top_mode, velocity);
+            // println!("mode {}: {}", tap, mode);
+            // Updating filter parameters
+            filter_params.set_resonance(res);
+            filter_params.set_frequency(cutoff);
+            filter_params.drive = drive;
+            filter_params.ladder_mode = mode;
+            self.ladders[tap].set_mix(mode);
+        }
+    }
+
     #[inline]
     fn lerp(a: f32, b: f32, x: f32) -> f32 {
         a + (b - a) * x
