@@ -22,6 +22,9 @@ const MAX_SAMPLE_RATE: usize = 192000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
 const VELOCITY_BOTTOM_NAME_PREFIX: &str = "Bottom Velocity";
 const VELOCITY_TOP_NAME_PREFIX: &str = "Top Velocity";
+// this seems to be the number JUCE is using
+// TODO: does this need to be set at runtime?
+const MAX_SOUNDCARD_BUFFER_SIZE: usize = 32768;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -30,6 +33,10 @@ struct Del2 {
 
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
+    // delay read buffers
+    temp_l: [f32; MAX_SOUNDCARD_BUFFER_SIZE],
+    temp_r: [f32; MAX_SOUNDCARD_BUFFER_SIZE],
+
     delay_data: DelayData,
     delay_data_input: DelayDataInput,
     delay_data_output: Arc<Mutex<DelayDataOutput>>,
@@ -201,6 +208,9 @@ impl Default for Del2 {
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
+            temp_l: [0.0; MAX_SOUNDCARD_BUFFER_SIZE],
+            temp_r: [0.0; MAX_SOUNDCARD_BUFFER_SIZE],
+
             delay_data: initial_delay_data,
             delay_data_input,
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
@@ -386,7 +396,6 @@ impl Plugin for Del2 {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // TODO: put behind a should_update with a callback?
         self.delay_data.time_out_samples =
             (self.sample_rate as f64 * self.params.time_out_seconds.value() as f64) as u32;
         self.debounce_tap_samples = (self.sample_rate as f64
@@ -472,9 +481,6 @@ impl Plugin for Del2 {
 
             let out_l = block_channels.next().unwrap();
             let out_r = block_channels.next().unwrap();
-            // Temporary buffers to hold the read values for processing
-            let mut temp_l = vec![0.0; block_len];
-            let mut temp_r = vec![0.0; block_len];
 
             self.delay_buffer[0].write_latest(out_l, self.delay_write_index as isize);
             self.delay_buffer[1].write_latest(out_r, self.delay_write_index as isize);
@@ -491,17 +497,17 @@ impl Plugin for Del2 {
                 // let velocity = self.delay_data.velocity_array[tap];
                 let recip_drive = 1.0 / self.filter_params[tap].clone().drive;
 
-                self.delay_buffer[0].read_into(&mut temp_l, read_index);
-                self.delay_buffer[1].read_into(&mut temp_r, read_index);
+                self.delay_buffer[0].read_into(&mut self.temp_l, read_index);
+                self.delay_buffer[1].read_into(&mut self.temp_r, read_index);
 
                 // Process audio in blocks of 2 samples, using 4 channels at a time
                 for i in (0..block_len).step_by(2) {
                     // Prepare the frame with two stereo pairs
                     let frame = f32x4::from_array([
-                        temp_l[i],
-                        temp_r[i],
-                        temp_l.get(i + 1).copied().unwrap_or(0.0),
-                        temp_r.get(i + 1).copied().unwrap_or(0.0),
+                        self.temp_l[i],
+                        self.temp_r[i],
+                        self.temp_l.get(i + 1).copied().unwrap_or(0.0),
+                        self.temp_r.get(i + 1).copied().unwrap_or(0.0),
                     ]);
 
                     // Process the frame
