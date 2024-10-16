@@ -115,34 +115,34 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
             // .child_left(Pixels(9.0))
             // .child_right(Pixels(9.0));
             VStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    VStack::new(cx, |cx| {
-                        //meters
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "input").class("meter-label");
-                            PeakMeter::new(
-                                cx,
-                                Data::input_meter.map(|input_meter| {
-                                    util::gain_to_db(input_meter.load(Ordering::Relaxed))
-                                }),
-                                Some(Duration::from_millis(600)),
-                            );
-                        });
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "output").class("meter-label");
-                            PeakMeter::new(
-                                cx,
-                                Data::output_meter.map(|output_meter| {
-                                    util::gain_to_db(output_meter.load(Ordering::Relaxed))
-                                }),
-                                Some(Duration::from_millis(600)),
-                            );
-                        });
-                    });
+                ZStack::new(cx, |cx| {
                     Label::new(cx, "DEL2").class("plugin-name");
+                    DelayGraph::new(cx, Data::delay_data);
+                });
+                VStack::new(cx, |cx| {
+                    //meters
+                    HStack::new(cx, |cx| {
+                        PeakMeter::new(
+                            cx,
+                            Data::input_meter.map(|input_meter| {
+                                util::gain_to_db(input_meter.load(Ordering::Relaxed))
+                            }),
+                            Some(Duration::from_millis(600)),
+                        );
+                        Label::new(cx, "input").class("meter-label");
+                    });
+                    HStack::new(cx, |cx| {
+                        PeakMeter::new(
+                            cx,
+                            Data::output_meter.map(|output_meter| {
+                                util::gain_to_db(output_meter.load(Ordering::Relaxed))
+                            }),
+                            Some(Duration::from_millis(600)),
+                        );
+                        Label::new(cx, "output").class("meter-label");
+                    });
                 })
                 .class("meters_and_name");
-                DelayGraph::new(cx, Data::delay_data);
                 ResizeHandle::new(cx);
             });
         });

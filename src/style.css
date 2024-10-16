@@ -23,7 +23,6 @@ param-slider {
     border-width: 1px;
     background-color: #4e4e4e;
     border-color: #fabdf0;
-    /* border-color: #e0ce91; */
     transition: background-color 300ms;
 }
 
@@ -56,15 +55,13 @@ param-slider .value-entry {
 /* } */
 .plugin-name {
     font-size: 42;
-    /* height: 50px; */
-    top: 5px;
-    left: 9px;
-    right: 9px;
-    /* width: 100px; */
+    top: 12px;
+    right: 18px;
 }
 
 .meters_and_name {
-    top: 9px;
+    top: 14px;
+    right: 9px;
     height: 80px;
 }
 
@@ -93,8 +90,10 @@ param-slider .value-entry {
 }
 
 delay-graph {
-    border-width: 3px;
-    outline-width: 6px;
+    top: 9px;
+    right: 9px;
+    border-width: 2px;
+    outline-width: 5px;
     border-color: #4e4e4e;
     outline-color: #5879af;
     selection-color: #fabdf0;
@@ -120,8 +119,7 @@ generic-ui .label {
 
 peak-meter {
     height: 30px;
-    width: 470px;
-    /* child-right: 9px; */
+    width: 589px;
     color: #e0ce91;
     left: 0px;
     bottom: 6px;
@@ -147,7 +145,7 @@ peak-meter .ticks__label {
 }
 .meter-label {
     child-left: 1s;
-    right: 9px;
+    right: 0px;
     /* top: 0px; */
     bottom: 24px;
     font-size: 15;
