@@ -164,9 +164,9 @@ impl View for DelayGraph {
         // let line_width = cx.scale_factor();
         let line_width = cx.outline_width();
 
-        let x = bounds.x + border_width / 2.0;
+        let x = bounds.x + border_width * 0.5;
         let y = bounds.y;
-        let w = bounds.w;
+        let w = bounds.w - border_width * 0.5 - line_width;
         let h = bounds.h;
 
         // Create a new `Path` from the `vg` module.

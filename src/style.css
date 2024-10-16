@@ -86,7 +86,7 @@ param-slider .value-entry {
 
 delay-graph {
     border-width: 3px;
-    outline-width: 3px;
+    outline-width: 6px;
     border-color: #4e4e4e;
     outline-color: #5879af;
     selection-color: #fabdf0;
