@@ -1,8 +1,10 @@
-use nih_plug::prelude::Editor;
+use crate::util;
+use nih_plug::prelude::{AtomicF32, Editor};
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use crate::Del2Params;
@@ -14,6 +16,8 @@ const COLUMN_WIDTH: Units = Pixels(269.0);
 pub(crate) struct Data {
     pub(crate) params: Arc<Del2Params>,
     pub(crate) delay_data: Arc<Mutex<DelayDataOutput>>,
+    pub input_meter: Arc<AtomicF32>,
+    pub output_meter: Arc<AtomicF32>,
 }
 
 impl Model for Data {}
@@ -36,6 +40,18 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
 
         HStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
+                PeakMeter::new(
+                    cx,
+                    Data::input_meter
+                        .map(|input_meter| util::gain_to_db(input_meter.load(Ordering::Relaxed))),
+                    Some(Duration::from_millis(600)),
+                );
+                PeakMeter::new(
+                    cx,
+                    Data::output_meter
+                        .map(|output_meter| util::gain_to_db(output_meter.load(Ordering::Relaxed))),
+                    Some(Duration::from_millis(600)),
+                );
                 Label::new(cx, "Global").class("global-title");
                 HStack::new(cx, |cx| {
                     make_column(cx, "Gain", |cx| {

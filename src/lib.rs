@@ -7,6 +7,7 @@ use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::simd::f32x4;
+use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicBool, Arc, Mutex};
 use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode};
 use triple_buffer::TripleBuffer;
@@ -25,6 +26,8 @@ const VELOCITY_TOP_NAME_PREFIX: &str = "Top Velocity";
 // this seems to be the number JUCE is using
 const MAX_SOUNDCARD_BUFFER_SIZE: usize = 32768;
 
+const PEAK_METER_DECAY_MS: f64 = 150.0;
+
 struct Del2 {
     params: Arc<Del2Params>,
     filter_params: [Arc<FilterParams>; MAX_NR_TAPS],
@@ -40,6 +43,16 @@ struct Del2 {
     delay_data_input: DelayDataInput,
     delay_data_output: Arc<Mutex<DelayDataOutput>>,
     sample_rate: f32,
+    /// Needed to normalize the peak meter's response based on the sample rate.
+    peak_meter_decay_weight: f32,
+    /// The current data for the peak meter. This is stored as an [`Arc`] so we can share it between
+    /// the GUI and the audio processing parts. If you have more state to share, then it's a good
+    /// idea to put all of that in a struct behind a single `Arc`.
+    ///
+    /// This is stored as voltage gain.
+    /// This is stored as voltage gain.
+    input_meter: Arc<AtomicF32>,
+    output_meter: Arc<AtomicF32>,
     delay_write_index: usize,
     samples_since_last_event: u32,
     timing_last_event: u32,
@@ -266,7 +279,7 @@ impl FilterGuiParams {
             .with_value_to_string(formatters::v2s_f32_rounded(0))
             .with_callback(Arc::new({
                 let should_update_filter = should_update_filter.clone();
-                move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
+                move |_| should_update_filter.store(true, Ordering::Release)
             })),
             res: FloatParam::new(
                 format!("{name_prefix} Res"),
@@ -276,7 +289,7 @@ impl FilterGuiParams {
             .with_value_to_string(formatters::v2s_f32_rounded(2))
             .with_callback(Arc::new({
                 let should_update_filter = should_update_filter.clone();
-                move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
+                move |_| should_update_filter.store(true, Ordering::Release)
             })),
             drive: FloatParam::new(
                 format!("{name_prefix} Drive"),
@@ -292,13 +305,13 @@ impl FilterGuiParams {
             .with_string_to_value(formatters::s2v_f32_gain_to_db())
             .with_callback(Arc::new({
                 let should_update_filter = should_update_filter.clone();
-                move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
+                move |_| should_update_filter.store(true, Ordering::Release)
             })),
 
             mode: EnumParam::new(format!("{name_prefix} Mode"), default_mode) // Use the passed default value
                 .with_callback(Arc::new({
                     let should_update_filter = should_update_filter.clone();
-                    move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
+                    move |_| should_update_filter.store(true, Ordering::Release)
                 })),
         }
     }
@@ -335,6 +348,9 @@ impl Default for Del2 {
             delay_data_input,
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
             sample_rate: 1.0,
+            peak_meter_decay_weight: 1.0,
+            input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
+            output_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
             delay_write_index: 0,
             samples_since_last_event: 0,
             timing_last_event: 0,
@@ -413,6 +429,8 @@ impl Plugin for Del2 {
         editor::create(
             editor::Data {
                 params: self.params.clone(),
+                input_meter: self.input_meter.clone(),
+                output_meter: self.output_meter.clone(),
                 delay_data: self.delay_data_output.clone(),
             },
             self.params.editor_state.clone(),
@@ -428,6 +446,10 @@ impl Plugin for Del2 {
         // Set the sample rate from the buffer configuration
         self.sample_rate = buffer_config.sample_rate;
 
+        // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
+        // have dropped by 12 dB
+        self.peak_meter_decay_weight =
+            0.25f64.powf((self.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip()) as f32;
         // Resize temporary buffers for left and right channels to maximum buffer size
         // Either we resize here, or in the audio thread
         // If we don't, we are slower.
@@ -467,7 +489,9 @@ impl Plugin for Del2 {
             }
         }
 
+        self.update_peak_meter(buffer, &self.input_meter);
         self.process_audio_blocks(buffer);
+        self.update_peak_meter(buffer, &self.output_meter);
         ProcessStatus::Normal
     }
 }
@@ -556,8 +580,7 @@ impl Del2 {
                 self.delay_data.velocity_array[self.delay_data.current_tap] = velocity;
                 self.delay_data.current_tap += 1;
                 // we have a new tap, so we're interpolating new filter parameters
-                self.should_update_filter
-                    .store(true, std::sync::atomic::Ordering::Release);
+                self.should_update_filter.store(true, Ordering::Release);
             };
         } else {
             self.counting_state = CountingState::TimeOut;
@@ -799,6 +822,33 @@ impl Del2 {
                 // Safety: Assumes exclusive access is guaranteed beforehand.
                 let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
                 filter_params.set_sample_rate(self.sample_rate);
+            }
+        }
+    }
+
+    fn update_peak_meter(&self, buffer: &mut Buffer, peak_meter: &AtomicF32) {
+        // Access samples using the iterator
+        for channel_samples in buffer.iter_samples() {
+            let mut amplitude = 0.0;
+            let num_samples = channel_samples.len();
+
+            for sample in channel_samples {
+                // Process each sample (e.g., apply gain if necessary)
+                amplitude += *sample;
+            }
+
+            // Example of condition dependent on editor or GUI state
+            if self.params.editor_state.is_open() {
+                amplitude = (amplitude / num_samples as f32).abs();
+                let current_peak_meter = peak_meter.load(std::sync::atomic::Ordering::Relaxed);
+                let new_peak_meter = if amplitude > current_peak_meter {
+                    amplitude
+                } else {
+                    current_peak_meter * self.peak_meter_decay_weight
+                        + amplitude * (1.0 - self.peak_meter_decay_weight)
+                };
+
+                peak_meter.store(new_peak_meter, std::sync::atomic::Ordering::Relaxed);
             }
         }
     }
