@@ -24,7 +24,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1200, 480))
+    ViziaState::new(|| (1200, 400))
 }
 
 pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -40,26 +40,6 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
 
         HStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "input").class("meter-label");
-                    PeakMeter::new(
-                        cx,
-                        Data::input_meter.map(|input_meter| {
-                            util::gain_to_db(input_meter.load(Ordering::Relaxed))
-                        }),
-                        Some(Duration::from_millis(600)),
-                    );
-                });
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "output").class("meter-label");
-                    PeakMeter::new(
-                        cx,
-                        Data::output_meter.map(|output_meter| {
-                            util::gain_to_db(output_meter.load(Ordering::Relaxed))
-                        }),
-                        Some(Duration::from_millis(600)),
-                    );
-                });
                 Label::new(cx, "Global").class("global-title");
                 HStack::new(cx, |cx| {
                     make_column(cx, "Gain", |cx| {
@@ -134,8 +114,34 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
             // .child_right(Stretch(1.0))
             // .child_left(Pixels(9.0))
             // .child_right(Pixels(9.0));
-            ZStack::new(cx, |cx| {
-                Label::new(cx, "DEL2").class("plugin-name");
+            VStack::new(cx, |cx| {
+                HStack::new(cx, |cx| {
+                    VStack::new(cx, |cx| {
+                        //meters
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "input").class("meter-label");
+                            PeakMeter::new(
+                                cx,
+                                Data::input_meter.map(|input_meter| {
+                                    util::gain_to_db(input_meter.load(Ordering::Relaxed))
+                                }),
+                                Some(Duration::from_millis(600)),
+                            );
+                        });
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "output").class("meter-label");
+                            PeakMeter::new(
+                                cx,
+                                Data::output_meter.map(|output_meter| {
+                                    util::gain_to_db(output_meter.load(Ordering::Relaxed))
+                                }),
+                                Some(Duration::from_millis(600)),
+                            );
+                        });
+                    });
+                    Label::new(cx, "DEL2").class("plugin-name");
+                })
+                .class("meters_and_name");
                 DelayGraph::new(cx, Data::delay_data);
                 ResizeHandle::new(cx);
             });
@@ -190,17 +196,18 @@ impl View for DelayGraph {
 
         let x = bounds.x + border_width * 0.5;
         let y = bounds.y;
-        let w = bounds.w - border_width * 0.5 - line_width;
-        let h = bounds.h;
+        let w = bounds.w - border_width;
+        let h = bounds.h - border_width * 0.5;
 
         // Create a new `Path` from the `vg` module.
         let mut path = vg::Path::new();
         {
-            path.move_to(x, y);
-            path.line_to(x, y + h);
-            path.line_to(x + w, y + h);
-            path.line_to(x + w, y);
-            path.line_to(x, y);
+            path.rect(x, y, w, h);
+            // path.move_to(x, y);
+            // path.line_to(x, y + h);
+            // path.line_to(x + w, y + h);
+            // path.line_to(x + w, y);
+            // path.line_to(x, y);
             path.close();
         }
         // Fill with background color
@@ -210,14 +217,16 @@ impl View for DelayGraph {
         if delay_data.current_tap > 0 {
             max_delay = delay_data.delay_times_array[delay_data.current_tap - 1];
         }
-        let x_factor = 1.0 / ((max_delay as f32 + delay_data.time_out_samples as f32) / w);
+        let x_factor = ((max_delay as f32 + delay_data.time_out_samples as f32)
+            / (w - border_width - line_width * 0.5))
+            .recip();
 
         // draw current time
         if delay_data.current_time > max_delay {
             canvas.stroke_path(
                 &{
                     let mut path = vg::Path::new();
-                    let x_offset = delay_data.current_time as f32 * x_factor + line_width / 2.0;
+                    let x_offset = delay_data.current_time as f32 * x_factor + border_width * 0.5;
                     path.move_to(x + x_offset, y + h);
                     path.line_to(x + x_offset, y);
                     path
@@ -231,9 +240,10 @@ impl View for DelayGraph {
                 let mut path = vg::Path::new();
                 for i in 0..delay_data.current_tap {
                     let x_offset =
-                        delay_data.delay_times_array[i] as f32 * x_factor + line_width / 2.0;
-                    let y_offset = h - (delay_data.velocity_array[i] * h);
-                    path.move_to(x + x_offset, y + h);
+                        delay_data.delay_times_array[i] as f32 * x_factor + border_width * 0.5;
+                    let y_offset = (h - border_width * 0.5)
+                        - (delay_data.velocity_array[i] * (h - border_width * 0.5));
+                    path.move_to(x + x_offset, y + h - (border_width * 0.5));
                     path.line_to(x + x_offset, y + y_offset);
                 }
                 path
@@ -245,9 +255,9 @@ impl View for DelayGraph {
         canvas.stroke_path(
             &{
                 let mut path = vg::Path::new();
-                // path.rect(x, y, w, h);
-                path.move_to(x, y);
-                path.line_to(x, y + h);
+                path.rect(x, y, w, h);
+                // path.move_to(x, y);
+                // path.line_to(x, y + h);
                 path
             },
             &vg::Paint::color(border_color).with_line_width(border_width),

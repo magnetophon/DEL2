@@ -12,7 +12,7 @@
 }
 
 .parameters {
-    top: 9px;
+    top: 0px;
     child-left: 9px;
     /* child-right: 9px; */
     width: auto;
@@ -55,10 +55,17 @@ param-slider .value-entry {
 /* background-color: #fdf6e330; */
 /* } */
 .plugin-name {
-    font-size: 40;
+    font-size: 42;
     /* height: 50px; */
     top: 5px;
+    left: 9px;
     right: 9px;
+    /* width: 100px; */
+}
+
+.meters_and_name {
+    top: 9px;
+    height: 80px;
 }
 
 .global-title {
@@ -66,8 +73,8 @@ param-slider .value-entry {
     /* // This should align nicely with the right edge of the slider */
     left: 269px;
     right: 1s;
-    top: 0px;
-    bottom: 10px;
+    top: 9px;
+    bottom: 1px;
 }
 
 .dsp-title {
@@ -113,8 +120,8 @@ generic-ui .label {
 
 peak-meter {
     height: 30px;
-    width: 458px;
-    child-right: 9px;
+    width: 470px;
+    /* child-right: 9px; */
     color: #e0ce91;
     left: 0px;
     bottom: 6px;
@@ -142,7 +149,8 @@ peak-meter .ticks__label {
     child-left: 1s;
     right: 9px;
     /* top: 0px; */
-    bottom: 34px;
+    bottom: 24px;
     font-size: 15;
-    width: 61px;
+    width: 40px;
 }
+
