@@ -14,6 +14,7 @@
 .parameters {
     top: 9px;
     child-left: 9px;
+    /* child-right: 9px; */
     width: auto;
 }
 
@@ -110,3 +111,38 @@ generic-ui .label {
     bottom: 1s;
 }
 
+peak-meter {
+    height: 30px;
+    width: 458px;
+    child-right: 9px;
+    color: #e0ce91;
+    left: 0px;
+    bottom: 6px;
+}
+
+peak-meter .bar {
+    height: 50%;
+    border-width: 1px;
+    border-color: #4e4e4e;
+}
+
+peak-meter .ticks {
+    height: 50%;
+}
+peak-meter .ticks__tick {
+    top: 0px;
+    width: 1px;
+    height: 30%;
+}
+peak-meter .ticks__label {
+    top: 4px; /* In pixels in an attempt to get this to better align to the grid */
+    font-size: 11; /* 14.667px */
+}
+.meter-label {
+    child-left: 1s;
+    right: 9px;
+    /* top: 0px; */
+    bottom: 34px;
+    font-size: 15;
+    width: 61px;
+}

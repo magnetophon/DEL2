@@ -24,7 +24,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1200, 400))
+    ViziaState::new(|| (1200, 480))
 }
 
 pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -40,18 +40,26 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
 
         HStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
-                PeakMeter::new(
-                    cx,
-                    Data::input_meter
-                        .map(|input_meter| util::gain_to_db(input_meter.load(Ordering::Relaxed))),
-                    Some(Duration::from_millis(600)),
-                );
-                PeakMeter::new(
-                    cx,
-                    Data::output_meter
-                        .map(|output_meter| util::gain_to_db(output_meter.load(Ordering::Relaxed))),
-                    Some(Duration::from_millis(600)),
-                );
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "input").class("meter-label");
+                    PeakMeter::new(
+                        cx,
+                        Data::input_meter.map(|input_meter| {
+                            util::gain_to_db(input_meter.load(Ordering::Relaxed))
+                        }),
+                        Some(Duration::from_millis(600)),
+                    );
+                });
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "output").class("meter-label");
+                    PeakMeter::new(
+                        cx,
+                        Data::output_meter.map(|output_meter| {
+                            util::gain_to_db(output_meter.load(Ordering::Relaxed))
+                        }),
+                        Some(Duration::from_millis(600)),
+                    );
+                });
                 Label::new(cx, "Global").class("global-title");
                 HStack::new(cx, |cx| {
                     make_column(cx, "Gain", |cx| {
