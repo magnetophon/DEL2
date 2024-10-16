@@ -165,9 +165,9 @@ impl View for DelayGraph {
         let line_width = cx.outline_width();
 
         let x = bounds.x + border_width / 2.0;
-        let y = bounds.y + border_width / 2.0;
-        let w = bounds.w - border_width;
-        let h = bounds.h - border_width;
+        let y = bounds.y;
+        let w = bounds.w;
+        let h = bounds.h;
 
         // Create a new `Path` from the `vg` module.
         let mut path = vg::Path::new();
@@ -186,15 +186,28 @@ impl View for DelayGraph {
         if delay_data.current_tap > 0 {
             max_delay = delay_data.delay_times_array[delay_data.current_tap - 1];
         }
-        let x_factor =
-            1.0 / ((max_delay as f32 + delay_data.time_out_samples as f32) / (w - line_width));
+        let x_factor = 1.0 / ((max_delay as f32 + delay_data.time_out_samples as f32) / w);
 
+        // draw current time
+        if delay_data.current_time > max_delay {
+            canvas.stroke_path(
+                &{
+                    let mut path = vg::Path::new();
+                    let x_offset = delay_data.current_time as f32 * x_factor + line_width / 2.0;
+                    path.move_to(x + x_offset, y + h);
+                    path.line_to(x + x_offset, y);
+                    path
+                },
+                &vg::Paint::color(selection_color.into()).with_line_width(line_width),
+            );
+        };
         // draw delay taps
         canvas.stroke_path(
             &{
                 let mut path = vg::Path::new();
                 for i in 0..delay_data.current_tap {
-                    let x_offset = delay_data.delay_times_array[i] as f32 * x_factor;
+                    let x_offset =
+                        delay_data.delay_times_array[i] as f32 * x_factor + line_width / 2.0;
                     let y_offset = h - (delay_data.velocity_array[i] * h);
                     path.move_to(x + x_offset, y + h);
                     path.line_to(x + x_offset, y + y_offset);
@@ -204,24 +217,13 @@ impl View for DelayGraph {
             &vg::Paint::color(outline_color.into()).with_line_width(line_width),
         );
 
-        // draw current time
-        if delay_data.current_time > max_delay {
-            canvas.stroke_path(
-                &{
-                    let mut path = vg::Path::new();
-                    let x_offset = delay_data.current_time as f32 * x_factor;
-                    path.move_to(x + x_offset, y + h);
-                    path.line_to(x + x_offset, y);
-                    path
-                },
-                &vg::Paint::color(selection_color.into()).with_line_width(line_width),
-            );
-        };
         // add outline
         canvas.stroke_path(
             &{
                 let mut path = vg::Path::new();
-                path.rect(x, y, w, h);
+                // path.rect(x, y, w, h);
+                path.move_to(x, y);
+                path.line_to(x, y + h);
                 path
             },
             &vg::Paint::color(border_color).with_line_width(border_width),
