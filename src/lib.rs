@@ -23,7 +23,6 @@ const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
 const VELOCITY_BOTTOM_NAME_PREFIX: &str = "Bottom Velocity";
 const VELOCITY_TOP_NAME_PREFIX: &str = "Top Velocity";
 // this seems to be the number JUCE is using
-// TODO: does this need to be set at runtime?
 const MAX_SOUNDCARD_BUFFER_SIZE: usize = 32768;
 
 struct Del2 {
@@ -111,8 +110,6 @@ pub struct TimingParams {
 
 impl TimingParams {
     /// Create a new [`TapSetParams`] object with a prefix for all parameter names.
-    //TODO: Changing any of the threshold, ratio, or knee parameters causes the passed atomics to be updated.
-    //TODO: These should be taken from a [`CompressorBank`] so the parameters are linked to it.
     pub fn new() -> Self {
         TimingParams {
             time_out_seconds: FloatParam::new(
@@ -150,8 +147,6 @@ pub struct GainParams {
 
 impl GainParams {
     /// Create a new [`TapSetParams`] object with a prefix for all parameter names.
-    //TODO: Changing any of the threshold, ratio, or knee parameters causes the passed atomics to be updated.
-    //TODO: These should be taken from a [`CompressorBank`] so the parameters are linked to it.
     pub fn new() -> Self {
         GainParams {
             // This gain is stored as linear gain. NIH-plug comes with useful conversion functions
