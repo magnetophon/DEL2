@@ -2,6 +2,9 @@ name: Automated Builds
 
 # slightly adapted from:
 # https://github.com/robbert-vdh/nih-plug/blob/master/.github/workflows/build.yml
+permissions:
+  contents: write
+  actions: read
 
 on:
   push:
