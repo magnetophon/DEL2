@@ -167,7 +167,7 @@ impl GainParams {
             // as decibels is easier to work with, but requires a conversion for every sample.
             output_gain: FloatParam::new(
                 "out gain",
-                util::db_to_gain(0.0),
+                util::db_to_gain(-6.0),
                 FloatRange::Skewed {
                     min: util::db_to_gain(-30.0),
                     max: util::db_to_gain(30.0),
@@ -224,18 +224,18 @@ impl DualFilterGuiParams {
             velocity_bottom: Arc::new(FilterGuiParams::new(
                 VELOCITY_BOTTOM_NAME_PREFIX,
                 should_update_filter.clone(),
-                124.0,               // Default cutoff for velocity_bottom
-                0.5,                 // Default res for velocity_bottom
-                13.0,                // Default drive for velocity_bottom
-                MyLadderMode::lp6(), // Default mode for velocity_bottom
+                124.0,                  // Default cutoff for velocity_bottom
+                0.5,                    // Default res for velocity_bottom
+                util::db_to_gain(13.0), // Default drive for velocity_bottom
+                MyLadderMode::lp6(),    // Default mode for velocity_bottom
             )),
             velocity_top: Arc::new(FilterGuiParams::new(
                 VELOCITY_TOP_NAME_PREFIX,
                 should_update_filter.clone(),
-                6000.0,              // Default cutoff for velocity_top
-                0.5,                 // Default res for velocity_top
-                6.0,                 // Default drive for velocity_top
-                MyLadderMode::lp6(), // Default mode for velocity_top
+                6000.0,                // Default cutoff for velocity_top
+                0.5,                   // Default res for velocity_top
+                util::db_to_gain(6.0), // Default drive for velocity_top
+                MyLadderMode::lp6(),   // Default mode for velocity_top
             )),
         }
     }
