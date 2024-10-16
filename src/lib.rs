@@ -74,16 +74,131 @@ impl Data for DelayData {
 struct Del2Params {
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
-    #[id = "output_gain"]
-    pub output_gain: FloatParam,
-    #[id = "global_drive"]
-    pub global_drive: FloatParam,
+    #[nested(group = "global")]
+    pub global: GlobalParams,
+    #[nested(group = "taps")]
+    pub taps: TapsSetParams,
+}
+
+/// Contains the global parameters.
+#[derive(Params)]
+pub struct GlobalParams {
+    #[nested(id_prefix = "timing_params", group = "timing_params")]
+    pub timing_params: Arc<TimingParams>,
+    #[nested(id_prefix = "gain_params", group = "gain_params")]
+    pub gain_params: Arc<GainParams>,
+}
+
+impl GlobalParams {
+    pub fn new() -> Self {
+        GlobalParams {
+            timing_params: Arc::new(TimingParams::new()),
+            gain_params: Arc::new(GainParams::new()),
+        }
+    }
+}
+
+/// This struct contains the parameters for either the top or bottom tap. The `Params`
+/// trait is implemented manually to avoid copy-pasting parameters for both types of compressor.
+/// Both versions will have a parameter ID and a parameter name prefix to distinguish them.
+#[derive(Params)]
+pub struct TimingParams {
     #[id = "time_out_seconds"]
     pub time_out_seconds: FloatParam,
     #[id = "debounce_tap_milliseconds"]
     pub debounce_tap_milliseconds: FloatParam,
-    #[nested(group = "taps")]
-    pub taps: TapsSetParams,
+}
+
+impl TimingParams {
+    /// Create a new [`TapSetParams`] object with a prefix for all parameter names.
+    //TODO: Changing any of the threshold, ratio, or knee parameters causes the passed atomics to be updated.
+    //TODO: These should be taken from a [`CompressorBank`] so the parameters are linked to it.
+    pub fn new() -> Self {
+        TimingParams {
+            time_out_seconds: FloatParam::new(
+                "max tap",
+                3.0,
+                FloatRange::Linear {
+                    min: 0.0,
+                    max: MAX_TAP_SECONDS as f32,
+                },
+            )
+            .with_step_size(0.01)
+            .with_unit(" s"),
+            debounce_tap_milliseconds: FloatParam::new(
+                "min tap",
+                10.0,
+                FloatRange::Skewed {
+                    min: 0.0,
+                    max: MAX_DEBOUNCE_MILLISECONDS,
+                    factor: FloatRange::skew_factor(-2.0),
+                },
+            )
+            .with_step_size(0.01)
+            .with_unit(" ms"),
+        }
+    }
+}
+
+#[derive(Params)]
+pub struct GainParams {
+    #[id = "output_gain"]
+    pub output_gain: FloatParam,
+    #[id = "global_drive"]
+    pub global_drive: FloatParam,
+}
+
+impl GainParams {
+    /// Create a new [`TapSetParams`] object with a prefix for all parameter names.
+    //TODO: Changing any of the threshold, ratio, or knee parameters causes the passed atomics to be updated.
+    //TODO: These should be taken from a [`CompressorBank`] so the parameters are linked to it.
+    pub fn new() -> Self {
+        GainParams {
+            // This gain is stored as linear gain. NIH-plug comes with useful conversion functions
+            // to treat these kinds of parameters as if we were dealing with decibels. Storing this
+            // as decibels is easier to work with, but requires a conversion for every sample.
+            output_gain: FloatParam::new(
+                "out gain",
+                util::db_to_gain(0.0),
+                FloatRange::Skewed {
+                    min: util::db_to_gain(-30.0),
+                    max: util::db_to_gain(30.0),
+                    // This makes the range appear as if it was linear when displaying the values as
+                    // decibels
+                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
+                },
+            )
+            // Because the gain parameter is stored as linear gain instead of storing the value as
+            // decibels, we need logarithmic smoothing
+            .with_smoother(SmoothingStyle::Logarithmic(50.0))
+            .with_unit(" dB")
+            // There are many predefined formatters we can use here. If the gain was stored as
+            // decibels instead of as a linear gain value, we could have also used the
+            // `.with_step_size(0.1)` function to get internal rounding.
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            global_drive: FloatParam::new(
+                "drive",
+                util::db_to_gain(0.0),
+                FloatRange::Skewed {
+                    min: util::db_to_gain(-30.0),
+                    max: util::db_to_gain(30.0),
+                    // This makes the range appear as if it was linear when displaying the values as
+                    // decibels
+                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
+                },
+            )
+            // Because the gain parameter is stored as linear gain instead of storing the value as
+            // decibels, we need logarithmic smoothing
+            .with_smoother(SmoothingStyle::Logarithmic(50.0))
+            .with_unit(" dB")
+            // There are many predefined formatters we can use here. If the gain was stored as
+            // decibels instead of as a linear gain value, we could have also used the
+            // `.with_step_size(0.1)` function to get internal rounding.
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+        }
+    }
 }
 
 /// Contains the top and bottom tap parameters.
@@ -244,71 +359,8 @@ impl Del2Params {
     fn new(should_update_filter: Arc<AtomicBool>) -> Self {
         Self {
             editor_state: editor::default_state(),
-            // This gain is stored as linear gain. NIH-plug comes with useful conversion functions
-            // to treat these kinds of parameters as if we were dealing with decibels. Storing this
-            // as decibels is easier to work with, but requires a conversion for every sample.
-            output_gain: FloatParam::new(
-                "output gain",
-                util::db_to_gain(0.0),
-                FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    // This makes the range appear as if it was linear when displaying the values as
-                    // decibels
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
-                },
-            )
-            // Because the gain parameter is stored as linear gain instead of storing the value as
-            // decibels, we need logarithmic smoothing
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
-            .with_unit(" dB")
-            // There are many predefined formatters we can use here. If the gain was stored as
-            // decibels instead of as a linear gain value, we could have also used the
-            // `.with_step_size(0.1)` function to get internal rounding.
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            global_drive: FloatParam::new(
-                "global drive",
-                util::db_to_gain(0.0),
-                FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    // This makes the range appear as if it was linear when displaying the values as
-                    // decibels
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
-                },
-            )
-            // Because the gain parameter is stored as linear gain instead of storing the value as
-            // decibels, we need logarithmic smoothing
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
-            .with_unit(" dB")
-            // There are many predefined formatters we can use here. If the gain was stored as
-            // decibels instead of as a linear gain value, we could have also used the
-            // `.with_step_size(0.1)` function to get internal rounding.
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            time_out_seconds: FloatParam::new(
-                "max tap time",
-                3.0,
-                FloatRange::Linear {
-                    min: 0.0,
-                    max: MAX_TAP_SECONDS as f32,
-                },
-            )
-            .with_step_size(0.01)
-            .with_unit(" s"),
-            debounce_tap_milliseconds: FloatParam::new(
-                "debounce time",
-                10.0,
-                FloatRange::Skewed {
-                    min: 0.0,
-                    max: MAX_DEBOUNCE_MILLISECONDS,
-                    factor: FloatRange::skew_factor(-2.0),
-                },
-            )
-            .with_step_size(0.01)
-            .with_unit(" ms"),
             taps: TapsSetParams::new(should_update_filter.clone()),
+            global: GlobalParams::new(),
         }
     }
 }
@@ -401,7 +453,7 @@ impl Plugin for Del2 {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        self.update_timing_parameters();
+        self.update_timing_params();
 
         self.process_midi_events(context);
         self.prepare_for_delay(buffer.samples());
@@ -419,11 +471,17 @@ impl Plugin for Del2 {
 
 impl Del2 {
     // #[inline]
-    fn update_timing_parameters(&mut self) {
-        self.delay_data.time_out_samples =
-            (self.sample_rate as f64 * self.params.time_out_seconds.value() as f64) as u32;
+    fn update_timing_params(&mut self) {
+        self.delay_data.time_out_samples = (self.sample_rate as f64
+            * self.params.global.timing_params.time_out_seconds.value() as f64)
+            as u32;
         self.debounce_tap_samples = (self.sample_rate as f64
-            * self.params.debounce_tap_milliseconds.value() as f64
+            * self
+                .params
+                .global
+                .timing_params
+                .debounce_tap_milliseconds
+                .value() as f64
             * 0.001) as u32;
     }
 
@@ -646,16 +704,17 @@ impl Del2 {
         // No idea how...
         // Loop through each sample, processing two channels at a time
         for i in (0..block_len).step_by(2) {
-            let output_gain = self.params.output_gain.smoothed.next();
+            let output_gain1 = self.params.global.gain_params.output_gain.smoothed.next();
+            let output_gain2 = self.params.global.gain_params.output_gain.smoothed.next();
             let drive = self.filter_params[tap].clone().drive;
 
             // Get a unique global_drive for each iteration for each frame
-            let pre_filter_gain1 = self.params.global_drive.smoothed.next();
-            let pre_filter_gain2 = self.params.global_drive.smoothed.next();
+            let pre_filter_gain1 = self.params.global.gain_params.global_drive.smoothed.next();
+            let pre_filter_gain2 = self.params.global.gain_params.global_drive.smoothed.next();
 
             // Calculate post-filter gain compensation using the average of the two gains
-            let post_filter_gain1 = output_gain / (drive * pre_filter_gain1);
-            let post_filter_gain2 = output_gain / (drive * pre_filter_gain2);
+            let post_filter_gain1 = output_gain1 / (drive * pre_filter_gain1);
+            let post_filter_gain2 = output_gain2 / (drive * pre_filter_gain2);
 
             let mut frame = self.make_stereo_frame(i);
 

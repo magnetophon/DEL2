@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use crate::Del2Params;
 use crate::DelayDataOutput;
 
-const COLUMN_WIDTH: Units = Pixels(250.0);
+const COLUMN_WIDTH: Units = Pixels(269.0);
 
 #[derive(Lens, Clone)]
 pub(crate) struct Data {
@@ -20,7 +20,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1000, 500))
+    ViziaState::new(|| (1200, 400))
 }
 
 pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -36,17 +36,31 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
 
         HStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
-                Label::new(cx, "DEL2").class("plugin-name");
+                Label::new(cx, "Global").class("global-title");
+                HStack::new(cx, |cx| {
+                    make_column(cx, "Gain", |cx| {
+                        let gain_params = Data::params.map(|p| p.global.gain_params.clone());
+                        GenericUi::new_custom(cx, gain_params, |cx, param_ptr| {
+                            HStack::new(cx, |cx| {
+                                Label::new(cx, unsafe { param_ptr.name() }).class("label");
+                                GenericUi::draw_widget(cx, gain_params, param_ptr);
+                            })
+                            .class("row");
+                        });
+                    });
 
-                Label::new(cx, "output gain");
-                ParamSlider::new(cx, Data::params, |params| &params.output_gain);
-                Label::new(cx, "global drive");
-                ParamSlider::new(cx, Data::params, |params| &params.global_drive);
-                Label::new(cx, "time out");
-                ParamSlider::new(cx, Data::params, |params| &params.time_out_seconds);
-                Label::new(cx, "debounce");
-                ParamSlider::new(cx, Data::params, |params| &params.debounce_tap_milliseconds);
-                Label::new(cx, "Filters").class("column-title");
+                    make_column(cx, "Timing", |cx| {
+                        let timing_params = Data::params.map(|p| p.global.timing_params.clone());
+                        GenericUi::new_custom(cx, timing_params, |cx, param_ptr| {
+                            HStack::new(cx, |cx| {
+                                Label::new(cx, unsafe { param_ptr.name() }).class("label");
+                                GenericUi::draw_widget(cx, timing_params, param_ptr);
+                            })
+                            .class("row");
+                        });
+                    });
+                });
+                Label::new(cx, "Filters").class("dsp-title");
 
                 HStack::new(cx, |cx| {
                     make_column(cx, "Bottom Velocity", |cx| {
@@ -90,13 +104,17 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                 })
                 .size(Auto);
             })
-            // .row_between(Pixels(0.0))
-            .child_left(Stretch(1.0))
-            .child_right(Stretch(1.0));
-            DelayGraph::new(cx, Data::delay_data).width(Pixels(400.0));
-            ResizeHandle::new(cx)
-            // .height(Pixels(10.0))
-                ;
+            .class("parameters");
+            // .row_between(Pixels(9.0))
+            // .child_left(Stretch(1.0))
+            // .child_right(Stretch(1.0))
+            // .child_left(Pixels(9.0))
+            // .child_right(Pixels(9.0));
+            ZStack::new(cx, |cx| {
+                Label::new(cx, "DEL2").class("plugin-name");
+                DelayGraph::new(cx, Data::delay_data);
+                ResizeHandle::new(cx);
+            });
         });
     })
 }
@@ -213,17 +231,11 @@ impl View for DelayGraph {
 
 fn make_column(cx: &mut Context, title: &str, contents: impl FnOnce(&mut Context)) {
     VStack::new(cx, |cx| {
-        Label::new(cx, title)
-            .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
-            .font_weight(FontWeightKeyword::Thin)
-            .font_size(23.0)
-            .left(Stretch(1.0))
-            // This should align nicely with the right edge of the slider
-            .right(Pixels(7.0))
-            .bottom(Pixels(-10.0));
+        Label::new(cx, title).class("column-title");
 
         contents(cx);
     })
+    // .class("column");
     .width(COLUMN_WIDTH)
     .height(Auto);
 }
