@@ -1,0 +1,101 @@
+/* Overrides for default VIZIA widgets */
+
+:root {
+    background-color: #292929;
+    color: #e0ce91;
+    /* color: #fabdf0; */
+    font-size: 19;
+    /*
+     * NOTE: vizia's font rendering looks way too dark and thick. Going one font
+     *       weight lower seems to compensate for this.
+     */
+    font-weight: light;
+}
+
+
+param-slider {
+    height: 30px;
+    /* width: 100%; */
+    /* child-left: 7px; */
+    /* child-right: 7px; */
+    border-width: 1px;
+    background-color: #4e4e4e;
+    /* background-color: #292929; */
+    border-color: #fabdf0;
+    /* border-color: #e0ce91; */
+    transition: background-color 300ms;
+}
+
+param-slider:active,
+param-slider:hover {
+    background-color: #292929;
+    /* background-color: #4e4e4e; */
+    /* background-color: #5879af; */
+    transition: background-color 100ms;
+}
+
+param-slider .fill {
+    /* background-color: #0d1931; */
+    background-color: #5879af;
+    /* background-color: #4e4e4e; */
+}
+/* param-slider .fill--modulation { */
+/* background-color: #a4eafc69; */
+/* } */
+
+/* This is a textbox, but we want it to appear just like the label */
+param-slider .value-entry {
+    /* Vizia doesn't support the unset value */
+    /* background-color: transparent; */
+    background-color: #292929;
+    border-width: 0px;
+    child-space: 1s;
+}
+/* param-slider .value-entry .caret { */
+/* background-color: #fdf6e3; */
+/* } */
+/* param-slider .value-entry .selection { */
+/* background-color: #fdf6e330; */
+/* } */
+.plugin-name {
+    font-size: 30;
+    height: 50px;
+    /* child-left: 1s; */
+    child-top: 5s;
+    child-bottom: 1px;
+}
+
+.column-title {
+    font-size: 23;
+    height: 50px;
+    child-top: 1s;
+    child-bottom: 5px;
+}
+
+delay-graph {
+    border-width: 3px;
+    outline-width: 3px;
+    border-color: #4e4e4e;
+    outline-color: #5879af;
+    /* outline-color: red; */
+    selection-color: #fabdf0;
+}
+
+generic-ui .row {
+    col-between: 6px;
+    height: auto;
+    layout-type: row;
+}
+generic-ui .label {
+    /* color: red; */
+    left: 1s;
+    top: 1s;
+    bottom: 1s;
+}
+
+label {
+    /* color: red; */
+    left: 1s;
+    top: 1s;
+    bottom: 1s;
+}

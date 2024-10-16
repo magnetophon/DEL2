@@ -20,7 +20,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (900, 450))
+    ViziaState::new(|| (1000, 500))
 }
 
 pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -28,17 +28,15 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
         assets::register_noto_sans_light(cx);
         assets::register_noto_sans_thin(cx);
 
+        // Add the stylesheet to the app
+        cx.add_stylesheet(include_style!("src/style.css"))
+            .expect("Failed to load stylesheet");
+
         editor_data.clone().build(cx);
 
         HStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
-                Label::new(cx, "DEL2")
-                    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
-                    .font_weight(FontWeightKeyword::Thin)
-                    .font_size(30.0)
-                    .height(Pixels(50.0))
-                    .child_top(Stretch(1.0))
-                    .child_bottom(Pixels(0.0));
+                Label::new(cx, "DEL2").class("plugin-name");
 
                 Label::new(cx, "output gain");
                 ParamSlider::new(cx, Data::params, |params| &params.output_gain);
@@ -48,13 +46,7 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                 ParamSlider::new(cx, Data::params, |params| &params.time_out_seconds);
                 Label::new(cx, "debounce");
                 ParamSlider::new(cx, Data::params, |params| &params.debounce_tap_milliseconds);
-                Label::new(cx, "filters")
-                    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
-                    .font_weight(FontWeightKeyword::Thin)
-                    .font_size(20.0)
-                    .height(Pixels(50.0))
-                    .child_top(Stretch(1.0))
-                    .child_bottom(Pixels(0.0));
+                Label::new(cx, "Filters").class("column-title");
 
                 HStack::new(cx, |cx| {
                     make_column(cx, "Bottom Velocity", |cx| {
@@ -101,15 +93,7 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
             // .row_between(Pixels(0.0))
             .child_left(Stretch(1.0))
             .child_right(Stretch(1.0));
-            DelayGraph::new(cx, Data::delay_data)
-            // .background_color(Color::green())
-                .border_color(Color::grey())
-                .outline_color(Color::black())
-                .border_width(Pixels(1.0))
-            // .child_right(Stretch(1.0))
-                .width(Pixels(400.0))
-            // .height(Pixels(200.0))
-                ;
+            DelayGraph::new(cx, Data::delay_data).width(Pixels(400.0));
             ResizeHandle::new(cx)
             // .height(Pixels(10.0))
                 ;
@@ -152,13 +136,15 @@ impl View for DelayGraph {
 
         let border_color = cx.border_color();
         let outline_color = cx.outline_color();
+        let selection_color = cx.selection_color();
         let opacity = cx.opacity();
         let mut background_color: vg::Color = cx.background_color().into();
         background_color.set_alphaf(background_color.a * opacity);
         let mut border_color: vg::Color = border_color.into();
         border_color.set_alphaf(border_color.a * opacity);
         let border_width = cx.border_width();
-        let line_width = cx.scale_factor();
+        // let line_width = cx.scale_factor();
+        let line_width = cx.outline_width();
 
         let x = bounds.x + border_width / 2.0;
         let y = bounds.y + border_width / 2.0;
@@ -210,7 +196,7 @@ impl View for DelayGraph {
                     path.line_to(x + x_offset, y);
                     path
                 },
-                &vg::Paint::color(Color::red().into()).with_line_width(line_width),
+                &vg::Paint::color(selection_color.into()).with_line_width(line_width),
             );
         };
         // add outline
