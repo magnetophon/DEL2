@@ -77,7 +77,7 @@ struct Del2Params {
     #[nested(group = "global")]
     pub global: GlobalParams,
     #[nested(group = "taps")]
-    pub taps: TapsSetParams,
+    pub taps: DualFilterGuiParams,
 }
 
 /// Contains the global parameters.
@@ -203,17 +203,17 @@ impl GainParams {
 
 /// Contains the top and bottom tap parameters.
 #[derive(Params)]
-pub struct TapsSetParams {
+pub struct DualFilterGuiParams {
     #[nested(id_prefix = "velocity_bottom", group = "velocity_bottom")]
-    pub velocity_bottom: Arc<TapGuiParams>,
+    pub velocity_bottom: Arc<FilterGuiParams>,
     #[nested(id_prefix = "velocity_top", group = "velocity_top")]
-    pub velocity_top: Arc<TapGuiParams>,
+    pub velocity_top: Arc<FilterGuiParams>,
 }
 
-impl TapsSetParams {
+impl DualFilterGuiParams {
     pub fn new(should_update_filter: Arc<AtomicBool>) -> Self {
-        TapsSetParams {
-            velocity_bottom: Arc::new(TapGuiParams::new(
+        DualFilterGuiParams {
+            velocity_bottom: Arc::new(FilterGuiParams::new(
                 VELOCITY_BOTTOM_NAME_PREFIX,
                 should_update_filter.clone(),
                 124.0,               // Default cutoff for velocity_bottom
@@ -221,7 +221,7 @@ impl TapsSetParams {
                 13.0,                // Default drive for velocity_bottom
                 MyLadderMode::lp6(), // Default mode for velocity_bottom
             )),
-            velocity_top: Arc::new(TapGuiParams::new(
+            velocity_top: Arc::new(FilterGuiParams::new(
                 VELOCITY_TOP_NAME_PREFIX,
                 should_update_filter.clone(),
                 6000.0,              // Default cutoff for velocity_top
@@ -237,7 +237,7 @@ impl TapsSetParams {
 /// trait is implemented manually to avoid copy-pasting parameters for both types of compressor.
 /// Both versions will have a parameter ID and a parameter name prefix to distinguish them.
 #[derive(Params)]
-pub struct TapGuiParams {
+pub struct FilterGuiParams {
     #[id = "cutoff"]
     pub cutoff: FloatParam,
     #[id = "res"]
@@ -248,7 +248,7 @@ pub struct TapGuiParams {
     pub mode: EnumParam<MyLadderMode>,
 }
 
-impl TapGuiParams {
+impl FilterGuiParams {
     pub fn new(
         name_prefix: &str,
         should_update_filter: Arc<AtomicBool>,
@@ -257,7 +257,7 @@ impl TapGuiParams {
         default_drive: f32,
         default_mode: MyLadderMode,
     ) -> Self {
-        TapGuiParams {
+        FilterGuiParams {
             cutoff: FloatParam::new(
                 format!("{name_prefix} Cutoff"),
                 default_cutoff, // Use the passed default value
@@ -367,7 +367,7 @@ impl Del2Params {
     fn new(should_update_filter: Arc<AtomicBool>) -> Self {
         Self {
             editor_state: editor::default_state(),
-            taps: TapsSetParams::new(should_update_filter.clone()),
+            taps: DualFilterGuiParams::new(should_update_filter.clone()),
             global: GlobalParams::new(),
         }
     }
