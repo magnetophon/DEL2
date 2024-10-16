@@ -216,10 +216,18 @@ impl TapsSetParams {
             velocity_bottom: Arc::new(TapGuiParams::new(
                 VELOCITY_BOTTOM_NAME_PREFIX,
                 should_update_filter.clone(),
+                124.0,               // Default cutoff for velocity_bottom
+                0.5,                 // Default res for velocity_bottom
+                13.0,                // Default drive for velocity_bottom
+                MyLadderMode::lp6(), // Default mode for velocity_bottom
             )),
             velocity_top: Arc::new(TapGuiParams::new(
                 VELOCITY_TOP_NAME_PREFIX,
                 should_update_filter.clone(),
+                6000.0,              // Default cutoff for velocity_top
+                0.5,                 // Default res for velocity_top
+                6.0,                 // Default drive for velocity_top
+                MyLadderMode::lp6(), // Default mode for velocity_top
             )),
         }
     }
@@ -241,16 +249,20 @@ pub struct TapGuiParams {
 }
 
 impl TapGuiParams {
-    /// Create a new [`TapSetParams`] object with a prefix for all parameter names.
-    //TODO: Changing any of the threshold, ratio, or knee parameters causes the passed atomics to be updated.
-    //TODO: These should be taken from a [`CompressorBank`] so the parameters are linked to it.
-    pub fn new(name_prefix: &str, should_update_filter: Arc<AtomicBool>) -> Self {
+    pub fn new(
+        name_prefix: &str,
+        should_update_filter: Arc<AtomicBool>,
+        default_cutoff: f32,
+        default_res: f32,
+        default_drive: f32,
+        default_mode: MyLadderMode,
+    ) -> Self {
         TapGuiParams {
             cutoff: FloatParam::new(
                 format!("{name_prefix} Cutoff"),
-                1000.0,
+                default_cutoff, // Use the passed default value
                 FloatRange::Skewed {
-                    min: 5.0, // This must never reach 0
+                    min: 5.0,
                     max: 20_000.0,
                     factor: FloatRange::skew_factor(-2.5),
                 },
@@ -263,7 +275,7 @@ impl TapGuiParams {
             })),
             res: FloatParam::new(
                 format!("{name_prefix} Res"),
-                0.5,
+                default_res, // Use the passed default value
                 FloatRange::Linear { min: 0., max: 1. },
             )
             .with_value_to_string(formatters::v2s_f32_rounded(2))
@@ -273,26 +285,22 @@ impl TapGuiParams {
             })),
             drive: FloatParam::new(
                 format!("{name_prefix} Drive"),
-                1.0,
+                default_drive, // Use the passed default value
                 FloatRange::Skewed {
-                    min: 1.0, // This must never reach 0
-                    // max: 15.8490, // 24 dB
-                    max: 31.623, // 30 dB
-                    // max: 251.188643, // 48 dB
+                    min: 1.0,
+                    max: 31.623,
                     factor: FloatRange::skew_factor(-1.2),
                 },
             )
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db())
-            // not strictly needed, but the easy way out.  TODO:  fix
             .with_callback(Arc::new({
                 let should_update_filter = should_update_filter.clone();
                 move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
             })),
 
-            mode: EnumParam::new(format!("{name_prefix} Mode"), MyLadderMode::lp6())
-                // not strictly needed, but the easy way out.  TODO:  fix
+            mode: EnumParam::new(format!("{name_prefix} Mode"), default_mode) // Use the passed default value
                 .with_callback(Arc::new({
                     let should_update_filter = should_update_filter.clone();
                     move |_| should_update_filter.store(true, std::sync::atomic::Ordering::Release)
