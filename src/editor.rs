@@ -56,11 +56,27 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                     make_column(cx, "Timing", |cx| {
                         let timing_params = Data::params.map(|p| p.global.timing_params.clone());
                         GenericUi::new_custom(cx, timing_params, |cx, param_ptr| {
-                            HStack::new(cx, |cx| {
-                                Label::new(cx, unsafe { param_ptr.name() }).class("label");
-                                GenericUi::draw_widget(cx, timing_params, param_ptr);
-                            })
-                            .class("row");
+                            let param_name = unsafe { param_ptr.name() };
+
+                            // Check if the parameter is `time_out_seconds` and replace with specific logic
+                            if param_name == "max tap" {
+                                HStack::new(cx, |cx| {
+                                    Label::new(cx, param_name).class("label");
+                                    ParamSlider::new(cx, Data::params, |params| {
+                                        &params.global.timing_params.time_out_seconds
+                                    })
+                                    .set_style(ParamSliderStyle::FromLeft)
+                                    .class("widget");
+                                })
+                                .class("row");
+                            } else {
+                                // Default widget drawing for others
+                                HStack::new(cx, |cx| {
+                                    Label::new(cx, param_name).class("label");
+                                    GenericUi::draw_widget(cx, timing_params, param_ptr);
+                                })
+                                .class("row");
+                            }
                         });
                     });
                 });

@@ -128,9 +128,10 @@ impl TimingParams {
             time_out_seconds: FloatParam::new(
                 "max tap",
                 3.0,
-                FloatRange::Linear {
+                FloatRange::Skewed {
                     min: 0.0,
                     max: MAX_TAP_SECONDS as f32,
+                    factor: FloatRange::skew_factor(-1.2),
                 },
             )
             .with_step_size(0.01)
