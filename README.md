@@ -27,6 +27,9 @@ A rhythm delay with crunch.
 - Optional individual settings per tap
 - Optional auxiliary outputs per tap
 - BPM sync, scale and quantization
+- Dry/wet, optionally using a "dirty" dry/undelayed signal.
+- tap-listen on/off switch, with momentary/latch toggle and midi learn.
+- fade-in and out when creating and clearing taps.
 
 ## Thanks
 
