@@ -20,8 +20,8 @@ const MAX_NR_TAPS: usize = 8;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * MAX_NR_TAPS;
 const MAX_SAMPLE_RATE: usize = 192000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
-const VELOCITY_BOTTOM_NAME_PREFIX: &str = "Bottom Velocity";
-const VELOCITY_TOP_NAME_PREFIX: &str = "Top Velocity";
+const VELOCITY_BOTTOM_NAME_PREFIX: &str = "low velocity";
+const VELOCITY_TOP_NAME_PREFIX: &str = "high velocity";
 // this seems to be the number JUCE is using
 const MAX_SOUNDCARD_BUFFER_SIZE: usize = 32768;
 
@@ -275,7 +275,7 @@ impl FilterGuiParams {
     ) -> Self {
         FilterGuiParams {
             cutoff: FloatParam::new(
-                format!("{name_prefix} Cutoff"),
+                format!("{name_prefix} cutoff"),
                 default_cutoff, // Use the passed default value
                 FloatRange::Skewed {
                     min: 5.0,
@@ -283,14 +283,14 @@ impl FilterGuiParams {
                     factor: FloatRange::skew_factor(-2.5),
                 },
             )
-            .with_unit(" Hz")
-            .with_value_to_string(formatters::v2s_f32_rounded(0))
+            .with_value_to_string(formatters::v2s_f32_hz_then_khz(2))
+            .with_string_to_value(formatters::s2v_f32_hz_then_khz())
             .with_callback(Arc::new({
                 let should_update_filter = should_update_filter.clone();
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
             res: FloatParam::new(
-                format!("{name_prefix} Res"),
+                format!("{name_prefix} res"),
                 default_res, // Use the passed default value
                 FloatRange::Linear { min: 0., max: 1. },
             )
@@ -300,7 +300,7 @@ impl FilterGuiParams {
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
             drive: FloatParam::new(
-                format!("{name_prefix} Drive"),
+                format!("{name_prefix} drive"),
                 default_drive, // Use the passed default value
                 FloatRange::Skewed {
                     min: util::db_to_gain(0.0),
@@ -318,7 +318,7 @@ impl FilterGuiParams {
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
 
-            mode: EnumParam::new(format!("{name_prefix} Mode"), default_mode) // Use the passed default value
+            mode: EnumParam::new(format!("{name_prefix} mode"), default_mode) // Use the passed default value
                 .with_callback(Arc::new({
                     let should_update_filter = should_update_filter.clone();
                     move |_| should_update_filter.store(true, Ordering::Release)

@@ -40,9 +40,9 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
 
         HStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
-                Label::new(cx, "Global").class("global-title");
+                Label::new(cx, "global").class("global-title");
                 HStack::new(cx, |cx| {
-                    make_column(cx, "Gain", |cx| {
+                    make_column(cx, "gain", |cx| {
                         let gain_params = Data::params.map(|p| p.global.gain_params.clone());
                         GenericUi::new_custom(cx, gain_params, |cx, param_ptr| {
                             HStack::new(cx, |cx| {
@@ -53,7 +53,7 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                         });
                     });
 
-                    make_column(cx, "Timing", |cx| {
+                    make_column(cx, "timing", |cx| {
                         let timing_params = Data::params.map(|p| p.global.timing_params.clone());
                         GenericUi::new_custom(cx, timing_params, |cx, param_ptr| {
                             let param_name = unsafe { param_ptr.name() };
@@ -80,10 +80,10 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                         });
                     });
                 });
-                Label::new(cx, "Filters").class("dsp-title");
+                Label::new(cx, "filters").class("dsp-title");
 
                 HStack::new(cx, |cx| {
-                    make_column(cx, "Bottom Velocity", |cx| {
+                    make_column(cx, "low velocity", |cx| {
                         // We don't want to show the 'Upwards' prefix here, but it should still be in
                         // the parameter name so the parameter list makes sense
                         let velocity_bottom_params =
@@ -93,7 +93,7 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                                 Label::new(
                                     cx,
                                     unsafe { param_ptr.name() }
-                                        .strip_prefix("Bottom Velocity ")
+                                        .strip_prefix("low velocity ")
                                         .expect("Expected parameter name prefix, this is a bug"),
                                 )
                                 .class("label");
@@ -104,14 +104,14 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                         });
                     });
 
-                    make_column(cx, "Top Velocity", |cx| {
+                    make_column(cx, "high velocity", |cx| {
                         let velocity_top_params = Data::params.map(|p| p.taps.velocity_top.clone());
                         GenericUi::new_custom(cx, velocity_top_params, |cx, param_ptr| {
                             HStack::new(cx, |cx| {
                                 Label::new(
                                     cx,
                                     unsafe { param_ptr.name() }
-                                        .strip_prefix("Top Velocity ")
+                                        .strip_prefix("high velocity ")
                                         .expect("Expected parameter name prefix, this is a bug"),
                                 )
                                 .class("label");
