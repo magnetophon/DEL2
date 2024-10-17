@@ -54,6 +54,7 @@ param-slider .value-entry {
 /* background-color: #fdf6e330; */
 /* } */
 .plugin-name {
+    color: #fabdf0;
     font-size: 42;
     top: 12px;
     right: 18px;
