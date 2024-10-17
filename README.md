@@ -30,7 +30,6 @@ A rhythm delay with crunch.
 - Dry/wet, optionally using a "dirty" dry/undelayed signal.
 - Cutoff keytracking amount and velocity->output-level tracking amount
 - Tap-listen on/off switch, with momentary/latch toggle and midi learn
-- Fade-in and out when creating and clearing taps
 
 ## Thanks
 

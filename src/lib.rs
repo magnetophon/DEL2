@@ -27,6 +27,7 @@ const VELOCITY_TOP_NAME_PREFIX: &str = "Top Velocity";
 const MAX_SOUNDCARD_BUFFER_SIZE: usize = 32768;
 
 const PEAK_METER_DECAY_MS: f64 = 150.0;
+const FADE_DURATION_SECONDS: f32 = 0.01; // 10ms
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -42,6 +43,8 @@ struct Del2 {
     delay_data: DelayData,
     delay_data_input: DelayDataInput,
     delay_data_output: Arc<Mutex<DelayDataOutput>>,
+    // N counters to know where in the fade in we are: 0 is the start
+    fade_in_states: [usize; MAX_NR_TAPS],
     sample_rate: f32,
     /// Needed to normalize the peak meter's response based on the sample rate.
     peak_meter_decay_weight: f32,
@@ -54,6 +57,11 @@ struct Del2 {
     input_meter: Arc<AtomicF32>,
     output_meter: Arc<AtomicF32>,
     delay_write_index: usize,
+    fade_samples: usize,
+    // a counter to know where in the fade out we are: 0 is the start
+    fade_out_state: usize,
+    // same as delay_data.current_tap, but only reset after the fade out is done
+    fade_out_tap: usize,
     samples_since_last_event: u32,
     timing_last_event: u32,
     debounce_tap_samples: u32,
@@ -348,11 +356,15 @@ impl Default for Del2 {
             delay_data: initial_delay_data,
             delay_data_input,
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
+            fade_in_states: [0; MAX_NR_TAPS],
             sample_rate: 1.0,
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
             output_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
             delay_write_index: 0,
+            fade_samples: 0,
+            fade_out_state: 0,
+            fade_out_tap: 0,
             samples_since_last_event: 0,
             timing_last_event: 0,
             debounce_tap_samples: 0,
@@ -446,6 +458,8 @@ impl Plugin for Del2 {
     ) -> bool {
         // Set the sample rate from the buffer configuration
         self.sample_rate = buffer_config.sample_rate;
+        self.fade_samples = (FADE_DURATION_SECONDS * self.sample_rate) as usize;
+        self.fade_out_state = self.fade_samples;
 
         // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
         // have dropped by 12 dB
@@ -485,13 +499,14 @@ impl Plugin for Del2 {
         self.prepare_for_delay(buffer.samples());
 
         if self.should_update_filter() {
-            for tap in 0..self.delay_data.current_tap {
+            for tap in 0..self.fade_out_tap {
                 self.update_filter(tap);
             }
         }
 
         self.update_peak_meter(buffer, &self.input_meter);
         self.process_audio_blocks(buffer);
+        self.apply_fade_out(buffer);
         self.update_peak_meter(buffer, &self.output_meter);
         ProcessStatus::Normal
     }
@@ -527,68 +542,65 @@ impl Del2 {
     fn note_on(&mut self, timing: u32, velocity: f32) {
         match self.counting_state {
             CountingState::TimeOut => {
-                self.delay_data
-                    .delay_times_array
-                    .iter_mut()
-                    .for_each(|x| *x = 0);
-                self.delay_data
-                    .velocity_array
-                    .iter_mut()
-                    .for_each(|x| *x = 0.0);
+                self.fade_out_state = 0;
                 self.delay_data.current_tap = 0;
                 self.timing_last_event = timing;
                 self.counting_state = CountingState::CountingInBuffer;
             }
             CountingState::CountingInBuffer => {
+                // Check if timing surpasses debounce and update tap information
                 if (timing - self.timing_last_event) > self.debounce_tap_samples
                     && self.delay_data.current_tap < MAX_NR_TAPS
                 {
                     self.samples_since_last_event = timing - self.timing_last_event;
                     self.timing_last_event = timing;
                 } else {
-                    // println!("debounce in!");
-                    return;
+                    return; // Debounce in effect, ignore tap
                 }
             }
             CountingState::CountingAcrossBuffer => {
+                // Handle delayed tap timing across buffer
                 if (self.samples_since_last_event + timing) > self.debounce_tap_samples
                     && self.delay_data.current_tap < MAX_NR_TAPS
                 {
                     self.samples_since_last_event += timing;
                     self.timing_last_event = timing;
-                    // println!("across to in buffer!");
                     self.counting_state = CountingState::CountingInBuffer;
                 } else {
-                    // println!("debounce across!");
-                    return;
+                    return; // Debounce across buffer, ignore
                 }
             }
         }
-        if self.samples_since_last_event <= self.delay_data.time_out_samples {
-            if self.delay_data.current_tap < MAX_NR_TAPS
-                && self.counting_state != CountingState::TimeOut
-                && self.samples_since_last_event > 0
-                && velocity > 0.0
-            {
-                if self.delay_data.current_tap > 0 {
-                    self.delay_data.delay_times_array[self.delay_data.current_tap] = self
-                        .samples_since_last_event
-                        + self.delay_data.delay_times_array[self.delay_data.current_tap - 1];
-                } else {
-                    self.delay_data.delay_times_array[self.delay_data.current_tap] =
-                        self.samples_since_last_event;
-                }
-                self.delay_data.velocity_array[self.delay_data.current_tap] = velocity;
-                self.delay_data.current_tap += 1;
-                // we have a new tap, so we're interpolating new filter parameters
-                self.should_update_filter.store(true, Ordering::Release);
-            };
-        } else {
+
+        if self.samples_since_last_event > self.delay_data.time_out_samples {
+            // Timeout condition, reset state
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
-            // println!("time out note on");
-        };
+        } else if self.delay_data.current_tap < MAX_NR_TAPS
+            && self.counting_state != CountingState::TimeOut
+            && self.samples_since_last_event > 0
+            && velocity > 0.0
+        {
+            // Record the new tap with the corresponding velocity and timing
+            if self.delay_data.current_tap > 0 {
+                self.delay_data.delay_times_array[self.delay_data.current_tap] = self
+                    .samples_since_last_event
+                    + self.delay_data.delay_times_array[self.delay_data.current_tap - 1];
+            } else {
+                self.delay_data.delay_times_array[self.delay_data.current_tap] =
+                    self.samples_since_last_event;
+            }
+
+            // Update velocity and state information
+            self.delay_data.velocity_array[self.delay_data.current_tap] = velocity;
+            self.fade_in_states[self.delay_data.current_tap] = 0;
+            self.delay_data.current_tap += 1;
+            self.fade_out_tap = self.delay_data.current_tap;
+
+            // Trigger filter update due to new tap
+            self.should_update_filter.store(true, Ordering::Release);
+        }
     }
 
     fn prepare_for_delay(&mut self, buffer_samples: usize) {
@@ -694,7 +706,7 @@ impl Del2 {
             out_l.fill(0.0);
             out_r.fill(0.0);
 
-            for tap in 0..self.delay_data.current_tap {
+            for tap in 0..self.fade_out_tap {
                 self.process_tap(block_len, tap, out_l, out_r);
             }
 
@@ -730,18 +742,47 @@ impl Del2 {
         // For that we need to feed two different parameter values to the filter, one for each tap.
         // No idea how...
         // Loop through each sample, processing two channels at a time
+        let fade_samples = self.fade_samples;
         for i in (0..block_len).step_by(2) {
+            // Begin the loop by dealing with mutable borrowing
+            let (fade_in_factor1, fade_in_factor2) = {
+                let tap_fade_in_state = &mut self.fade_in_states[tap]; // Mutable borrow here
+
+                // Calculate fade-in factors for two consecutive samples
+                let fade_in_factor1 = if *tap_fade_in_state < fade_samples {
+                    *tap_fade_in_state as f32 / fade_samples as f32
+                } else {
+                    1.0
+                };
+
+                let fade_in_factor2 = if *tap_fade_in_state + 1 < fade_samples {
+                    (*tap_fade_in_state + 1) as f32 / fade_samples as f32
+                } else {
+                    1.0
+                };
+
+                // Increment fade progress appropriately for two samples
+                if *tap_fade_in_state < fade_samples {
+                    *tap_fade_in_state += 1;
+                }
+                if *tap_fade_in_state < fade_samples {
+                    *tap_fade_in_state += 1;
+                }
+
+                (fade_in_factor1, fade_in_factor2)
+            };
+
+            // Proceed with immutable operations now that mutable borrow scope is closed
             let output_gain1 = self.params.global.gain_params.output_gain.smoothed.next();
             let output_gain2 = self.params.global.gain_params.output_gain.smoothed.next();
             let drive = self.filter_params[tap].clone().drive;
 
-            // Get a unique global_drive for each iteration for each frame
             let pre_filter_gain1 = self.params.global.gain_params.global_drive.smoothed.next();
             let pre_filter_gain2 = self.params.global.gain_params.global_drive.smoothed.next();
 
-            // Calculate post-filter gain compensation using the average of the two gains
-            let post_filter_gain1 = output_gain1 / (drive * pre_filter_gain1);
-            let post_filter_gain2 = output_gain2 / (drive * pre_filter_gain2);
+            // Calculate post-filter gains, including the fade effect
+            let post_filter_gain1 = (output_gain1 / (drive * pre_filter_gain1)) * fade_in_factor1;
+            let post_filter_gain2 = (output_gain2 / (drive * pre_filter_gain2)) * fade_in_factor2;
 
             let mut frame = self.make_stereo_frame(i);
 
@@ -755,7 +796,7 @@ impl Del2 {
             let processed = self.ladders[tap].tick_newton(frame);
             let mut frame_out = *processed.as_array();
 
-            // Apply the compensation post-filter by adjusting it using the post-filter gain
+            // Apply post-filter gains
             frame_out[0] *= post_filter_gain1;
             frame_out[1] *= post_filter_gain1;
             frame_out[2] *= post_filter_gain2;
@@ -788,6 +829,30 @@ impl Del2 {
         if i + 1 < block_len {
             out_l[i + 1] += frame_out[2];
             out_r[i + 1] += frame_out[3];
+        }
+    }
+    // TODO: when the fade time is long, there are bugs with taps not appearing, or fading out while fading in, etc.
+    // more testing is needed
+    fn apply_fade_out(&mut self, buffer: &mut Buffer) {
+        let fade_samples = self.fade_samples;
+        let mut fade_out_state = self.fade_out_state;
+        if fade_out_state < fade_samples {
+            for channel_samples in buffer.iter_samples() {
+                for sample in channel_samples {
+                    let fade_out_factor = if fade_out_state < fade_samples {
+                        1.0 - (fade_out_state as f32 / fade_samples as f32)
+                    } else {
+                        self.fade_out_tap = 0;
+                        // self.fade_out_state = fade_samples;
+                        0.0
+                    };
+                    *sample *= fade_out_factor;
+                    if fade_out_state < fade_samples {
+                        fade_out_state += 1;
+                    }
+                }
+            }
+            self.fade_out_state = fade_out_state;
         }
     }
     // for fn initialize():
