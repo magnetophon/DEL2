@@ -16,7 +16,6 @@ mod editor;
 
 // max seconds per tap
 const MAX_TAP_SECONDS: usize = 10;
-const MAX_DEBOUNCE_MILLISECONDS: f32 = 1000.0;
 const MAX_NR_TAPS: usize = 8;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * MAX_NR_TAPS;
 const MAX_SAMPLE_RATE: usize = 192000;
@@ -137,23 +136,23 @@ impl TimingParams {
                 "max tap",
                 3.0,
                 FloatRange::Skewed {
-                    min: 0.0,
+                    min: 0.5,
                     max: MAX_TAP_SECONDS as f32,
-                    factor: FloatRange::skew_factor(-1.2),
+                    factor: FloatRange::skew_factor(-0.8),
                 },
             )
-            .with_step_size(0.01)
+            .with_step_size(0.1)
             .with_unit(" s"),
             debounce_tap_milliseconds: FloatParam::new(
                 "min tap",
                 10.0,
                 FloatRange::Skewed {
-                    min: 0.0,
-                    max: MAX_DEBOUNCE_MILLISECONDS,
-                    factor: FloatRange::skew_factor(-2.0),
+                    min: 1.0,
+                    max: 1000.0,
+                    factor: FloatRange::skew_factor(-1.5),
                 },
             )
-            .with_step_size(0.01)
+            .with_step_size(0.1)
             .with_unit(" ms"),
         }
     }
@@ -176,7 +175,7 @@ impl GainParams {
             // as decibels is easier to work with, but requires a conversion for every sample.
             output_gain: FloatParam::new(
                 "out gain",
-                util::db_to_gain(-6.0),
+                util::db_to_gain(0.0),
                 FloatRange::Skewed {
                     min: util::db_to_gain(-30.0),
                     max: util::db_to_gain(30.0),
@@ -192,7 +191,7 @@ impl GainParams {
             // There are many predefined formatters we can use here. If the gain was stored as
             // decibels instead of as a linear gain value, we could have also used the
             // `.with_step_size(0.1)` function to get internal rounding.
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
             global_drive: FloatParam::new(
                 "drive",
@@ -212,7 +211,7 @@ impl GainParams {
             // There are many predefined formatters we can use here. If the gain was stored as
             // decibels instead of as a linear gain value, we could have also used the
             // `.with_step_size(0.1)` function to get internal rounding.
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
         }
     }
@@ -304,13 +303,15 @@ impl FilterGuiParams {
                 format!("{name_prefix} Drive"),
                 default_drive, // Use the passed default value
                 FloatRange::Skewed {
-                    min: 1.0,
-                    max: 31.623,
-                    factor: FloatRange::skew_factor(-1.2),
+                    min: util::db_to_gain(0.0),
+                    max: util::db_to_gain(30.0),
+                    // This makes the range appear as if it was linear when displaying the values as
+                    // decibels
+                    factor: FloatRange::gain_skew_factor(0.0, 30.0),
                 },
             )
             .with_unit(" dB")
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
             .with_string_to_value(formatters::s2v_f32_gain_to_db())
             .with_callback(Arc::new({
                 let should_update_filter = should_update_filter.clone();
