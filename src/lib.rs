@@ -20,8 +20,8 @@ const MAX_NR_TAPS: usize = 8;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * MAX_NR_TAPS;
 const MAX_SAMPLE_RATE: usize = 192000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
-const VELOCITY_BOTTOM_NAME_PREFIX: &str = "low velocity";
-const VELOCITY_TOP_NAME_PREFIX: &str = "high velocity";
+const VELOCITY_LOW_NAME_PREFIX: &str = "low velocity";
+const VELOCITY_HIGH_NAME_PREFIX: &str = "high velocity";
 // this seems to be the number JUCE is using
 const MAX_SOUNDCARD_BUFFER_SIZE: usize = 32768;
 
@@ -63,7 +63,7 @@ struct Del2 {
     fade_out_tap: usize,
     samples_since_last_event: u32,
     timing_last_event: u32,
-    debounce_tap_samples: u32,
+    min_tap_samples: u32,
     delay_buffer_size: u32,
     counting_state: CountingState,
     should_update_filter: Arc<AtomicBool>,
@@ -76,7 +76,7 @@ pub struct DelayData {
     delay_times_array: [u32; MAX_NR_TAPS],
     current_tap: usize,
     current_time: u32,
-    time_out_samples: u32,
+    max_tap_samples: u32,
 }
 pub type DelayDataInput = triple_buffer::Input<DelayData>;
 pub type DelayDataOutput = triple_buffer::Output<DelayData>;
@@ -117,22 +117,22 @@ impl GlobalParams {
     }
 }
 
-/// This struct contains the parameters for either the top or bottom tap. The `Params`
+/// This struct contains the parameters for either the high or low tap. The `Params`
 /// trait is implemented manually to avoid copy-pasting parameters for both types of compressor.
 /// Both versions will have a parameter ID and a parameter name prefix to distinguish them.
 #[derive(Params)]
 pub struct TimingParams {
-    #[id = "time_out_seconds"]
-    pub time_out_seconds: FloatParam,
-    #[id = "debounce_tap_milliseconds"]
-    pub debounce_tap_milliseconds: FloatParam,
+    #[id = "max_tap_seconds"]
+    pub max_tap_seconds: FloatParam,
+    #[id = "min_tap_milliseconds"]
+    pub min_tap_milliseconds: FloatParam,
 }
 
 impl TimingParams {
     /// Create a new [`TapSetParams`] object with a prefix for all parameter names.
     pub fn new() -> Self {
         TimingParams {
-            time_out_seconds: FloatParam::new(
+            max_tap_seconds: FloatParam::new(
                 "max tap",
                 3.0,
                 FloatRange::Skewed {
@@ -143,7 +143,7 @@ impl TimingParams {
             )
             .with_step_size(0.1)
             .with_unit(" s"),
-            debounce_tap_milliseconds: FloatParam::new(
+            min_tap_milliseconds: FloatParam::new(
                 "min tap",
                 10.0,
                 FloatRange::Skewed {
@@ -217,39 +217,39 @@ impl GainParams {
     }
 }
 
-/// Contains the top and bottom tap parameters.
+/// Contains the high and low tap parameters.
 #[derive(Params)]
 pub struct DualFilterGuiParams {
-    #[nested(id_prefix = "velocity_bottom", group = "velocity_bottom")]
-    pub velocity_bottom: Arc<FilterGuiParams>,
-    #[nested(id_prefix = "velocity_top", group = "velocity_top")]
-    pub velocity_top: Arc<FilterGuiParams>,
+    #[nested(id_prefix = "velocity_low", group = "velocity_low")]
+    pub velocity_low: Arc<FilterGuiParams>,
+    #[nested(id_prefix = "velocity_high", group = "velocity_high")]
+    pub velocity_high: Arc<FilterGuiParams>,
 }
 
 impl DualFilterGuiParams {
     pub fn new(should_update_filter: Arc<AtomicBool>) -> Self {
         DualFilterGuiParams {
-            velocity_bottom: Arc::new(FilterGuiParams::new(
-                VELOCITY_BOTTOM_NAME_PREFIX,
+            velocity_low: Arc::new(FilterGuiParams::new(
+                VELOCITY_LOW_NAME_PREFIX,
                 should_update_filter.clone(),
-                124.0,                  // Default cutoff for velocity_bottom
-                0.5,                    // Default res for velocity_bottom
-                util::db_to_gain(13.0), // Default drive for velocity_bottom
-                MyLadderMode::lp6(),    // Default mode for velocity_bottom
+                124.0,                  // Default cutoff for velocity_low
+                0.5,                    // Default res for velocity_low
+                util::db_to_gain(13.0), // Default drive for velocity_low
+                MyLadderMode::lp6(),    // Default mode for velocity_low
             )),
-            velocity_top: Arc::new(FilterGuiParams::new(
-                VELOCITY_TOP_NAME_PREFIX,
+            velocity_high: Arc::new(FilterGuiParams::new(
+                VELOCITY_HIGH_NAME_PREFIX,
                 should_update_filter.clone(),
-                6000.0,                // Default cutoff for velocity_top
-                0.5,                   // Default res for velocity_top
-                util::db_to_gain(6.0), // Default drive for velocity_top
-                MyLadderMode::lp6(),   // Default mode for velocity_top
+                6000.0,                // Default cutoff for velocity_high
+                0.5,                   // Default res for velocity_high
+                util::db_to_gain(6.0), // Default drive for velocity_high
+                MyLadderMode::lp6(),   // Default mode for velocity_high
             )),
         }
     }
 }
 
-/// This struct contains the parameters for either the top or bottom tap. The `Params`
+/// This struct contains the parameters for either the high or low tap. The `Params`
 /// trait is implemented manually to avoid copy-pasting parameters for both types of compressor.
 /// Both versions will have a parameter ID and a parameter name prefix to distinguish them.
 #[derive(Params)]
@@ -368,7 +368,7 @@ impl Default for Del2 {
             fade_out_tap: 0,
             samples_since_last_event: 0,
             timing_last_event: 0,
-            debounce_tap_samples: 0,
+            min_tap_samples: 0,
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
             should_update_filter,
@@ -383,7 +383,7 @@ impl Default for DelayData {
             delay_times_array: [0; MAX_NR_TAPS],
             current_tap: 0,
             current_time: 0,
-            time_out_samples: 0,
+            max_tap_samples: 0,
         }
     }
 }
@@ -516,15 +516,15 @@ impl Plugin for Del2 {
 impl Del2 {
     // #[inline]
     fn update_timing_params(&mut self) {
-        self.delay_data.time_out_samples = (self.sample_rate as f64
-            * self.params.global.timing_params.time_out_seconds.value() as f64)
+        self.delay_data.max_tap_samples = (self.sample_rate as f64
+            * self.params.global.timing_params.max_tap_seconds.value() as f64)
             as u32;
-        self.debounce_tap_samples = (self.sample_rate as f64
+        self.min_tap_samples = (self.sample_rate as f64
             * self
                 .params
                 .global
                 .timing_params
-                .debounce_tap_milliseconds
+                .min_tap_milliseconds
                 .value() as f64
             * 0.001) as u32;
     }
@@ -549,31 +549,31 @@ impl Del2 {
                 self.counting_state = CountingState::CountingInBuffer;
             }
             CountingState::CountingInBuffer => {
-                // Check if timing surpasses debounce and update tap information
-                if (timing - self.timing_last_event) > self.debounce_tap_samples
+                // Check if timing surpasses min_tap and update tap information
+                if (timing - self.timing_last_event) > self.min_tap_samples
                     && self.delay_data.current_tap < MAX_NR_TAPS
                 {
                     self.samples_since_last_event = timing - self.timing_last_event;
                     self.timing_last_event = timing;
                 } else {
-                    return; // Debounce in effect, ignore tap
+                    return; // Debounce aka min_tap in effect, ignore tap
                 }
             }
             CountingState::CountingAcrossBuffer => {
                 // Handle delayed tap timing across buffer
-                if (self.samples_since_last_event + timing) > self.debounce_tap_samples
+                if (self.samples_since_last_event + timing) > self.min_tap_samples
                     && self.delay_data.current_tap < MAX_NR_TAPS
                 {
                     self.samples_since_last_event += timing;
                     self.timing_last_event = timing;
                     self.counting_state = CountingState::CountingInBuffer;
                 } else {
-                    return; // Debounce across buffer, ignore
+                    return; // Debounce aka min_tap across buffer, ignore
                 }
             }
         }
 
-        if self.samples_since_last_event > self.delay_data.time_out_samples {
+        if self.samples_since_last_event > self.delay_data.max_tap_samples {
             // Timeout condition, reset state
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
@@ -629,7 +629,7 @@ impl Del2 {
             }
         }
 
-        if self.samples_since_last_event > self.delay_data.time_out_samples {
+        if self.samples_since_last_event > self.delay_data.max_tap_samples {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
@@ -654,25 +654,25 @@ impl Del2 {
             let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
 
             // Cache repeated calculations
-            let bottom_velocity = &velocity_params.velocity_bottom;
-            let top_velocity = &velocity_params.velocity_top;
+            let low_velocity = &velocity_params.velocity_low;
+            let high_velocity = &velocity_params.velocity_high;
 
-            let bottom_res = bottom_velocity.res.value();
-            let top_res = top_velocity.res.value();
-            let res = Del2::lerp(bottom_res, top_res, velocity);
+            let low_res = low_velocity.res.value();
+            let high_res = high_velocity.res.value();
+            let res = Del2::lerp(low_res, high_res, velocity);
 
-            let bottom_cutoff = bottom_velocity.cutoff.value();
-            let top_cutoff = top_velocity.cutoff.value();
-            let cutoff = Del2::log_interpolate(bottom_cutoff, top_cutoff, velocity);
+            let low_cutoff = low_velocity.cutoff.value();
+            let high_cutoff = high_velocity.cutoff.value();
+            let cutoff = Del2::log_interpolate(low_cutoff, high_cutoff, velocity);
 
-            let bottom_drive_db = util::gain_to_db(bottom_velocity.drive.value());
-            let top_drive_db = util::gain_to_db(top_velocity.drive.value());
-            let drive_db = Del2::lerp(bottom_drive_db, top_drive_db, velocity);
+            let low_drive_db = util::gain_to_db(low_velocity.drive.value());
+            let high_drive_db = util::gain_to_db(high_velocity.drive.value());
+            let drive_db = Del2::lerp(low_drive_db, high_drive_db, velocity);
             let drive = util::db_to_gain(drive_db);
 
-            let bottom_mode = bottom_velocity.mode.value();
-            let top_mode = top_velocity.mode.value();
-            let mode = MyLadderMode::lerp(bottom_mode, top_mode, velocity);
+            let low_mode = low_velocity.mode.value();
+            let high_mode = high_velocity.mode.value();
+            let mode = MyLadderMode::lerp(low_mode, high_mode, velocity);
             // println!("mode {}: {}", tap, mode);
             // Updating filter parameters
             filter_params.set_resonance(res);

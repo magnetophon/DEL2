@@ -58,12 +58,12 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                         GenericUi::new_custom(cx, timing_params, |cx, param_ptr| {
                             let param_name = unsafe { param_ptr.name() };
 
-                            // Check if the parameter is `time_out_seconds` and replace with specific logic
+                            // Check if the parameter is `max_tap_seconds` and replace with specific logic
                             if param_name == "max tap" {
                                 HStack::new(cx, |cx| {
                                     Label::new(cx, param_name).class("label");
                                     ParamSlider::new(cx, Data::params, |params| {
-                                        &params.global.timing_params.time_out_seconds
+                                        &params.global.timing_params.max_tap_seconds
                                     })
                                     .set_style(ParamSliderStyle::FromLeft)
                                     .class("widget");
@@ -86,9 +86,8 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                     make_column(cx, "low velocity", |cx| {
                         // We don't want to show the 'Upwards' prefix here, but it should still be in
                         // the parameter name so the parameter list makes sense
-                        let velocity_bottom_params =
-                            Data::params.map(|p| p.taps.velocity_bottom.clone());
-                        GenericUi::new_custom(cx, velocity_bottom_params, |cx, param_ptr| {
+                        let velocity_low_params = Data::params.map(|p| p.taps.velocity_low.clone());
+                        GenericUi::new_custom(cx, velocity_low_params, |cx, param_ptr| {
                             HStack::new(cx, |cx| {
                                 Label::new(
                                     cx,
@@ -98,15 +97,16 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                                 )
                                 .class("label");
 
-                                GenericUi::draw_widget(cx, velocity_bottom_params, param_ptr);
+                                GenericUi::draw_widget(cx, velocity_low_params, param_ptr);
                             })
                             .class("row");
                         });
                     });
 
                     make_column(cx, "high velocity", |cx| {
-                        let velocity_top_params = Data::params.map(|p| p.taps.velocity_top.clone());
-                        GenericUi::new_custom(cx, velocity_top_params, |cx, param_ptr| {
+                        let velocity_high_params =
+                            Data::params.map(|p| p.taps.velocity_high.clone());
+                        GenericUi::new_custom(cx, velocity_high_params, |cx, param_ptr| {
                             HStack::new(cx, |cx| {
                                 Label::new(
                                     cx,
@@ -116,7 +116,7 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                                 )
                                 .class("label");
 
-                                GenericUi::draw_widget(cx, velocity_top_params, param_ptr);
+                                GenericUi::draw_widget(cx, velocity_high_params, param_ptr);
                             })
                             .class("row");
                         });
@@ -233,7 +233,7 @@ impl View for DelayGraph {
         if delay_data.current_tap > 0 {
             max_delay = delay_data.delay_times_array[delay_data.current_tap - 1];
         }
-        let x_factor = ((max_delay as f32 + delay_data.time_out_samples as f32)
+        let x_factor = ((max_delay as f32 + delay_data.max_tap_samples as f32)
             / (w - border_width - line_width * 0.5))
             .recip();
 
