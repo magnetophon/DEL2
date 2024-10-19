@@ -203,19 +203,19 @@ impl View for DelayGraph {
         let border_color: vg::Color = draw_context.border_color().into();
         let outline_color: vg::Color = draw_context.outline_color().into();
         let selection_color: vg::Color = draw_context.selection_color().into();
-        let border_thickness = draw_context.border_width();
+        let border_width = draw_context.border_width();
         let path_line_width = draw_context.outline_width();
 
         // Compute the time scaling factor
         let time_scaling_factor = self.compute_time_scaling_factor(
             &delay_data,
             bounding_box.w,
-            border_thickness,
+            border_width,
             path_line_width,
         );
 
         // Draw components
-        self.draw_background(canvas, bounding_box, background_color, border_thickness);
+        self.draw_background(canvas, bounding_box, background_color, border_width);
         self.draw_delay_times_as_lines(
             canvas,
             &delay_data,
@@ -231,7 +231,7 @@ impl View for DelayGraph {
             selection_color,
             path_line_width,
             time_scaling_factor,
-            border_thickness,
+            border_width,
         );
         self.draw_tap_velocities(
             canvas,
@@ -240,7 +240,7 @@ impl View for DelayGraph {
             outline_color,
             path_line_width,
             time_scaling_factor,
-            border_thickness,
+            border_width,
         );
         self.draw_tap_notes_as_diamonds(
             canvas,
@@ -249,10 +249,10 @@ impl View for DelayGraph {
             selection_color,
             path_line_width,
             time_scaling_factor,
-            border_thickness,
-            false,
+            border_width,
+            true,
         );
-        self.draw_bounding_outline(canvas, bounding_box, border_color, border_thickness);
+        self.draw_bounding_outline(canvas, bounding_box, border_color, border_width);
     }
 }
 
@@ -262,7 +262,7 @@ impl DelayGraph {
         &self,
         delay_data: &DelayData,
         rect_width: f32,
-        border_thickness: f32,
+        border_width: f32,
         path_line_width: f32,
     ) -> f32 {
         let max_delay_time = if delay_data.current_tap > 0 {
@@ -271,7 +271,7 @@ impl DelayGraph {
             0
         };
         ((max_delay_time as f32 + delay_data.max_tap_samples as f32)
-            / (rect_width - border_thickness - path_line_width * 0.5))
+            / (rect_width - border_width - path_line_width * 0.5))
             .recip()
     }
 
@@ -281,7 +281,7 @@ impl DelayGraph {
         delay_data: &DelayData,
         bounds: BoundingBox,
         border_color: vg::Color,
-        border_thickness: f32,
+        border_width: f32,
         time_scaling_factor: f32,
     ) {
         let mut path = vg::Path::new();
@@ -289,11 +289,11 @@ impl DelayGraph {
         for i in 0..delay_data.current_tap {
             // Combine delay time with time scaling factor for correct horizontal scaling
             let x_offset =
-                delay_data.delay_times[i] as f32 * time_scaling_factor + border_thickness * 0.5;
+                delay_data.delay_times[i] as f32 * time_scaling_factor + border_width * 0.5;
 
             // Line from bottom to top border considering border thickness
-            let start_y = bounds.y + bounds.h - border_thickness * 0.5;
-            let end_y = bounds.y + border_thickness * 0.5;
+            let start_y = bounds.y + bounds.h - border_width * 0.5;
+            let end_y = bounds.y + border_width * 0.5;
 
             path.move_to(bounds.x + x_offset, start_y);
             path.line_to(bounds.x + x_offset, end_y);
@@ -301,7 +301,7 @@ impl DelayGraph {
 
         canvas.stroke_path(
             &path,
-            &vg::Paint::color(border_color).with_line_width(border_thickness),
+            &vg::Paint::color(border_color).with_line_width(border_width),
         );
     }
 
@@ -310,14 +310,14 @@ impl DelayGraph {
         canvas: &mut Canvas,
         bounds: BoundingBox,
         color: vg::Color,
-        border_thickness: f32,
+        border_width: f32,
     ) {
         let mut path = vg::Path::new();
         path.rect(
-            bounds.x + border_thickness * 0.5,
+            bounds.x + border_width * 0.5,
             bounds.y,
-            bounds.w - border_thickness,
-            bounds.h - border_thickness * 0.5,
+            bounds.w - border_width,
+            bounds.h - border_width * 0.5,
         );
         path.close();
 
@@ -333,7 +333,7 @@ impl DelayGraph {
         color: vg::Color,
         line_width: f32,
         scaling_factor: f32,
-        border_thickness: f32,
+        border_width: f32,
     ) {
         let max_delay_time = if delay_data.current_tap > 0 {
             delay_data.delay_times[delay_data.current_tap - 1]
@@ -341,11 +341,11 @@ impl DelayGraph {
             0
         };
         if delay_data.current_time > max_delay_time {
-            let x_offset = delay_data.current_time as f32 * scaling_factor + border_thickness * 0.5;
+            let x_offset = delay_data.current_time as f32 * scaling_factor + border_width * 0.5;
             let mut path = vg::Path::new();
             path.move_to(
                 bounds.x + x_offset,
-                bounds.y + bounds.h - border_thickness * 0.5,
+                bounds.y + bounds.h - border_width * 0.5,
             );
             path.line_to(bounds.x + x_offset, bounds.y);
             path.close();
@@ -362,18 +362,17 @@ impl DelayGraph {
         color: vg::Color,
         line_width: f32,
         scaling_factor: f32,
-        border_thickness: f32,
+        border_width: f32,
     ) {
         let mut path = vg::Path::new();
         for i in 0..delay_data.current_tap {
-            let x_offset =
-                delay_data.delay_times[i] as f32 * scaling_factor + border_thickness * 0.5;
-            let velocity_height = (bounds.h - border_thickness * 0.5)
-                - (delay_data.velocities[i] * (bounds.h - border_thickness * 0.5));
+            let x_offset = delay_data.delay_times[i] as f32 * scaling_factor + border_width * 0.5;
+            let velocity_height = (bounds.h - border_width * 0.5)
+                - (delay_data.velocities[i] * (bounds.h - border_width * 0.5));
 
             path.move_to(
                 bounds.x + x_offset,
-                bounds.y + bounds.h - border_thickness * 0.5,
+                bounds.y + bounds.h - border_width * 0.5,
             );
             path.line_to(bounds.x + x_offset, bounds.y + velocity_height);
         }
@@ -389,7 +388,7 @@ impl DelayGraph {
         color: vg::Color,
         line_width: f32,
         scaling_factor: f32,
-        border_thickness: f32,
+        border_width: f32,
         zoomed: bool,
     ) {
         let mut path = vg::Path::new();
@@ -405,11 +404,10 @@ impl DelayGraph {
         };
 
         let diamond_size = line_width * 2.0; // Width and height of a diamond
-        let available_height = bounds.h - border_thickness - 2.0 * diamond_size;
+        let available_height = bounds.h - border_width - 2.0 * diamond_size;
 
         for i in 0..delay_data.current_tap {
-            let x_offset =
-                delay_data.delay_times[i] as f32 * scaling_factor + border_thickness * 0.5;
+            let x_offset = delay_data.delay_times[i] as f32 * scaling_factor + border_width * 0.5;
 
             // Adjust note height to scale within bounds
             let normalized_note = if max_note_value != min_note_value {
@@ -442,20 +440,20 @@ impl DelayGraph {
         canvas: &mut Canvas,
         bounds: BoundingBox,
         color: vg::Color,
-        border_thickness: f32,
+        border_width: f32,
     ) {
         let mut path = vg::Path::new();
         path.rect(
-            bounds.x + border_thickness * 0.5,
+            bounds.x + border_width * 0.5,
             bounds.y,
-            bounds.w - border_thickness,
-            bounds.h - border_thickness * 0.5,
+            bounds.w - border_width,
+            bounds.h - border_width * 0.5,
         );
         path.close();
 
         canvas.stroke_path(
             &path,
-            &vg::Paint::color(color).with_line_width(border_thickness),
+            &vg::Paint::color(color).with_line_width(border_width),
         );
     }
 }
