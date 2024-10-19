@@ -250,7 +250,7 @@ impl View for DelayGraph {
                 &vg::Paint::color(selection_color.into()).with_line_width(line_width),
             );
         };
-        // draw delay taps
+        // draw delay tap velocities
         canvas.stroke_path(
             &{
                 let mut path = vg::Path::new();
@@ -264,6 +264,31 @@ impl View for DelayGraph {
                 path
             },
             &vg::Paint::color(outline_color.into()).with_line_width(line_width),
+        );
+
+        // Draw delay tap notes as diamonds
+        canvas.stroke_path(
+            &{
+                let mut path = vg::Path::new();
+                for i in 0..delay_data.current_tap {
+                    let x_offset = delay_data.delay_times[i] as f32 * x_factor + border_width * 0.5;
+                    let y_offset = (h - border_width * 0.5)
+                        - ((delay_data.notes[i] as f32 / 127.0) * (h - border_width * 0.5));
+
+                    let center_x = x + x_offset;
+                    let center_y = y + y_offset;
+                    let half_size = line_width; // You can adjust this to change the size of the diamond
+
+                    // Draw diamond shape
+                    path.move_to(center_x + half_size, center_y); // Top-Right
+                    path.line_to(center_x, center_y + half_size); // Bottom-Right
+                    path.line_to(center_x - half_size, center_y); // Bottom-Left
+                    path.line_to(center_x, center_y - half_size); // Top-Left
+                    path.close();
+                }
+                path
+            },
+            &vg::Paint::color(selection_color.into()).with_line_width(line_width),
         );
 
         // add outline
