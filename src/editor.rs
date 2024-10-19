@@ -231,7 +231,7 @@ impl View for DelayGraph {
         canvas.fill_path(&path, &paint);
         let mut max_delay = 0;
         if delay_data.current_tap > 0 {
-            max_delay = delay_data.delay_times_array[delay_data.current_tap - 1];
+            max_delay = delay_data.delay_times[delay_data.current_tap - 1];
         }
         let x_factor = ((max_delay as f32 + delay_data.max_tap_samples as f32)
             / (w - border_width - line_width * 0.5))
@@ -255,10 +255,9 @@ impl View for DelayGraph {
             &{
                 let mut path = vg::Path::new();
                 for i in 0..delay_data.current_tap {
-                    let x_offset =
-                        delay_data.delay_times_array[i] as f32 * x_factor + border_width * 0.5;
+                    let x_offset = delay_data.delay_times[i] as f32 * x_factor + border_width * 0.5;
                     let y_offset = (h - border_width * 0.5)
-                        - (delay_data.velocity_array[i] * (h - border_width * 0.5));
+                        - (delay_data.velocities[i] * (h - border_width * 0.5));
                     path.move_to(x + x_offset, y + h - (border_width * 0.5));
                     path.line_to(x + x_offset, y + y_offset);
                 }
