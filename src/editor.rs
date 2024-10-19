@@ -242,6 +242,7 @@ impl View for DelayGraph {
             path_line_width,
             time_scaling_factor,
             border_thickness,
+            true,
         );
         self.draw_bounding_outline(canvas, bounding_box, border_color, border_thickness);
     }
@@ -351,18 +352,43 @@ impl DelayGraph {
         line_width: f32,
         scaling_factor: f32,
         border_thickness: f32,
+        zoomed: bool,
     ) {
         let mut path = vg::Path::new();
+
+        // Determine the min and max note values if zoomed
+        let (min_note_value, max_note_value) = if zoomed {
+            let used_notes = &delay_data.notes[0..delay_data.current_tap];
+            let min = used_notes.iter().copied().min().unwrap_or(0);
+            let max = used_notes.iter().copied().max().unwrap_or(127);
+            (min as f32, max as f32)
+        } else {
+            (0.0, 127.0)
+        };
+
+        let diamond_size = line_width * 2.0; // Width and height of a diamond
+        let available_height = bounds.h - border_thickness - 2.0 * diamond_size;
+
         for i in 0..delay_data.current_tap {
             let x_offset =
                 delay_data.delay_times[i] as f32 * scaling_factor + border_thickness * 0.5;
-            let note_height = (bounds.h - border_thickness * 0.5)
-                - ((delay_data.notes[i] as f32 / 127.0) * (bounds.h - border_thickness * 0.5));
+
+            // Adjust note height to scale within bounds
+            let normalized_note = if max_note_value != min_note_value {
+                (delay_data.notes[i] as f32 - min_note_value) / (max_note_value - min_note_value)
+            } else {
+                delay_data.notes[i] as f32 / 127.0
+            };
+
+            // Use scaling to ensure the diamond fits within the available height
+            let note_height = diamond_size + (1.0 - normalized_note) * available_height;
 
             let diamond_center_x = bounds.x + x_offset;
             let diamond_center_y = bounds.y + note_height;
+
             let diamond_half_size = line_width;
 
+            // Form a diamond shape, fully scaled
             path.move_to(diamond_center_x + diamond_half_size, diamond_center_y);
             path.line_to(diamond_center_x, diamond_center_y + diamond_half_size);
             path.line_to(diamond_center_x - diamond_half_size, diamond_center_y);
