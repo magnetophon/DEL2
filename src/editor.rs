@@ -8,6 +8,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use crate::Del2Params;
+use crate::DelayData;
 use crate::DelayDataOutput;
 
 const COLUMN_WIDTH: Units = Pixels(269.0);
@@ -187,120 +188,210 @@ impl DelayGraph {
 
 // TODO: add grid to show bars & beats
 impl View for DelayGraph {
-    // for css:
+    // For CSS:
     fn element(&self) -> Option<&'static str> {
         Some("delay-graph")
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
-        let mut delay_data = self.delay_data.lock().unwrap();
-        let delay_data = delay_data.read();
-        // Get the bounding box of the current view.
-        let bounds = cx.bounds();
+    fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
+        let mut locked_delay_data = self.delay_data.lock().unwrap();
+        let delay_data = locked_delay_data.read();
 
-        let border_color = cx.border_color();
-        let outline_color = cx.outline_color();
-        let selection_color = cx.selection_color();
-        let opacity = cx.opacity();
-        let mut background_color: vg::Color = cx.background_color().into();
-        background_color.set_alphaf(background_color.a * opacity);
-        let mut border_color: vg::Color = border_color.into();
-        border_color.set_alphaf(border_color.a * opacity);
-        let border_width = cx.border_width();
-        // let line_width = cx.scale_factor();
-        let line_width = cx.outline_width();
+        let bounding_box = draw_context.bounds();
 
-        let x = bounds.x + border_width * 0.5;
-        let y = bounds.y;
-        let w = bounds.w - border_width;
-        let h = bounds.h - border_width * 0.5;
+        let background_color: vg::Color = draw_context.background_color().into();
+        let border_color: vg::Color = draw_context.border_color().into();
+        let outline_color: vg::Color = draw_context.outline_color().into();
+        let selection_color: vg::Color = draw_context.selection_color().into();
+        let border_thickness = draw_context.border_width();
+        let path_line_width = draw_context.outline_width();
 
-        // Create a new `Path` from the `vg` module.
+        // Compute the time scaling factor
+        let time_scaling_factor = self.compute_time_scaling_factor(
+            &delay_data,
+            bounding_box.w,
+            border_thickness,
+            path_line_width,
+        );
+
+        // Draw components
+        self.draw_background(canvas, bounding_box, background_color, border_thickness);
+        self.draw_time_line(
+            canvas,
+            &delay_data,
+            bounding_box,
+            selection_color,
+            path_line_width,
+            time_scaling_factor,
+            border_thickness,
+        );
+        self.draw_tap_velocities(
+            canvas,
+            &delay_data,
+            bounding_box,
+            outline_color,
+            path_line_width,
+            time_scaling_factor,
+            border_thickness,
+        );
+        self.draw_tap_notes_as_diamonds(
+            canvas,
+            &delay_data,
+            bounding_box,
+            selection_color,
+            path_line_width,
+            time_scaling_factor,
+            border_thickness,
+        );
+        self.draw_bounding_outline(canvas, bounding_box, border_color, border_thickness);
+    }
+}
+
+// Functional Breakdown
+impl DelayGraph {
+    fn compute_time_scaling_factor(
+        &self,
+        delay_data: &DelayData,
+        rect_width: f32,
+        border_thickness: f32,
+        path_line_width: f32,
+    ) -> f32 {
+        let max_delay_time = if delay_data.current_tap > 0 {
+            delay_data.delay_times[delay_data.current_tap - 1]
+        } else {
+            0
+        };
+        ((max_delay_time as f32 + delay_data.max_tap_samples as f32)
+            / (rect_width - border_thickness - path_line_width * 0.5))
+            .recip()
+    }
+
+    fn draw_background(
+        &self,
+        canvas: &mut Canvas,
+        bounds: BoundingBox,
+        color: vg::Color,
+        border_thickness: f32,
+    ) {
         let mut path = vg::Path::new();
-        {
-            path.rect(x, y, w, h);
-            // path.move_to(x, y);
-            // path.line_to(x, y + h);
-            // path.line_to(x + w, y + h);
-            // path.line_to(x + w, y);
-            // path.line_to(x, y);
+        path.rect(
+            bounds.x + border_thickness * 0.5,
+            bounds.y,
+            bounds.w - border_thickness,
+            bounds.h - border_thickness * 0.5,
+        );
+        path.close();
+
+        let paint = vg::Paint::color(color);
+        canvas.fill_path(&path, &paint);
+    }
+
+    fn draw_time_line(
+        &self,
+        canvas: &mut Canvas,
+        delay_data: &DelayData,
+        bounds: BoundingBox,
+        color: vg::Color,
+        line_width: f32,
+        scaling_factor: f32,
+        border_thickness: f32,
+    ) {
+        let max_delay_time = if delay_data.current_tap > 0 {
+            delay_data.delay_times[delay_data.current_tap - 1]
+        } else {
+            0
+        };
+        if delay_data.current_time > max_delay_time {
+            let x_offset = delay_data.current_time as f32 * scaling_factor + border_thickness * 0.5;
+            let mut path = vg::Path::new();
+            path.move_to(
+                bounds.x + x_offset,
+                bounds.y + bounds.h - border_thickness * 0.5,
+            );
+            path.line_to(bounds.x + x_offset, bounds.y);
+            path.close();
+
+            canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
+        }
+    }
+
+    fn draw_tap_velocities(
+        &self,
+        canvas: &mut Canvas,
+        delay_data: &DelayData,
+        bounds: BoundingBox,
+        color: vg::Color,
+        line_width: f32,
+        scaling_factor: f32,
+        border_thickness: f32,
+    ) {
+        let mut path = vg::Path::new();
+        for i in 0..delay_data.current_tap {
+            let x_offset =
+                delay_data.delay_times[i] as f32 * scaling_factor + border_thickness * 0.5;
+            let velocity_height = (bounds.h - border_thickness * 0.5)
+                - (delay_data.velocities[i] * (bounds.h - border_thickness * 0.5));
+
+            path.move_to(
+                bounds.x + x_offset,
+                bounds.y + bounds.h - border_thickness * 0.5,
+            );
+            path.line_to(bounds.x + x_offset, bounds.y + velocity_height);
+        }
+
+        canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
+    }
+
+    fn draw_tap_notes_as_diamonds(
+        &self,
+        canvas: &mut Canvas,
+        delay_data: &DelayData,
+        bounds: BoundingBox,
+        color: vg::Color,
+        line_width: f32,
+        scaling_factor: f32,
+        border_thickness: f32,
+    ) {
+        let mut path = vg::Path::new();
+        for i in 0..delay_data.current_tap {
+            let x_offset =
+                delay_data.delay_times[i] as f32 * scaling_factor + border_thickness * 0.5;
+            let note_height = (bounds.h - border_thickness * 0.5)
+                - ((delay_data.notes[i] as f32 / 127.0) * (bounds.h - border_thickness * 0.5));
+
+            let diamond_center_x = bounds.x + x_offset;
+            let diamond_center_y = bounds.y + note_height;
+            let diamond_half_size = line_width;
+
+            path.move_to(diamond_center_x + diamond_half_size, diamond_center_y);
+            path.line_to(diamond_center_x, diamond_center_y + diamond_half_size);
+            path.line_to(diamond_center_x - diamond_half_size, diamond_center_y);
+            path.line_to(diamond_center_x, diamond_center_y - diamond_half_size);
             path.close();
         }
-        // Fill with background color
-        let paint = vg::Paint::color(background_color);
-        canvas.fill_path(&path, &paint);
-        let mut max_delay = 0;
-        if delay_data.current_tap > 0 {
-            max_delay = delay_data.delay_times[delay_data.current_tap - 1];
-        }
-        let x_factor = ((max_delay as f32 + delay_data.max_tap_samples as f32)
-            / (w - border_width - line_width * 0.5))
-            .recip();
 
-        // draw current time
-        if delay_data.current_time > max_delay {
-            canvas.stroke_path(
-                &{
-                    let mut path = vg::Path::new();
-                    let x_offset = delay_data.current_time as f32 * x_factor + border_width * 0.5;
-                    path.move_to(x + x_offset, y + h);
-                    path.line_to(x + x_offset, y);
-                    path
-                },
-                &vg::Paint::color(selection_color.into()).with_line_width(line_width),
-            );
-        };
-        // draw delay tap velocities
-        canvas.stroke_path(
-            &{
-                let mut path = vg::Path::new();
-                for i in 0..delay_data.current_tap {
-                    let x_offset = delay_data.delay_times[i] as f32 * x_factor + border_width * 0.5;
-                    let y_offset = (h - border_width * 0.5)
-                        - (delay_data.velocities[i] * (h - border_width * 0.5));
-                    path.move_to(x + x_offset, y + h - (border_width * 0.5));
-                    path.line_to(x + x_offset, y + y_offset);
-                }
-                path
-            },
-            &vg::Paint::color(outline_color.into()).with_line_width(line_width),
+        canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
+    }
+
+    fn draw_bounding_outline(
+        &self,
+        canvas: &mut Canvas,
+        bounds: BoundingBox,
+        color: vg::Color,
+        border_thickness: f32,
+    ) {
+        let mut path = vg::Path::new();
+        path.rect(
+            bounds.x + border_thickness * 0.5,
+            bounds.y,
+            bounds.w - border_thickness,
+            bounds.h - border_thickness * 0.5,
         );
+        path.close();
 
-        // Draw delay tap notes as diamonds
         canvas.stroke_path(
-            &{
-                let mut path = vg::Path::new();
-                for i in 0..delay_data.current_tap {
-                    let x_offset = delay_data.delay_times[i] as f32 * x_factor + border_width * 0.5;
-                    let y_offset = (h - border_width * 0.5)
-                        - ((delay_data.notes[i] as f32 / 127.0) * (h - border_width * 0.5));
-
-                    let center_x = x + x_offset;
-                    let center_y = y + y_offset;
-                    let half_size = line_width; // You can adjust this to change the size of the diamond
-
-                    // Draw diamond shape
-                    path.move_to(center_x + half_size, center_y); // Top-Right
-                    path.line_to(center_x, center_y + half_size); // Bottom-Right
-                    path.line_to(center_x - half_size, center_y); // Bottom-Left
-                    path.line_to(center_x, center_y - half_size); // Top-Left
-                    path.close();
-                }
-                path
-            },
-            &vg::Paint::color(selection_color.into()).with_line_width(line_width),
-        );
-
-        // add outline
-        canvas.stroke_path(
-            &{
-                let mut path = vg::Path::new();
-                path.rect(x, y, w, h);
-                // path.move_to(x, y);
-                // path.line_to(x, y + h);
-                path
-            },
-            &vg::Paint::color(border_color).with_line_width(border_width),
+            &path,
+            &vg::Paint::color(color).with_line_width(border_thickness),
         );
     }
 }
