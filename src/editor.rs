@@ -216,6 +216,14 @@ impl View for DelayGraph {
 
         // Draw components
         self.draw_background(canvas, bounding_box, background_color, border_thickness);
+        self.draw_delay_times_as_lines(
+            canvas,
+            &delay_data,
+            bounding_box,
+            border_color,
+            1.0,
+            time_scaling_factor,
+        );
         self.draw_time_line(
             canvas,
             &delay_data,
@@ -242,7 +250,7 @@ impl View for DelayGraph {
             path_line_width,
             time_scaling_factor,
             border_thickness,
-            true,
+            false,
         );
         self.draw_bounding_outline(canvas, bounding_box, border_color, border_thickness);
     }
@@ -265,6 +273,36 @@ impl DelayGraph {
         ((max_delay_time as f32 + delay_data.max_tap_samples as f32)
             / (rect_width - border_thickness - path_line_width * 0.5))
             .recip()
+    }
+
+    fn draw_delay_times_as_lines(
+        &self,
+        canvas: &mut Canvas,
+        delay_data: &DelayData,
+        bounds: BoundingBox,
+        border_color: vg::Color,
+        border_thickness: f32,
+        time_scaling_factor: f32,
+    ) {
+        let mut path = vg::Path::new();
+
+        for i in 0..delay_data.current_tap {
+            // Combine delay time with time scaling factor for correct horizontal scaling
+            let x_offset =
+                delay_data.delay_times[i] as f32 * time_scaling_factor + border_thickness * 0.5;
+
+            // Line from bottom to top border considering border thickness
+            let start_y = bounds.y + bounds.h - border_thickness * 0.5;
+            let end_y = bounds.y + border_thickness * 0.5;
+
+            path.move_to(bounds.x + x_offset, start_y);
+            path.line_to(bounds.x + x_offset, end_y);
+        }
+
+        canvas.stroke_path(
+            &path,
+            &vg::Paint::color(border_color).with_line_width(border_thickness),
+        );
     }
 
     fn draw_background(
