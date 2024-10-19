@@ -182,7 +182,9 @@ impl DelayGraph {
         Self {
             delay_data: delay_data.get(cx),
         }
-        .build(cx, |_cx| ())
+        .build(cx, |_cx| {
+            // put other widgets here
+        })
     }
 }
 
@@ -433,6 +435,13 @@ impl DelayGraph {
         }
 
         canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
+    }
+    // TODO: .overflow(Overflow::Visible);
+
+    fn u8_note_to_name(note_nr: u8) -> String {
+        let note_name = util::NOTES[(note_nr % 12) as usize];
+        let octave = (note_nr / 12) - 1;
+        format!("{note_name}{octave}")
     }
 
     fn draw_bounding_outline(

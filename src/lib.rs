@@ -539,18 +539,17 @@ impl Plugin for Del2 {
 }
 
 impl Del2 {
-    // #[inline]
     fn update_timing_params(&mut self) {
-        self.delay_data.max_tap_samples = (self.sample_rate as f32
-            * self.params.global.timing_params.max_tap_seconds.value() as f32)
-            as u32;
-        self.min_tap_samples = (self.sample_rate as f32
+        let sample_rate = self.sample_rate as f32;
+        self.delay_data.max_tap_samples =
+            (sample_rate * self.params.global.timing_params.max_tap_seconds.value()) as u32;
+        self.min_tap_samples = (sample_rate
             * self
                 .params
                 .global
                 .timing_params
                 .min_tap_milliseconds
-                .value() as f32
+                .value()
             * 0.001) as u32;
     }
 
@@ -689,27 +688,24 @@ impl Del2 {
             let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
 
             // Cache repeated calculations
-            let low_velocity = &velocity_params.velocity_low;
-            let high_velocity = &velocity_params.velocity_high;
+            let low_params = &velocity_params.velocity_low;
+            let high_params = &velocity_params.velocity_high;
 
-            let low_res = low_velocity.res.value();
-            let high_res = high_velocity.res.value();
-            let res = Del2::lerp(low_res, high_res, velocity);
-
-            let low_cutoff = low_velocity.cutoff.value();
-            let high_cutoff = high_velocity.cutoff.value();
-            let cutoff = Del2::log_interpolate(low_cutoff, high_cutoff, velocity);
-
-            let low_drive_db = util::gain_to_db(low_velocity.drive.value());
-            let high_drive_db = util::gain_to_db(high_velocity.drive.value());
-            let drive_db = Del2::lerp(low_drive_db, high_drive_db, velocity);
+            let res = Del2::lerp(low_params.res.value(), high_params.res.value(), velocity);
+            let cutoff = Del2::log_interpolate(
+                low_params.cutoff.value(),
+                high_params.cutoff.value(),
+                velocity,
+            );
+            let drive_db = Del2::lerp(
+                util::gain_to_db(low_params.drive.value()),
+                util::gain_to_db(high_params.drive.value()),
+                velocity,
+            );
             let drive = util::db_to_gain(drive_db);
+            let mode =
+                MyLadderMode::lerp(low_params.mode.value(), high_params.mode.value(), velocity);
 
-            let low_mode = low_velocity.mode.value();
-            let high_mode = high_velocity.mode.value();
-            let mode = MyLadderMode::lerp(low_mode, high_mode, velocity);
-            // println!("mode {}: {}", tap, mode);
-            // Updating filter parameters
             filter_params.set_resonance(res);
             filter_params.set_frequency(cutoff);
             filter_params.drive = drive;
@@ -751,7 +747,6 @@ impl Del2 {
         }
     }
 
-    // #[inline]
     fn process_tap(&mut self, block_len: usize, tap: usize, out_l: &mut [f32], out_r: &mut [f32]) {
         let delay_time = self.delay_data.delay_times[tap] as isize;
         // delay_time - 1 because we are processing 2 samples at once in process_audio
@@ -843,7 +838,6 @@ impl Del2 {
         }
     }
 
-    // #[inline]
     fn make_stereo_frame(&self, index: usize) -> f32x4 {
         f32x4::from_array([
             self.temp_l[index],
@@ -853,7 +847,6 @@ impl Del2 {
         ])
     }
 
-    // #[inline]
     fn accumulate_processed_results(
         i: usize,
         block_len: usize,
