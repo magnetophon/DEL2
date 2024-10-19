@@ -541,16 +541,16 @@ impl Plugin for Del2 {
 impl Del2 {
     // #[inline]
     fn update_timing_params(&mut self) {
-        self.delay_data.max_tap_samples = (self.sample_rate as f64
-            * self.params.global.timing_params.max_tap_seconds.value() as f64)
+        self.delay_data.max_tap_samples = (self.sample_rate as f32
+            * self.params.global.timing_params.max_tap_seconds.value() as f32)
             as u32;
-        self.min_tap_samples = (self.sample_rate as f64
+        self.min_tap_samples = (self.sample_rate as f32
             * self
                 .params
                 .global
                 .timing_params
                 .min_tap_milliseconds
-                .value() as f64
+                .value() as f32
             * 0.001) as u32;
     }
 
@@ -563,73 +563,75 @@ impl Del2 {
                 ..
             } = event
             {
+                let should_record_tap = self.delay_data.current_tap < MAX_NR_TAPS;
+
                 match self.counting_state {
                     CountingState::TimeOut => {
+                        // If in TimeOut state, reset and start new counting phase
                         self.fade_out_state = 0;
                         self.delay_data.current_tap = 0;
                         self.timing_last_event = timing;
                         self.counting_state = CountingState::CountingInBuffer;
                     }
                     CountingState::CountingInBuffer => {
-                        // Check if timing surpasses min_tap and update tap information
-                        if (timing - self.timing_last_event) > self.min_tap_samples
-                            && self.delay_data.current_tap < MAX_NR_TAPS
+                        // Validate and record a new tap within the buffer
+                        if timing - self.timing_last_event > self.min_tap_samples
+                            && should_record_tap
                         {
                             self.samples_since_last_event = timing - self.timing_last_event;
                             self.timing_last_event = timing;
                         } else {
-                            return; // Debounce aka min_tap in effect, ignore tap
+                            continue; // Debounce or max taps reached, ignore tap
                         }
                     }
                     CountingState::CountingAcrossBuffer => {
-                        // Handle delayed tap timing across buffer
-                        if (self.samples_since_last_event + timing) > self.min_tap_samples
-                            && self.delay_data.current_tap < MAX_NR_TAPS
+                        // Handle cross-buffer taps timing
+                        if self.samples_since_last_event + timing > self.min_tap_samples
+                            && should_record_tap
                         {
                             self.samples_since_last_event += timing;
                             self.timing_last_event = timing;
                             self.counting_state = CountingState::CountingInBuffer;
                         } else {
-                            return; // Debounce aka min_tap across buffer, ignore
+                            continue; // Debounce across buffer or max taps, ignore
                         }
                     }
                     CountingState::MidiLearn => {
+                        // Store learned note and revert to TimeOut state
                         self.learned_notes[self.learning_index] = note;
                         self.counting_state = CountingState::TimeOut;
                     }
                 }
 
+                // Check for timeout condition and reset if necessary
                 if self.samples_since_last_event > self.delay_data.max_tap_samples {
-                    // Timeout condition, reset state
                     self.counting_state = CountingState::TimeOut;
                     self.timing_last_event = 0;
                     self.samples_since_last_event = 0;
-                } else
-                // check of we should record another tap
-                if self.delay_data.current_tap < MAX_NR_TAPS
-                    && self.counting_state != CountingState::TimeOut
-                    && self.counting_state != CountingState::MidiLearn
+                } else if should_record_tap
+                    && !matches!(
+                        self.counting_state,
+                        CountingState::TimeOut | CountingState::MidiLearn
+                    )
                     && self.samples_since_last_event > 0
                     && velocity > 0.0
                 {
-                    // Record the new tap with the corresponding velocity and timing
-                    if self.delay_data.current_tap > 0 {
-                        self.delay_data.delay_times[self.delay_data.current_tap] = self
-                            .samples_since_last_event
-                            + self.delay_data.delay_times[self.delay_data.current_tap - 1];
+                    // Update tap information with timing and velocity
+                    let current_tap = self.delay_data.current_tap;
+                    if current_tap > 0 {
+                        self.delay_data.delay_times[current_tap] = self.samples_since_last_event
+                            + self.delay_data.delay_times[current_tap - 1];
                     } else {
-                        self.delay_data.delay_times[self.delay_data.current_tap] =
-                            self.samples_since_last_event;
+                        self.delay_data.delay_times[current_tap] = self.samples_since_last_event;
                     }
 
-                    // Update velocity and state information
-                    self.delay_data.velocities[self.delay_data.current_tap] = velocity;
-                    self.delay_data.notes[self.delay_data.current_tap] = note;
-                    self.fade_in_states[self.delay_data.current_tap] = 0;
+                    self.delay_data.velocities[current_tap] = velocity;
+                    self.delay_data.notes[current_tap] = note;
+                    self.fade_in_states[current_tap] = 0;
                     self.delay_data.current_tap += 1;
                     self.fade_out_tap = self.delay_data.current_tap;
 
-                    // Trigger filter update due to new tap
+                    // Indicate filter update needed
                     self.should_update_filter.store(true, Ordering::Release);
                 }
             }
@@ -752,6 +754,7 @@ impl Del2 {
     // #[inline]
     fn process_tap(&mut self, block_len: usize, tap: usize, out_l: &mut [f32], out_r: &mut [f32]) {
         let delay_time = self.delay_data.delay_times[tap] as isize;
+        // delay_time - 1 because we are processing 2 samples at once in process_audio
         let read_index = self.delay_write_index as isize - (delay_time - 1).max(0);
 
         self.read_buffers_into_temp(read_index);
