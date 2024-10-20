@@ -8,6 +8,9 @@
 // - mute both
 // all mutes with choice between latch and toggle
 // - reset pattern
+// - momentary mode:
+//   in this mode, the taps are only heard until the key is released
+//   the counter starts when the note for this trigger is pressed
 // - stop listening for taps (so it can be used in a daw on an instrument track)
 //
 // add adsr envelopes
@@ -37,10 +40,11 @@ const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
 const VELOCITY_LOW_NAME_PREFIX: &str = "low velocity";
 const VELOCITY_HIGH_NAME_PREFIX: &str = "high velocity";
 // this seems to be the number JUCE is using
-const MAX_SOUNDCARD_BUFFER_SIZE: usize = 32768;
+const MAX_BLOCK_LEN: usize = 32768;
 
 const PEAK_METER_DECAY_MS: f64 = 150.0;
-const FADE_DURATION_SECONDS: f32 = 0.01; // 10ms
+// TODO: make an enum of which controls we have
+const MAX_NR_LEARNED_NOTES: usize = 4;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -50,6 +54,7 @@ struct Del2 {
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
     // delay read buffers
+    // TODO: which vecs should be arrays?
     temp_l: Vec<f32>,
     temp_r: Vec<f32>,
 
@@ -58,7 +63,10 @@ struct Del2 {
     delay_data_output: Arc<Mutex<DelayDataOutput>>,
     // N counters to know where in the fade in we are: 0 is the start
     fade_in_states: [usize; MAX_NR_TAPS],
-    learned_notes: [u8; MAX_NR_TAPS],
+    amp_envelopes: [Smoother<f32>; MAX_NR_TAPS],
+    envelope_block: Vec<f32>,
+    releasings: [bool; MAX_NR_TAPS],
+    learned_notes: [u8; MAX_NR_LEARNED_NOTES],
     sample_rate: f32,
     /// Needed to normalize the peak meter's response based on the sample rate.
     peak_meter_decay_weight: f32,
@@ -71,11 +79,6 @@ struct Del2 {
     input_meter: Arc<AtomicF32>,
     output_meter: Arc<AtomicF32>,
     delay_write_index: usize,
-    fade_samples: usize,
-    // a counter to know where in the fade out we are: 0 is the start
-    fade_out_state: usize,
-    // same as delay_data.current_tap, but only reset after the fade out is done
-    fade_out_tap: usize,
     // for which control are we learning?
     learning_index: usize,
     samples_since_last_event: u32,
@@ -117,7 +120,7 @@ struct Del2Params {
     #[nested(group = "global")]
     pub global: GlobalParams,
     #[nested(group = "taps")]
-    pub taps: DualFilterGuiParams,
+    pub taps: TapsParams,
 }
 
 /// Contains the global parameters.
@@ -127,6 +130,11 @@ pub struct GlobalParams {
     pub timing_params: Arc<TimingParams>,
     #[nested(id_prefix = "gain_params", group = "gain_params")]
     pub gain_params: Arc<GainParams>,
+    #[id = "attack_ms"]
+    attack_ms: FloatParam,
+    /// The amplitude envelope release time. This is the same for every voice.
+    #[id = "release_ms"]
+    release_ms: FloatParam,
 }
 
 impl GlobalParams {
@@ -134,6 +142,29 @@ impl GlobalParams {
         GlobalParams {
             timing_params: Arc::new(TimingParams::new()),
             gain_params: Arc::new(GainParams::new()),
+
+            attack_ms: FloatParam::new(
+                "Attack",
+                10.0,
+                FloatRange::Skewed {
+                    min: 0.0,
+                    max: 1000.0,
+                    factor: FloatRange::skew_factor(-1.0),
+                },
+            )
+            .with_step_size(0.1)
+            .with_unit(" ms"),
+            release_ms: FloatParam::new(
+                "Release",
+                10.0,
+                FloatRange::Skewed {
+                    min: 0.0,
+                    max: 10_000.0,
+                    factor: FloatRange::skew_factor(-2.0),
+                },
+            )
+            .with_step_size(0.1)
+            .with_unit(" ms"),
         }
     }
 }
@@ -223,10 +254,10 @@ impl GainParams {
 
 /// Contains the high and low tap parameters.
 #[derive(Params)]
-pub struct DualFilterGuiParams {
+pub struct TapsParams {
     #[id = "note_to_cutoff_amount"]
     pub note_to_cutoff_amount: FloatParam,
-    #[id = "global_drive"]
+    #[id = "velocity_to_cutoff_amount"]
     pub velocity_to_cutoff_amount: FloatParam,
 
     #[nested(id_prefix = "velocity_low", group = "velocity_low")]
@@ -235,9 +266,9 @@ pub struct DualFilterGuiParams {
     pub velocity_high: Arc<FilterGuiParams>,
 }
 
-impl DualFilterGuiParams {
+impl TapsParams {
     pub fn new(should_update_filter: Arc<AtomicBool>) -> Self {
-        DualFilterGuiParams {
+        TapsParams {
             note_to_cutoff_amount: FloatParam::new(
                 "note -> cutoff",
                 0.0,
@@ -369,6 +400,11 @@ impl Default for Del2 {
         let should_update_filter = Arc::new(AtomicBool::new(false));
         let ladders: [LadderFilter; MAX_NR_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
+        let amp_envelopes = array_init::array_init(|_| {
+            let mut amp_envelope = Smoother::new(SmoothingStyle::Exponential(0.0));
+            amp_envelope.reset(0.0);
+            amp_envelope
+        });
         Self {
             params: Arc::new(Del2Params::new(should_update_filter.clone())),
             filter_params,
@@ -377,22 +413,22 @@ impl Default for Del2 {
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
-            temp_l: vec![0.0; MAX_SOUNDCARD_BUFFER_SIZE],
-            temp_r: vec![0.0; MAX_SOUNDCARD_BUFFER_SIZE],
+            temp_l: vec![0.0; MAX_BLOCK_LEN],
+            temp_r: vec![0.0; MAX_BLOCK_LEN],
 
             delay_data: initial_delay_data,
             delay_data_input,
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
             fade_in_states: [0; MAX_NR_TAPS],
-            learned_notes: [0; MAX_NR_TAPS],
+            amp_envelopes,
+            envelope_block: vec![0.0; MAX_BLOCK_LEN],
+            releasings: [false; MAX_NR_TAPS],
+            learned_notes: [0; MAX_NR_LEARNED_NOTES],
             sample_rate: 1.0,
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
             output_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
             delay_write_index: 0,
-            fade_samples: 0,
-            fade_out_state: 0,
-            fade_out_tap: 0,
             learning_index: 0,
             samples_since_last_event: 0,
             timing_last_event: 0,
@@ -421,7 +457,7 @@ impl Del2Params {
     fn new(should_update_filter: Arc<AtomicBool>) -> Self {
         Self {
             editor_state: editor::default_state(),
-            taps: DualFilterGuiParams::new(should_update_filter.clone()),
+            taps: TapsParams::new(should_update_filter.clone()),
             global: GlobalParams::new(),
         }
     }
@@ -488,8 +524,6 @@ impl Plugin for Del2 {
     ) -> bool {
         // Set the sample rate from the buffer configuration
         self.sample_rate = buffer_config.sample_rate;
-        self.fade_samples = (FADE_DURATION_SECONDS * self.sample_rate) as usize;
-        self.fade_out_state = self.fade_samples;
 
         // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
         // have dropped by 12 dB
@@ -529,14 +563,14 @@ impl Plugin for Del2 {
         self.prepare_for_delay(buffer.samples());
 
         if self.should_update_filter() {
-            for tap in 0..self.fade_out_tap {
+            for tap in 0..self.delay_data.current_tap {
                 self.update_filter(tap);
             }
         }
 
         self.update_peak_meter(buffer, &self.input_meter);
         self.process_audio_blocks(buffer);
-        self.apply_fade_out(buffer);
+        // self.apply_fade_out(buffer);
         self.update_peak_meter(buffer, &self.output_meter);
         ProcessStatus::Normal
     }
@@ -571,7 +605,14 @@ impl Del2 {
                 match self.counting_state {
                     CountingState::TimeOut => {
                         // If in TimeOut state, reset and start new counting phase
-                        self.fade_out_state = 0;
+                        // TODO:
+                        // for tap in 0..self.delay_data.current_tap {
+                        for tap in 0..MAX_NR_TAPS {
+                            self.releasings[tap] = true;
+                            self.amp_envelopes[tap].style =
+                                SmoothingStyle::Exponential(self.params.global.release_ms.value());
+                            self.amp_envelopes[tap].set_target(self.sample_rate, 0.0);
+                        }
                         self.delay_data.current_tap = 0;
                         self.timing_last_event = timing;
                         self.counting_state = CountingState::CountingInBuffer;
@@ -630,9 +671,15 @@ impl Del2 {
 
                     self.delay_data.velocities[current_tap] = velocity;
                     self.delay_data.notes[current_tap] = note;
+
+                    self.releasings[current_tap] = false;
+                    self.amp_envelopes[current_tap].style =
+                        SmoothingStyle::Exponential(self.params.global.attack_ms.value());
+                    // TODO: instead on 1.0, use a combination of gain params
+                    self.amp_envelopes[current_tap].set_target(self.sample_rate, 1.0);
                     self.fade_in_states[current_tap] = 0;
                     self.delay_data.current_tap += 1;
-                    self.fade_out_tap = self.delay_data.current_tap;
+                    self.delay_data.current_tap = self.delay_data.current_tap;
 
                     // Indicate filter update needed
                     self.should_update_filter.store(true, Ordering::Release);
@@ -744,9 +791,11 @@ impl Del2 {
             // TODO: no dry signal yet
             out_l.fill(0.0);
             out_r.fill(0.0);
-
-            for tap in 0..self.fade_out_tap {
-                self.process_tap(block_len, tap, out_l, out_r);
+            for tap in 0..MAX_NR_TAPS {
+                if self.releasings[tap] || tap < self.delay_data.current_tap {
+                    self.read_tap_into_temp(tap);
+                    self.process_tap(block_len, tap, out_l, out_r);
+                }
             }
 
             self.delay_write_index =
@@ -754,18 +803,30 @@ impl Del2 {
         }
     }
 
-    fn process_tap(&mut self, block_len: usize, tap: usize, out_l: &mut [f32], out_r: &mut [f32]) {
+    fn read_tap_into_temp(&mut self, tap: usize) {
         let delay_time = self.delay_data.delay_times[tap] as isize;
         // delay_time - 1 because we are processing 2 samples at once in process_audio
         let read_index = self.delay_write_index as isize - (delay_time - 1).max(0);
 
-        self.read_buffers_into_temp(read_index);
+        self.delay_buffer[0].read_into(&mut self.temp_l, read_index);
+        self.delay_buffer[1].read_into(&mut self.temp_r, read_index);
+    }
+
+    fn process_tap(&mut self, block_len: usize, tap: usize, out_l: &mut [f32], out_r: &mut [f32]) {
+        self.process_temp_with_envelope(block_len, tap);
         self.process_audio(block_len, tap, out_l, out_r);
     }
 
-    fn read_buffers_into_temp(&mut self, read_index: isize) {
-        self.delay_buffer[0].read_into(&mut self.temp_l, read_index);
-        self.delay_buffer[1].read_into(&mut self.temp_r, read_index);
+    fn process_temp_with_envelope(&mut self, block_len: usize, tap: usize) {
+        // Initialize an envelope block for the current processing segment
+        self.amp_envelopes[tap].next_block(&mut self.envelope_block[..block_len], block_len);
+
+        // Apply the envelope to each sample in the temporary buffers
+        for i in 0..block_len {
+            // Process left and right temporary buffers with the envelope value
+            self.temp_l[i] *= self.envelope_block[i];
+            self.temp_r[i] *= self.envelope_block[i];
+        }
     }
 
     fn process_audio(
@@ -781,37 +842,7 @@ impl Del2 {
         // For that we need to feed two different parameter values to the filter, one for each tap.
         // No idea how...
         // Loop through each sample, processing two channels at a time
-        let fade_samples = self.fade_samples;
         for i in (0..block_len).step_by(2) {
-            // Begin the loop by dealing with mutable borrowing
-            let (fade_in_factor1, fade_in_factor2) = {
-                let tap_fade_in_state = &mut self.fade_in_states[tap]; // Mutable borrow here
-
-                // Calculate fade-in factors for two consecutive samples
-                let fade_in_factor1 = if *tap_fade_in_state < fade_samples {
-                    *tap_fade_in_state as f32 / fade_samples as f32
-                } else {
-                    1.0
-                };
-
-                let fade_in_factor2 = if *tap_fade_in_state + 1 < fade_samples {
-                    (*tap_fade_in_state + 1) as f32 / fade_samples as f32
-                } else {
-                    1.0
-                };
-
-                // Increment fade progress appropriately for two samples
-                if *tap_fade_in_state < fade_samples {
-                    *tap_fade_in_state += 1;
-                }
-                if *tap_fade_in_state < fade_samples {
-                    *tap_fade_in_state += 1;
-                }
-
-                (fade_in_factor1, fade_in_factor2)
-            };
-
-            // Proceed with immutable operations now that mutable borrow scope is closed
             let output_gain1 = self.params.global.gain_params.output_gain.smoothed.next();
             let output_gain2 = self.params.global.gain_params.output_gain.smoothed.next();
             let drive = self.filter_params[tap].clone().drive;
@@ -820,8 +851,8 @@ impl Del2 {
             let pre_filter_gain2 = self.params.global.gain_params.global_drive.smoothed.next();
 
             // Calculate post-filter gains, including the fade effect
-            let post_filter_gain1 = (output_gain1 / (drive * pre_filter_gain1)) * fade_in_factor1;
-            let post_filter_gain2 = (output_gain2 / (drive * pre_filter_gain2)) * fade_in_factor2;
+            let post_filter_gain1 = output_gain1 / (drive * pre_filter_gain1);
+            let post_filter_gain2 = output_gain2 / (drive * pre_filter_gain2);
 
             let mut frame = self.make_stereo_frame(i);
 
@@ -870,28 +901,6 @@ impl Del2 {
     }
     // TODO: when the fade time is long, there are bugs with taps not appearing, or fading out while fading in, etc.
     // more testing is needed
-    fn apply_fade_out(&mut self, buffer: &mut Buffer) {
-        let fade_samples = self.fade_samples;
-        let mut fade_out_state = self.fade_out_state;
-        if fade_out_state < fade_samples {
-            for channel_samples in buffer.iter_samples() {
-                for sample in channel_samples {
-                    let fade_out_factor = if fade_out_state < fade_samples {
-                        1.0 - (fade_out_state as f32 / fade_samples as f32)
-                    } else {
-                        self.fade_out_tap = 0;
-                        // self.fade_out_state = fade_samples;
-                        0.0
-                    };
-                    *sample *= fade_out_factor;
-                    if fade_out_state < fade_samples {
-                        fade_out_state += 1;
-                    }
-                }
-            }
-            self.fade_out_state = fade_out_state;
-        }
-    }
     // for fn initialize():
 
     // Either we resize in the audio thread, or in the initialization fn
@@ -900,6 +909,7 @@ impl Del2 {
         let max_size = max_buffer_size as usize;
         self.temp_l.resize(max_size, 0.0);
         self.temp_r.resize(max_size, 0.0);
+        self.envelope_block.resize(max_size, 0.0);
     }
 
     fn calculate_buffer_size(&self, buffer_size: u32) -> u32 {

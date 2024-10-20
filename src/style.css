@@ -75,12 +75,16 @@ param-slider .value-entry {
     bottom: 1px;
 }
 
+.global-column {
+    /* background-color: red */
+}
+
 .dsp-title {
     font-size: 30;
     /* // This should align nicely with the right edge of the slider */
     left: 269px;
     right: 1s;
-    top: 1s;
+    top: 9px;
     bottom: 0px;
 }
 
@@ -91,10 +95,14 @@ param-slider .value-entry {
 }
 
 .cutoff-tracking {
-    /* left: 9px; */
-    /* child-right: 18px; */
     left: 0s;
     right: 18px;
+}
+.attack-release {
+    left: 0px;
+    right: 0px;
+    top: 1s;
+    bottom: 0px;
 }
 .row {
     col-between: 6px;

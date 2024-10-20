@@ -25,7 +25,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1200, 450))
+    ViziaState::new(|| (1200, 500))
 }
 
 pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -51,7 +51,7 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                                 GenericUi::draw_widget(cx, gain_params, param_ptr);
                             })
                             .class("row");
-                        });
+                        }).class("global-column");
                     });
 
                     make_column(cx, "timing", |cx| {
@@ -78,9 +78,37 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                                 })
                                 .class("row");
                             }
-                        });
+                        }).class("global-column");
                     });
-                });
+            });
+
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            HStack::new(cx, |cx| {
+                                Label::new(cx, "attack").class("slider-label");
+                                ParamSlider::new(cx, Data::params, |params| &params.global.attack_ms)
+                                    .class("widget");
+                            })
+                                .class("row");
+                        })
+                            .width(COLUMN_WIDTH)
+                        // .height(Auto);
+                            ;
+                        HStack::new(cx, |cx| {
+                            HStack::new(cx, |cx| {
+                                Label::new(cx, "release").class("slider-label");
+                                ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
+                                    .class("widget");
+                            })
+                                .class("row");
+                        }) // TODO: make into a class
+                            .width(COLUMN_WIDTH)
+                    // .height(Auto);
+                        ;
+                })
+                // TODO: rename
+                    .class("attack-release");
+
                 Label::new(cx, "filters").class("dsp-title");
 
                 HStack::new(cx, |cx| {
