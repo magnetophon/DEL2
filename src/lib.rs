@@ -1,7 +1,6 @@
 // TODO:
 //
 // make a midi learn struct/button
-// see: git@github.com:icsga/Yazz.git
 // use it to make a few midi triggers:
 // - mute out
 // - mute in
@@ -400,11 +399,7 @@ impl Default for Del2 {
         let should_update_filter = Arc::new(AtomicBool::new(false));
         let ladders: [LadderFilter; MAX_NR_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
-        let amp_envelopes = array_init::array_init(|_| {
-            let mut amp_envelope = Smoother::new(SmoothingStyle::Exponential(0.0));
-            amp_envelope.reset(0.0);
-            amp_envelope
-        });
+        let amp_envelopes = array_init::array_init(|_| Smoother::none());
         Self {
             params: Arc::new(Del2Params::new(should_update_filter.clone())),
             filter_params,

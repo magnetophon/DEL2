@@ -51,7 +51,7 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                                 GenericUi::draw_widget(cx, gain_params, param_ptr);
                             })
                             .class("row");
-                        }).class("global-column");
+                        });
                     });
 
                     make_column(cx, "timing", |cx| {
@@ -78,7 +78,7 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                                 })
                                 .class("row");
                             }
-                        }).class("global-column");
+                        });
                     });
             });
 
