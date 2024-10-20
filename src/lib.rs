@@ -23,8 +23,8 @@ use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::simd::f32x4;
-use std::sync::atomic::Ordering;
-use std::sync::{atomic::AtomicBool, Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode};
 use triple_buffer::TripleBuffer;
 
@@ -61,7 +61,6 @@ struct Del2 {
     delay_data_input: DelayDataInput,
     delay_data_output: Arc<Mutex<DelayDataOutput>>,
     // N counters to know where in the fade in we are: 0 is the start
-    fade_in_states: [usize; MAX_NR_TAPS],
     amp_envelopes: [Smoother<f32>; MAX_NR_TAPS],
     envelope_block: Vec<f32>,
     releasings: [bool; MAX_NR_TAPS],
@@ -79,7 +78,8 @@ struct Del2 {
     output_meter: Arc<AtomicF32>,
     delay_write_index: usize,
     // for which control are we learning?
-    learning_index: usize,
+    is_learning: Arc<AtomicBool>,
+    learning_index: Arc<AtomicUsize>,
     samples_since_last_event: u32,
     timing_last_event: u32,
     min_tap_samples: u32,
@@ -137,10 +137,10 @@ pub struct GlobalParams {
 }
 
 impl GlobalParams {
-    pub fn new() -> Self {
+    pub fn new(is_learning: Arc<AtomicBool>, learning_index: Arc<AtomicUsize>) -> Self {
         GlobalParams {
             timing_params: Arc::new(TimingParams::new()),
-            gain_params: Arc::new(GainParams::new()),
+            gain_params: Arc::new(GainParams::new(is_learning.clone(), learning_index.clone())),
 
             attack_ms: FloatParam::new(
                 "Attack",
@@ -215,11 +215,15 @@ pub struct GainParams {
     pub output_gain: FloatParam,
     #[id = "global_drive"]
     pub global_drive: FloatParam,
+    #[id = "mute_in_learn"]
+    pub mute_in_learn: BoolParam,
+    #[id = "mute_out_learn"]
+    pub mute_out_learn: BoolParam,
 }
 
 impl GainParams {
     /// Create a new [`TapSetParams`] object with a prefix for all parameter names.
-    pub fn new() -> Self {
+    pub fn new(is_learning: Arc<AtomicBool>, learning_index: Arc<AtomicUsize>) -> Self {
         GainParams {
             output_gain: FloatParam::new(
                 "out gain",
@@ -247,6 +251,30 @@ impl GainParams {
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            mute_in_learn: BoolParam::new("mute in", false)
+                .with_value_to_string(Arc::new(|value| {
+                    String::from(if value { "learning" } else { "not learning" })
+                }))
+                .with_callback({
+                    let learning_index = learning_index.clone();
+                    let is_learning = is_learning.clone();
+                    Arc::new(move |_| {
+                        learning_index.store(0, Ordering::Release);
+                        is_learning.store(true, Ordering::Release);
+                    })
+                }),
+            mute_out_learn: BoolParam::new("mute out", false)
+                .with_value_to_string(Arc::new(|value| {
+                    String::from(if value { "learning" } else { "not learning" })
+                }))
+                .with_callback({
+                    let learning_index = learning_index.clone();
+                    let is_learning = is_learning.clone();
+                    Arc::new(move |_| {
+                        learning_index.store(1, Ordering::Release);
+                        is_learning.store(true, Ordering::Release);
+                    })
+                }),
         }
     }
 }
@@ -400,8 +428,14 @@ impl Default for Del2 {
         let ladders: [LadderFilter; MAX_NR_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
+        let is_learning = Arc::new(AtomicBool::new(false));
+        let learning_index = Arc::new(AtomicUsize::new(0));
         Self {
-            params: Arc::new(Del2Params::new(should_update_filter.clone())),
+            params: Arc::new(Del2Params::new(
+                should_update_filter.clone(),
+                is_learning.clone(),
+                learning_index.clone(),
+            )),
             filter_params,
             ladders,
             delay_buffer: [
@@ -414,17 +448,18 @@ impl Default for Del2 {
             delay_data: initial_delay_data,
             delay_data_input,
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
-            fade_in_states: [0; MAX_NR_TAPS],
             amp_envelopes,
             envelope_block: vec![0.0; MAX_BLOCK_LEN],
             releasings: [false; MAX_NR_TAPS],
+            //TODO: make Option<u8>
             learned_notes: [0; MAX_NR_LEARNED_NOTES],
             sample_rate: 1.0,
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
             output_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
             delay_write_index: 0,
-            learning_index: 0,
+            is_learning,
+            learning_index,
             samples_since_last_event: 0,
             timing_last_event: 0,
             min_tap_samples: 0,
@@ -449,11 +484,15 @@ impl Default for DelayData {
 }
 
 impl Del2Params {
-    fn new(should_update_filter: Arc<AtomicBool>) -> Self {
+    fn new(
+        should_update_filter: Arc<AtomicBool>,
+        is_learning: Arc<AtomicBool>,
+        learning_index: Arc<AtomicUsize>,
+    ) -> Self {
         Self {
             editor_state: editor::default_state(),
             taps: TapsParams::new(should_update_filter.clone()),
-            global: GlobalParams::new(),
+            global: GlobalParams::new(is_learning.clone(), learning_index.clone()),
         }
     }
 }
@@ -553,11 +592,15 @@ impl Plugin for Del2 {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         self.update_timing_params();
+        // if self.is_learning {
+        if Del2::compare_exchange(&self.is_learning) {
+            self.counting_state = CountingState::MidiLearn;
+        }
 
         self.process_midi_events(context);
         self.prepare_for_delay(buffer.samples());
 
-        if self.should_update_filter() {
+        if Del2::compare_exchange(&self.should_update_filter) {
             for tap in 0..self.delay_data.current_tap {
                 self.update_filter(tap);
             }
@@ -636,9 +679,12 @@ impl Del2 {
                         }
                     }
                     CountingState::MidiLearn => {
-                        // Store learned note and revert to TimeOut state
-                        self.learned_notes[self.learning_index] = note;
+                        let is_learning = self.is_learning.clone();
+                        is_learning.store(false, Ordering::Release);
+                        self.learned_notes[self.learning_index.load(Ordering::SeqCst)] = note;
                         self.counting_state = CountingState::TimeOut;
+                        self.timing_last_event = 0;
+                        self.samples_since_last_event = 0;
                     }
                 }
 
@@ -672,7 +718,6 @@ impl Del2 {
                         SmoothingStyle::Exponential(self.params.global.attack_ms.value());
                     // TODO: instead on 1.0, use a combination of gain params
                     self.amp_envelopes[current_tap].set_target(self.sample_rate, 1.0);
-                    self.fade_in_states[current_tap] = 0;
                     self.delay_data.current_tap += 1;
                     self.delay_data.current_tap = self.delay_data.current_tap;
 
@@ -716,8 +761,8 @@ impl Del2 {
             // println!("time out no_more_events");
         };
     }
-    fn should_update_filter(&mut self) -> bool {
-        self.should_update_filter
+    fn compare_exchange(atomic_bool: &AtomicBool) -> bool {
+        atomic_bool
             .compare_exchange(
                 true,
                 false,
