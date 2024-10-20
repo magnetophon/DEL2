@@ -25,7 +25,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1200, 400))
+    ViziaState::new(|| (1200, 450))
 }
 
 pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -84,9 +84,31 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                 Label::new(cx, "filters").class("dsp-title");
 
                 HStack::new(cx, |cx| {
+                    make_column(cx, "velocity tracking", |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "cutoff").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| {
+                                &params.taps.velocity_to_cutoff_amount
+                            })
+                            .class("widget");
+                        })
+                        .class("row");
+                    });
+                    make_column(cx, "note tracking", |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "cutoff").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| {
+                                &params.taps.note_to_cutoff_amount
+                            })
+                            .class("widget");
+                        })
+                        .class("row");
+                    });
+                })
+                .class("cutoff-tracking");
+
+                HStack::new(cx, |cx| {
                     make_column(cx, "low velocity", |cx| {
-                        // We don't want to show the 'Upwards' prefix here, but it should still be in
-                        // the parameter name so the parameter list makes sense
                         let velocity_low_params = Data::params.map(|p| p.taps.velocity_low.clone());
                         GenericUi::new_custom(cx, velocity_low_params, |cx, param_ptr| {
                             HStack::new(cx, |cx| {

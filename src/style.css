@@ -90,6 +90,26 @@ param-slider .value-entry {
     right: 9px;
 }
 
+.cutoff-tracking {
+    /* left: 9px; */
+    /* child-right: 18px; */
+    left: 0s;
+    right: 18px;
+}
+.row {
+    col-between: 6px;
+    height: auto;
+    layout-type: row;
+}
+
+.slider-label {
+    left: 1s;
+    right: 9px;
+    top: 1s;
+    bottom: 1s;
+}
+
+
 delay-graph {
     top: 9px;
     right: 9px;

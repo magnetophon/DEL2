@@ -191,27 +191,17 @@ impl GainParams {
     /// Create a new [`TapSetParams`] object with a prefix for all parameter names.
     pub fn new() -> Self {
         GainParams {
-            // This gain is stored as linear gain. NIH-plug comes with useful conversion functions
-            // to treat these kinds of parameters as if we were dealing with decibels. Storing this
-            // as decibels is easier to work with, but requires a conversion for every sample.
             output_gain: FloatParam::new(
                 "out gain",
                 util::db_to_gain(0.0),
                 FloatRange::Skewed {
                     min: util::db_to_gain(-30.0),
                     max: util::db_to_gain(30.0),
-                    // This makes the range appear as if it was linear when displaying the values as
-                    // decibels
                     factor: FloatRange::gain_skew_factor(-30.0, 30.0),
                 },
             )
-            // Because the gain parameter is stored as linear gain instead of storing the value as
-            // decibels, we need logarithmic smoothing
             .with_smoother(SmoothingStyle::Logarithmic(50.0))
             .with_unit(" dB")
-            // There are many predefined formatters we can use here. If the gain was stored as
-            // decibels instead of as a linear gain value, we could have also used the
-            // `.with_step_size(0.1)` function to get internal rounding.
             .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
             global_drive: FloatParam::new(
@@ -220,18 +210,11 @@ impl GainParams {
                 FloatRange::Skewed {
                     min: util::db_to_gain(-30.0),
                     max: util::db_to_gain(30.0),
-                    // This makes the range appear as if it was linear when displaying the values as
-                    // decibels
                     factor: FloatRange::gain_skew_factor(-30.0, 30.0),
                 },
             )
-            // Because the gain parameter is stored as linear gain instead of storing the value as
-            // decibels, we need logarithmic smoothing
             .with_smoother(SmoothingStyle::Logarithmic(50.0))
             .with_unit(" dB")
-            // There are many predefined formatters we can use here. If the gain was stored as
-            // decibels instead of as a linear gain value, we could have also used the
-            // `.with_step_size(0.1)` function to get internal rounding.
             .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
         }
@@ -241,6 +224,11 @@ impl GainParams {
 /// Contains the high and low tap parameters.
 #[derive(Params)]
 pub struct DualFilterGuiParams {
+    #[id = "note_to_cutoff_amount"]
+    pub note_to_cutoff_amount: FloatParam,
+    #[id = "global_drive"]
+    pub velocity_to_cutoff_amount: FloatParam,
+
     #[nested(id_prefix = "velocity_low", group = "velocity_low")]
     pub velocity_low: Arc<FilterGuiParams>,
     #[nested(id_prefix = "velocity_high", group = "velocity_high")]
@@ -250,6 +238,22 @@ pub struct DualFilterGuiParams {
 impl DualFilterGuiParams {
     pub fn new(should_update_filter: Arc<AtomicBool>) -> Self {
         DualFilterGuiParams {
+            note_to_cutoff_amount: FloatParam::new(
+                "note -> cutoff",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0))
+            .with_string_to_value(formatters::s2v_f32_percentage()),
+            velocity_to_cutoff_amount: FloatParam::new(
+                "velocity -> cutoff",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0))
+            .with_string_to_value(formatters::s2v_f32_percentage()),
             velocity_low: Arc::new(FilterGuiParams::new(
                 VELOCITY_LOW_NAME_PREFIX,
                 should_update_filter.clone(),
@@ -692,11 +696,14 @@ impl Del2 {
             let high_params = &velocity_params.velocity_high;
 
             let res = Del2::lerp(low_params.res.value(), high_params.res.value(), velocity);
-            let cutoff = Del2::log_interpolate(
+            let velocity_cutoff = Del2::log_interpolate(
                 low_params.cutoff.value(),
                 high_params.cutoff.value(),
                 velocity,
             );
+            let note_cutoff = util::midi_note_to_freq(self.delay_data.notes[tap]);
+            let cutoff = note_cutoff * self.params.taps.note_to_cutoff_amount.value()
+                + velocity_cutoff * self.params.taps.velocity_to_cutoff_amount.value();
             let drive_db = Del2::lerp(
                 util::gain_to_db(low_params.drive.value()),
                 util::gain_to_db(high_params.drive.value()),
