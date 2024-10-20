@@ -11,8 +11,6 @@ use crate::Del2Params;
 use crate::DelayData;
 use crate::DelayDataOutput;
 
-const COLUMN_WIDTH: Units = Pixels(269.0);
-
 #[derive(Lens, Clone)]
 pub(crate) struct Data {
     pub(crate) params: Arc<Del2Params>,
@@ -80,34 +78,30 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                             }
                         });
                     });
-            });
+                });
 
+                HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
-                            HStack::new(cx, |cx| {
-                                Label::new(cx, "attack").class("slider-label");
-                                ParamSlider::new(cx, Data::params, |params| &params.global.attack_ms)
-                                    .class("widget");
-                            })
-                                .class("row");
+                            Label::new(cx, "attack").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| &params.global.attack_ms)
+                                .class("widget");
                         })
-                            .width(COLUMN_WIDTH)
-                        // .height(Auto);
-                            ;
+                        .class("row");
+                    })
+                    .class("column");
+                    HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
-                            HStack::new(cx, |cx| {
-                                Label::new(cx, "release").class("slider-label");
-                                ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
-                                    .class("widget");
-                            })
-                                .class("row");
-                        }) // TODO: make into a class
-                            .width(COLUMN_WIDTH)
-                    // .height(Auto);
-                        ;
+                            Label::new(cx, "release").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
+                                .class("widget");
+                        })
+                        .class("row");
+                    }) // TODO: make into a class
+                    .class("column");
                 })
                 // TODO: rename
-                    .class("attack-release");
+                .class("attack-release");
 
                 Label::new(cx, "filters").class("dsp-title");
 
@@ -118,7 +112,7 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                             ParamSlider::new(cx, Data::params, |params| {
                                 &params.taps.velocity_to_cutoff_amount
                             })
-                            .class("widget");
+                            .class("offset-widget");
                         })
                         .class("row");
                     });
@@ -128,12 +122,14 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                             ParamSlider::new(cx, Data::params, |params| {
                                 &params.taps.note_to_cutoff_amount
                             })
-                            .class("widget");
+                            .class("offset-widget");
                         })
                         .class("row");
                     });
-                })
-                .class("cutoff-tracking");
+                });
+                // })
+                // .class("attack-release");
+                // .class("cutoff-tracking");
 
                 HStack::new(cx, |cx| {
                     make_column(cx, "low velocity", |cx| {
@@ -176,11 +172,6 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                 .size(Auto);
             })
             .class("parameters");
-            // .row_between(Pixels(9.0))
-            // .child_left(Stretch(1.0))
-            // .child_right(Stretch(1.0))
-            // .child_left(Pixels(9.0))
-            // .child_right(Pixels(9.0));
             VStack::new(cx, |cx| {
                 ZStack::new(cx, |cx| {
                     Label::new(cx, "DEL2").class("plugin-name");
@@ -523,7 +514,5 @@ fn make_column(cx: &mut Context, title: &str, contents: impl FnOnce(&mut Context
 
         contents(cx);
     })
-    // .class("column");
-    .width(COLUMN_WIDTH)
-    .height(Auto);
+    .class("column");
 }

@@ -75,10 +75,6 @@ param-slider .value-entry {
     bottom: 1px;
 }
 
-.global-column {
-    /* background-color: red */
-}
-
 .dsp-title {
     font-size: 30;
     /* // This should align nicely with the right edge of the slider */
@@ -94,22 +90,12 @@ param-slider .value-entry {
     right: 9px;
 }
 
-.cutoff-tracking {
-    left: 0s;
-    right: 18px;
-}
 .attack-release {
     left: 0px;
     right: 0px;
     top: 1s;
     bottom: 0px;
 }
-.row {
-    col-between: 6px;
-    height: auto;
-    layout-type: row;
-}
-
 .slider-label {
     left: 1s;
     right: 9px;
@@ -132,6 +118,20 @@ generic-ui .row {
     col-between: 6px;
     height: auto;
     layout-type: row;
+}
+.row {
+    col-between: 6px;
+    height: auto;
+    layout-type: row;
+}
+
+generic-ui .column {
+    width: 269px;
+    height: auto;
+}
+.column {
+    width: 269px;
+    height: auto;
 }
 label {
     left: 1s;
@@ -181,3 +181,6 @@ peak-meter .ticks__label {
     width: 40px;
 }
 
+.offset-widget {
+    right: 9px;
+}
