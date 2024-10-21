@@ -552,7 +552,7 @@ impl ActionTrigger {
             learning_index: learning_index.get(cx),
             own_index,
             learned_notes: learned_notes.get(cx),
-            label_string: String::from("I like dogs"),
+            label_string: String::from("click to learn"),
         }
         .build(cx, |cx| {
             Label::new(cx, Self::label_string).class("action-label");
@@ -573,9 +573,17 @@ impl ActionTrigger {
             && self.learning_index.load(Ordering::SeqCst) == self.own_index
     }
 
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    //                       for drawing
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    pub fn set_label_string(&mut self) {
+        if self.is_learning_this_trigger() {
+            self.label_string = String::from("learning trigger");
+        } else if self.learned_notes.load(self.own_index, Ordering::SeqCst) == 0 {
+            self.label_string = String::from("no trigger");
+        } else {
+            // self.label_string = String::from(self.learned_notes.load(self.own_index));
+            self.label_string = String::from("note");
+        }
+    }
+
     fn draw_background(
         &self,
         canvas: &mut Canvas,
@@ -626,6 +634,7 @@ impl View for ActionTrigger {
                 } else {
                     self.start_learning();
                 }
+                self.set_label_string();
                 meta.consume();
             }
             _ => {}
