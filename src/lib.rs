@@ -592,7 +592,6 @@ impl Plugin for Del2 {
         self.update_timing_params();
         // TODO: put back?
         if self.is_learning.load(Ordering::SeqCst) {
-            // if Del2::compare_exchange(&self.is_learning) {
             self.counting_state = CountingState::MidiLearn;
         }
 
@@ -1117,7 +1116,7 @@ impl Enum for MyLadderMode {
     }
 }
 // #[derive(Debug)]
-struct AtomicByteArray {
+pub struct AtomicByteArray {
     data: AtomicU64,
 }
 

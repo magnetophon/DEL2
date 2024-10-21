@@ -525,11 +525,13 @@ fn make_column(cx: &mut Context, title: &str, contents: impl FnOnce(&mut Context
 //                               ActionTrigger                               //
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Lens)]
 pub struct ActionTrigger {
     is_learning: Arc<AtomicBool>,
     learning_index: Arc<AtomicUsize>,
     own_index: usize,
     learned_notes: Arc<AtomicByteArray>,
+    label_string: String,
 }
 impl ActionTrigger {
     pub fn new<IsLearningL, LearningIndexL, LearnedNoteL>(
@@ -550,11 +552,10 @@ impl ActionTrigger {
             learning_index: learning_index.get(cx),
             own_index,
             learned_notes: learned_notes.get(cx),
-            // delay_data: delay_data.get(cx),
+            label_string: String::from("I like dogs"),
         }
-        .build(cx, |_cx| {
-            // Label::new(cx, "XXX").class("global-title");
-            // put other widgets here
+        .build(cx, |cx| {
+            Label::new(cx, Self::label_string).class("action-label");
         })
     }
 
@@ -567,7 +568,7 @@ impl ActionTrigger {
     }
 
     // Checks if learning is active for this trigger
-    pub fn is_learning(&self) -> bool {
+    pub fn is_learning_this_trigger(&self) -> bool {
         self.is_learning.load(Ordering::SeqCst)
             && self.learning_index.load(Ordering::SeqCst) == self.own_index
     }
@@ -589,7 +590,7 @@ impl ActionTrigger {
         path.close();
 
         // Determine the paint color based on the learning state
-        let paint = if self.is_learning() {
+        let paint = if self.is_learning_this_trigger() {
             vg::Paint::color(border_color)
         } else {
             vg::Paint::color(background_color)
@@ -620,7 +621,7 @@ impl View for ActionTrigger {
             WindowEvent::MouseDown(MouseButton::Left)
             | WindowEvent::MouseDoubleClick(MouseButton::Left)
             | WindowEvent::MouseTripleClick(MouseButton::Left) => {
-                if self.is_learning() {
+                if self.is_learning_this_trigger() {
                     self.stop_learning();
                 } else {
                     self.start_learning();
