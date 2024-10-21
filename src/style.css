@@ -115,8 +115,12 @@ delay-graph {
 }
 
 action-trigger {
+    height: 30px;
     top: 100px;
     background-color: #4e4e4e;
+    border-color: #fabdf0;
+    border-width: 1px;
+    transition: background-color 300ms;
 }
 
 generic-ui .row {

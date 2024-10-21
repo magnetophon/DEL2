@@ -582,13 +582,45 @@ impl ActionTrigger {
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //                       for drawing
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    fn draw_background(&self, canvas: &mut Canvas, bounds: BoundingBox, color: vg::Color) {
+    fn draw_background(
+        &self,
+        canvas: &mut Canvas,
+        bounds: BoundingBox,
+        background_color: vg::Color,
+        border_color: vg::Color,
+        border_width: f32,
+    ) {
+        // Drawing the background rectangle
         let mut path = vg::Path::new();
         path.rect(bounds.x, bounds.y, bounds.w, bounds.h);
         path.close();
 
-        let paint = vg::Paint::color(color);
+        // Determine the paint color based on the learning state
+        let paint = if self.is_learning() {
+            vg::Paint::color(border_color)
+        } else {
+            vg::Paint::color(background_color)
+        };
+
+        // Fill the path using the selected paint
         canvas.fill_path(&path, &paint);
+        // }
+
+        // Drawing the border around the rectangle
+
+        let mut path = vg::Path::new();
+        path.rect(
+            bounds.x + border_width * 0.5,
+            bounds.y,
+            bounds.w - border_width,
+            bounds.h - border_width * 0.5,
+        );
+        path.close();
+
+        canvas.stroke_path(
+            &path,
+            &vg::Paint::color(border_color).with_line_width(border_width),
+        );
     }
 }
 
@@ -601,8 +633,13 @@ impl View for ActionTrigger {
     fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
         let bounds = draw_context.bounds();
         let background_color: vg::Color = draw_context.background_color().into();
+        let border_color: vg::Color = draw_context.border_color().into();
+        let outline_color: vg::Color = draw_context.outline_color().into();
+        let selection_color: vg::Color = draw_context.selection_color().into();
+        let border_width = draw_context.border_width();
+        let path_line_width = draw_context.outline_width();
 
-        self.draw_background(canvas, bounds, background_color);
+        self.draw_background(canvas, bounds, background_color, border_color, border_width);
         // Example of using internal state in a simplistic way
         if self.is_learning() {}
     }
