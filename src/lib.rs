@@ -247,30 +247,28 @@ impl GainParams {
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            mute_in_learn: BoolParam::new("mute in", false)
-                .with_value_to_string(Arc::new(|value| {
-                    String::from(if value { "learning" } else { "not learning" })
-                }))
-                .with_callback({
-                    let learning_index = learning_index.clone();
-                    let is_learning = is_learning.clone();
-                    Arc::new(move |_| {
-                        learning_index.store(0, Ordering::Release);
-                        is_learning.store(true, Ordering::Release);
-                    })
-                }),
-            mute_out_learn: BoolParam::new("mute out", false)
-                .with_value_to_string(Arc::new(|value| {
-                    String::from(if value { "learning" } else { "not learning" })
-                }))
-                .with_callback({
-                    let learning_index = learning_index.clone();
-                    let is_learning = is_learning.clone();
-                    Arc::new(move |_| {
-                        learning_index.store(1, Ordering::Release);
-                        is_learning.store(true, Ordering::Release);
-                    })
-                }),
+            mute_in_learn: BoolParam::new("mute in", false).with_value_to_string(Arc::new(
+                |value| String::from(if value { "learning" } else { "not learning" }),
+            )),
+            // .with_callback({
+            //     let learning_index = learning_index.clone();
+            //     let is_learning = is_learning.clone();
+            //     Arc::new(move |_| {
+            //         learning_index.store(0, Ordering::Release);
+            //         is_learning.store(true, Ordering::Release);
+            //     })
+            // }),
+            mute_out_learn: BoolParam::new("mute out", false).with_value_to_string(Arc::new(
+                |value| String::from(if value { "learning" } else { "not learning" }),
+            )),
+            // .with_callback({
+            //     let learning_index = learning_index.clone();
+            //     let is_learning = is_learning.clone();
+            //     Arc::new(move |_| {
+            //         learning_index.store(1, Ordering::Release);
+            //         is_learning.store(true, Ordering::Release);
+            //     })
+            // }),
         }
     }
 }
@@ -592,8 +590,9 @@ impl Plugin for Del2 {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         self.update_timing_params();
-        // if self.is_learning {
-        if Del2::compare_exchange(&self.is_learning) {
+        // TODO: put back?
+        if self.is_learning.load(Ordering::SeqCst) {
+            // if Del2::compare_exchange(&self.is_learning) {
             self.counting_state = CountingState::MidiLearn;
         }
 
@@ -679,8 +678,7 @@ impl Del2 {
                         }
                     }
                     CountingState::MidiLearn => {
-                        let is_learning = self.is_learning.clone();
-                        is_learning.store(false, Ordering::Release);
+                        self.is_learning.store(false, Ordering::Release);
                         self.learned_notes.store(
                             self.learning_index.load(Ordering::SeqCst),
                             note,
@@ -1139,7 +1137,7 @@ impl AtomicByteArray {
     fn store(&self, index: usize, byte: u8, ordering: Ordering) {
         assert!(index < 8, "Index out of bounds");
         let mask = !(0xFFu64 << (index * 8));
-        let new_value = (self.data.load(ordering) & mask) | ((byte as u64) << (index * 8));
+        let new_value = (self.data.load(Ordering::SeqCst) & mask) | ((byte as u64) << (index * 8));
         self.data.store(new_value, ordering);
     }
 }

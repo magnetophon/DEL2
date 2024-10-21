@@ -553,6 +553,7 @@ impl ActionTrigger {
             // delay_data: delay_data.get(cx),
         }
         .build(cx, |_cx| {
+            // Label::new(cx, "XXX").class("global-title");
             // put other widgets here
         })
     }
@@ -561,22 +562,14 @@ impl ActionTrigger {
         self.is_learning.store(true, Ordering::SeqCst);
         self.learning_index.store(self.own_index, Ordering::SeqCst);
     }
-
     pub fn stop_learning(&self) {
         self.is_learning.store(false, Ordering::SeqCst);
     }
 
-    pub fn set_learning_index(&self, index: usize) {
-        self.learning_index.store(index, Ordering::SeqCst);
-    }
-
-    pub fn get_learning_index(&self) -> usize {
-        self.learning_index.load(Ordering::SeqCst)
-    }
-
     // Checks if learning is active for this trigger
     pub fn is_learning(&self) -> bool {
-        self.is_learning.load(Ordering::SeqCst) && self.get_learning_index() == self.own_index
+        self.is_learning.load(Ordering::SeqCst)
+            && self.learning_index.load(Ordering::SeqCst) == self.own_index
     }
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -601,20 +594,11 @@ impl ActionTrigger {
         } else {
             vg::Paint::color(background_color)
         };
-
-        // Fill the path using the selected paint
         canvas.fill_path(&path, &paint);
-        // }
 
         // Drawing the border around the rectangle
-
         let mut path = vg::Path::new();
-        path.rect(
-            bounds.x + border_width * 0.5,
-            bounds.y,
-            bounds.w - border_width,
-            bounds.h - border_width * 0.5,
-        );
+        path.rect(bounds.x, bounds.y, bounds.w, bounds.h);
         path.close();
 
         canvas.stroke_path(
@@ -630,6 +614,22 @@ impl View for ActionTrigger {
         Some("action-trigger")
     }
 
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        event.map(|window_event, meta| match window_event {
+            // We don't need special double and triple click handling
+            WindowEvent::MouseDown(MouseButton::Left)
+            | WindowEvent::MouseDoubleClick(MouseButton::Left)
+            | WindowEvent::MouseTripleClick(MouseButton::Left) => {
+                if self.is_learning() {
+                    self.stop_learning();
+                } else {
+                    self.start_learning();
+                }
+                meta.consume();
+            }
+            _ => {}
+        });
+    }
     fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
         let bounds = draw_context.bounds();
         let background_color: vg::Color = draw_context.background_color().into();
@@ -640,7 +640,5 @@ impl View for ActionTrigger {
         let path_line_width = draw_context.outline_width();
 
         self.draw_background(canvas, bounds, background_color, border_color, border_width);
-        // Example of using internal state in a simplistic way
-        if self.is_learning() {}
     }
 }
