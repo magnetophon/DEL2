@@ -23,6 +23,7 @@ A rhythm delay with crunch.
     - level
     - haas + EQ + level 
     - HRTF
+  - a pitch shifter that shifts the difference between the initial timing tap note and the current tap note
 - Compressor and ducker on the output
 - Optional individual settings per tap
 - Optional auxiliary outputs per tap

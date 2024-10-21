@@ -1,19 +1,24 @@
 // TODO:
 //
-// make a midi learn struct/button
-// use it to make a few midi triggers:
-// - mute out
-// - mute in
-// - mute both
-// all mutes with choice between latch and toggle
-// - reset pattern
-// - momentary mode:
-//   in this mode, the taps are only heard until the key is released
-//   the counter starts when the note for this trigger is pressed
-// - stop listening for taps (so it can be used in a daw on an instrument track)
+// - make a midi learn struct/button
+//   the button is a custom view, that either displays the learned note, or the word "learning"
+//   it knows which via is_learning learning_index and learned_notes
+//   its color changes when that note is pressed
+//   - use it to make a few midi triggers:
+//     - mute out
+//     - mute in (fake it by recording the timing and muting the out a bit later)
+//     - mute both
+//       all mutes with choice between latch and toggle
+//     - reset pattern
+//     - momentary mode:
+//       in this mode, the taps are only heard until the key is released
+//       the counter starts when the note for this trigger is pressed
+//     - stop listening for taps (so it can be used in a daw on an instrument track)
 //
-// add adsr envelopes
-//
+// - always use a big buffer size,
+//   compensate the latency by adjusting the read index
+//   make sure to take the actual buffer size into account
+
 // #![allow(non_snake_case)]
 #![feature(portable_simd)]
 #![feature(get_mut_unchecked)]
@@ -66,14 +71,7 @@ struct Del2 {
     releasings: [bool; MAX_NR_TAPS],
     learned_notes: [u8; MAX_NR_LEARNED_NOTES],
     sample_rate: f32,
-    /// Needed to normalize the peak meter's response based on the sample rate.
     peak_meter_decay_weight: f32,
-    /// The current data for the peak meter. This is stored as an [`Arc`] so we can share it between
-    /// the GUI and the audio processing parts. If you have more state to share, then it's a good
-    /// idea to put all of that in a struct behind a single `Arc`.
-    ///
-    /// This is stored as voltage gain.
-    /// This is stored as voltage gain.
     input_meter: Arc<AtomicF32>,
     output_meter: Arc<AtomicF32>,
     delay_write_index: usize,
