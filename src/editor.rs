@@ -4,29 +4,33 @@ use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 use nih_plug_vizia::widgets::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::AtomicByteArray;
 use crate::Del2Params;
 use crate::DelayData;
 use crate::DelayDataOutput;
 
 #[derive(Lens, Clone)]
 pub(crate) struct Data {
-    pub(crate) params: Arc<Del2Params>,
-    pub(crate) delay_data: Arc<Mutex<DelayDataOutput>>,
+    pub params: Arc<Del2Params>,
+    pub delay_data: Arc<Mutex<DelayDataOutput>>,
     pub input_meter: Arc<AtomicF32>,
     pub output_meter: Arc<AtomicF32>,
+    pub is_learning: Arc<AtomicBool>,
+    pub learning_index: Arc<AtomicUsize>,
+    pub learned_notes: Arc<AtomicByteArray>,
 }
 
 impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
-pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1200, 600))
+pub fn default_state() -> Arc<ViziaState> {
+    ViziaState::new(|| (1200, 800))
 }
 
-pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
+pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
         assets::register_noto_sans_thin(cx);
@@ -79,6 +83,13 @@ pub(crate) fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option
                         });
                     });
                 });
+                ActionTrigger::new(
+                    cx,
+                    Data::is_learning,
+                    Data::learning_index,
+                    0,
+                    Data::learned_notes,
+                );
 
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
@@ -215,6 +226,72 @@ pub struct DelayGraph {
     delay_data: Arc<Mutex<DelayDataOutput>>,
 }
 
+// TODO: add grid to show bars & beats
+impl View for DelayGraph {
+    // For CSS:
+    fn element(&self) -> Option<&'static str> {
+        Some("delay-graph")
+    }
+
+    fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
+        let mut locked_delay_data = self.delay_data.lock().unwrap();
+        let delay_data = locked_delay_data.read();
+
+        let bounds = draw_context.bounds();
+
+        let background_color: vg::Color = draw_context.background_color().into();
+        let border_color: vg::Color = draw_context.border_color().into();
+        let outline_color: vg::Color = draw_context.outline_color().into();
+        let selection_color: vg::Color = draw_context.selection_color().into();
+        let border_width = draw_context.border_width();
+        let path_line_width = draw_context.outline_width();
+
+        // Compute the time scaling factor
+        let time_scaling_factor =
+            self.compute_time_scaling_factor(&delay_data, bounds.w, border_width, path_line_width);
+
+        // Draw components
+        self.draw_background(canvas, bounds, background_color, border_width);
+        self.draw_delay_times_as_lines(
+            canvas,
+            &delay_data,
+            bounds,
+            border_color,
+            1.0,
+            time_scaling_factor,
+        );
+        self.draw_time_line(
+            canvas,
+            &delay_data,
+            bounds,
+            selection_color,
+            path_line_width,
+            time_scaling_factor,
+            border_width,
+        );
+        self.draw_tap_velocities(
+            canvas,
+            &delay_data,
+            bounds,
+            outline_color,
+            path_line_width,
+            time_scaling_factor,
+            border_width,
+        );
+        self.draw_tap_notes_as_diamonds(
+            canvas,
+            &delay_data,
+            bounds,
+            selection_color,
+            path_line_width,
+            time_scaling_factor,
+            border_width,
+            true,
+        );
+        self.draw_bounding_outline(canvas, bounds, border_color, border_width);
+    }
+}
+
 impl DelayGraph {
     pub fn new<DelayDataL>(cx: &mut Context, delay_data: DelayDataL) -> Handle<Self>
     where
@@ -227,80 +304,7 @@ impl DelayGraph {
             // put other widgets here
         })
     }
-}
 
-// TODO: add grid to show bars & beats
-impl View for DelayGraph {
-    // For CSS:
-    fn element(&self) -> Option<&'static str> {
-        Some("delay-graph")
-    }
-
-    fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
-        let mut locked_delay_data = self.delay_data.lock().unwrap();
-        let delay_data = locked_delay_data.read();
-
-        let bounding_box = draw_context.bounds();
-
-        let background_color: vg::Color = draw_context.background_color().into();
-        let border_color: vg::Color = draw_context.border_color().into();
-        let outline_color: vg::Color = draw_context.outline_color().into();
-        let selection_color: vg::Color = draw_context.selection_color().into();
-        let border_width = draw_context.border_width();
-        let path_line_width = draw_context.outline_width();
-
-        // Compute the time scaling factor
-        let time_scaling_factor = self.compute_time_scaling_factor(
-            &delay_data,
-            bounding_box.w,
-            border_width,
-            path_line_width,
-        );
-
-        // Draw components
-        self.draw_background(canvas, bounding_box, background_color, border_width);
-        self.draw_delay_times_as_lines(
-            canvas,
-            &delay_data,
-            bounding_box,
-            border_color,
-            1.0,
-            time_scaling_factor,
-        );
-        self.draw_time_line(
-            canvas,
-            &delay_data,
-            bounding_box,
-            selection_color,
-            path_line_width,
-            time_scaling_factor,
-            border_width,
-        );
-        self.draw_tap_velocities(
-            canvas,
-            &delay_data,
-            bounding_box,
-            outline_color,
-            path_line_width,
-            time_scaling_factor,
-            border_width,
-        );
-        self.draw_tap_notes_as_diamonds(
-            canvas,
-            &delay_data,
-            bounding_box,
-            selection_color,
-            path_line_width,
-            time_scaling_factor,
-            border_width,
-            true,
-        );
-        self.draw_bounding_outline(canvas, bounding_box, border_color, border_width);
-    }
-}
-
-// Functional Breakdown
-impl DelayGraph {
     fn compute_time_scaling_factor(
         &self,
         delay_data: &DelayData,
@@ -515,4 +519,91 @@ fn make_column(cx: &mut Context, title: &str, contents: impl FnOnce(&mut Context
         contents(cx);
     })
     .class("column");
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//                               ActionTrigger                               //
+///////////////////////////////////////////////////////////////////////////////
+
+pub struct ActionTrigger {
+    is_learning: Arc<AtomicBool>,
+    learning_index: Arc<AtomicUsize>,
+    own_index: usize,
+    learned_notes: Arc<AtomicByteArray>,
+}
+impl ActionTrigger {
+    pub fn new<IsLearningL, LearningIndexL, LearnedNoteL>(
+        cx: &mut Context,
+
+        is_learning: IsLearningL,
+        learning_index: LearningIndexL,
+        own_index: usize,
+        learned_notes: LearnedNoteL,
+    ) -> Handle<Self>
+    where
+        IsLearningL: Lens<Target = Arc<AtomicBool>>,
+        LearningIndexL: Lens<Target = Arc<AtomicUsize>>,
+        LearnedNoteL: Lens<Target = Arc<AtomicByteArray>>,
+    {
+        Self {
+            is_learning: is_learning.get(cx),
+            learning_index: learning_index.get(cx),
+            own_index,
+            learned_notes: learned_notes.get(cx),
+            // delay_data: delay_data.get(cx),
+        }
+        .build(cx, |_cx| {
+            // put other widgets here
+        })
+    }
+
+    pub fn start_learning(&self) {
+        self.is_learning.store(true, Ordering::SeqCst);
+        self.learning_index.store(self.own_index, Ordering::SeqCst);
+    }
+
+    pub fn stop_learning(&self) {
+        self.is_learning.store(false, Ordering::SeqCst);
+    }
+
+    pub fn set_learning_index(&self, index: usize) {
+        self.learning_index.store(index, Ordering::SeqCst);
+    }
+
+    pub fn get_learning_index(&self) -> usize {
+        self.learning_index.load(Ordering::SeqCst)
+    }
+
+    // Checks if learning is active for this trigger
+    pub fn is_learning(&self) -> bool {
+        self.is_learning.load(Ordering::SeqCst) && self.get_learning_index() == self.own_index
+    }
+
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //                       for drawing
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    fn draw_background(&self, canvas: &mut Canvas, bounds: BoundingBox, color: vg::Color) {
+        let mut path = vg::Path::new();
+        path.rect(bounds.x, bounds.y, bounds.w, bounds.h);
+        path.close();
+
+        let paint = vg::Paint::color(color);
+        canvas.fill_path(&path, &paint);
+    }
+}
+
+impl View for ActionTrigger {
+    // For CSS:
+    fn element(&self) -> Option<&'static str> {
+        Some("action-trigger")
+    }
+
+    fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
+        let bounds = draw_context.bounds();
+        let background_color: vg::Color = draw_context.background_color().into();
+
+        self.draw_background(canvas, bounds, background_color);
+        // Example of using internal state in a simplistic way
+        if self.is_learning() {}
+    }
 }

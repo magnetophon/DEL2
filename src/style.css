@@ -114,6 +114,11 @@ delay-graph {
     selection-color: #fabdf0;
 }
 
+action-trigger {
+    top: 100px;
+    background-color: #4e4e4e;
+}
+
 generic-ui .row {
     col-between: 6px;
     height: auto;

@@ -28,7 +28,7 @@ use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::simd::f32x4;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode};
 use triple_buffer::TripleBuffer;
@@ -47,8 +47,6 @@ const VELOCITY_HIGH_NAME_PREFIX: &str = "high velocity";
 const MAX_BLOCK_LEN: usize = 32768;
 
 const PEAK_METER_DECAY_MS: f64 = 150.0;
-// TODO: make an enum of which controls we have
-const MAX_NR_LEARNED_NOTES: usize = 4;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -69,7 +67,6 @@ struct Del2 {
     amp_envelopes: [Smoother<f32>; MAX_NR_TAPS],
     envelope_block: Vec<f32>,
     releasings: [bool; MAX_NR_TAPS],
-    learned_notes: [u8; MAX_NR_LEARNED_NOTES],
     sample_rate: f32,
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
@@ -78,6 +75,7 @@ struct Del2 {
     // for which control are we learning?
     is_learning: Arc<AtomicBool>,
     learning_index: Arc<AtomicUsize>,
+    learned_notes: Arc<AtomicByteArray>,
     samples_since_last_event: u32,
     timing_last_event: u32,
     min_tap_samples: u32,
@@ -428,6 +426,7 @@ impl Default for Del2 {
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
         let is_learning = Arc::new(AtomicBool::new(false));
         let learning_index = Arc::new(AtomicUsize::new(0));
+        let learned_notes = Arc::new(AtomicByteArray::new());
         Self {
             params: Arc::new(Del2Params::new(
                 should_update_filter.clone(),
@@ -450,7 +449,6 @@ impl Default for Del2 {
             envelope_block: vec![0.0; MAX_BLOCK_LEN],
             releasings: [false; MAX_NR_TAPS],
             //TODO: make Option<u8>
-            learned_notes: [0; MAX_NR_LEARNED_NOTES],
             sample_rate: 1.0,
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
@@ -458,6 +456,7 @@ impl Default for Del2 {
             delay_write_index: 0,
             is_learning,
             learning_index,
+            learned_notes,
             samples_since_last_event: 0,
             timing_last_event: 0,
             min_tap_samples: 0,
@@ -543,6 +542,9 @@ impl Plugin for Del2 {
                 input_meter: self.input_meter.clone(),
                 output_meter: self.output_meter.clone(),
                 delay_data: self.delay_data_output.clone(),
+                is_learning: self.is_learning.clone(),
+                learning_index: self.learning_index.clone(),
+                learned_notes: self.learned_notes.clone(),
             },
             self.params.editor_state.clone(),
         )
@@ -679,7 +681,11 @@ impl Del2 {
                     CountingState::MidiLearn => {
                         let is_learning = self.is_learning.clone();
                         is_learning.store(false, Ordering::Release);
-                        self.learned_notes[self.learning_index.load(Ordering::SeqCst)] = note;
+                        self.learned_notes.store(
+                            self.learning_index.load(Ordering::SeqCst),
+                            note,
+                            Ordering::Release,
+                        );
                         self.counting_state = CountingState::TimeOut;
                         self.timing_last_event = 0;
                         self.samples_since_last_event = 0;
@@ -1110,6 +1116,31 @@ impl Enum for MyLadderMode {
             10 => LadderMode::N12,
             _ => panic!("Invalid index for LadderMode"),
         })
+    }
+}
+// #[derive(Debug)]
+struct AtomicByteArray {
+    data: AtomicU64,
+}
+
+impl AtomicByteArray {
+    fn new() -> Self {
+        Self {
+            data: AtomicU64::new(0), // Initialize with zero
+        }
+    }
+
+    fn load(&self, index: usize, ordering: Ordering) -> u8 {
+        assert!(index < 8, "Index out of bounds");
+        let value = self.data.load(ordering);
+        ((value >> (index * 8)) & 0xFF) as u8
+    }
+
+    fn store(&self, index: usize, byte: u8, ordering: Ordering) {
+        assert!(index < 8, "Index out of bounds");
+        let mask = !(0xFFu64 << (index * 8));
+        let new_value = (self.data.load(ordering) & mask) | ((byte as u64) << (index * 8));
+        self.data.store(new_value, ordering);
     }
 }
 
