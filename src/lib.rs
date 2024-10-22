@@ -556,9 +556,7 @@ impl Plugin for Del2 {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         self.update_timing_params();
-        // TODO: put back?
         if self.is_learning.load(Ordering::SeqCst) {
-            // if Del2::compare_exchange(&self.is_learning) {
             self.counting_state = CountingState::MidiLearn;
         }
 
@@ -596,102 +594,114 @@ impl Del2 {
 
     fn process_midi_events(&mut self, context: &mut impl ProcessContext<Self>) {
         while let Some(event) = context.next_event() {
-            if let NoteEvent::NoteOn {
-                timing,
-                note,
-                velocity,
-                ..
-            } = event
-            {
-                let should_record_tap = self.delay_data.current_tap < MAX_NR_TAPS;
+            match event {
+                NoteEvent::NoteOn {
+                    timing,
+                    note,
+                    velocity,
+                    ..
+                } => {
+                    let should_record_tap = self.delay_data.current_tap < MAX_NR_TAPS;
 
-                match self.counting_state {
-                    CountingState::TimeOut => {
-                        // If in TimeOut state, reset and start new counting phase
-                        // TODO:
-                        // for tap in 0..self.delay_data.current_tap {
-                        for tap in 0..MAX_NR_TAPS {
-                            self.releasings[tap] = true;
-                            self.amp_envelopes[tap].style =
-                                SmoothingStyle::Exponential(self.params.global.release_ms.value());
-                            self.amp_envelopes[tap].set_target(self.sample_rate, 0.0);
-                        }
-                        self.delay_data.current_tap = 0;
-                        self.timing_last_event = timing;
-                        self.counting_state = CountingState::CountingInBuffer;
-                    }
-                    CountingState::CountingInBuffer => {
-                        // Validate and record a new tap within the buffer
-                        if timing - self.timing_last_event > self.min_tap_samples
-                            && should_record_tap
-                        {
-                            self.samples_since_last_event = timing - self.timing_last_event;
-                            self.timing_last_event = timing;
-                        } else {
-                            continue; // Debounce or max taps reached, ignore tap
-                        }
-                    }
-                    CountingState::CountingAcrossBuffer => {
-                        // Handle cross-buffer taps timing
-                        if self.samples_since_last_event + timing > self.min_tap_samples
-                            && should_record_tap
-                        {
-                            self.samples_since_last_event += timing;
+                    self.last_played_notes.note_on(note);
+                    println!("ooooooooooooooooooooooooonnnnnnnnnnnnnnnnnnnnnnnnnn");
+                    self.last_played_notes.print_notes();
+
+                    match self.counting_state {
+                        CountingState::TimeOut => {
+                            // If in TimeOut state, reset and start new counting phase
+                            for tap in 0..MAX_NR_TAPS {
+                                self.releasings[tap] = true;
+                                self.amp_envelopes[tap].style = SmoothingStyle::Exponential(
+                                    self.params.global.release_ms.value(),
+                                );
+                                self.amp_envelopes[tap].set_target(self.sample_rate, 0.0);
+                            }
+                            self.delay_data.current_tap = 0;
                             self.timing_last_event = timing;
                             self.counting_state = CountingState::CountingInBuffer;
-                        } else {
-                            continue; // Debounce across buffer or max taps, ignore
+                        }
+                        CountingState::CountingInBuffer => {
+                            // Validate and record a new tap within the buffer
+                            if timing - self.timing_last_event > self.min_tap_samples
+                                && should_record_tap
+                            {
+                                self.samples_since_last_event = timing - self.timing_last_event;
+                                self.timing_last_event = timing;
+                            } else {
+                                continue; // Debounce or max taps reached, ignore tap
+                            }
+                        }
+                        CountingState::CountingAcrossBuffer => {
+                            // Handle cross-buffer taps timing
+                            if self.samples_since_last_event + timing > self.min_tap_samples
+                                && should_record_tap
+                            {
+                                self.samples_since_last_event += timing;
+                                self.timing_last_event = timing;
+                                self.counting_state = CountingState::CountingInBuffer;
+                            } else {
+                                continue; // Debounce across buffer or max taps, ignore
+                            }
+                        }
+                        CountingState::MidiLearn => {
+                            self.is_learning.store(false, Ordering::Release);
+                            self.learned_notes
+                                .store(self.learning_index.load(Ordering::SeqCst), note);
+                            self.counting_state = CountingState::TimeOut;
+                            self.timing_last_event = 0;
+                            self.samples_since_last_event = 0;
                         }
                     }
-                    CountingState::MidiLearn => {
-                        self.is_learning.store(false, Ordering::Release);
-                        self.learned_notes.store(
-                            self.learning_index.load(Ordering::SeqCst),
-                            note,
-                            Ordering::Release,
-                        );
+
+                    // Check for timeout condition and reset if necessary
+                    if self.samples_since_last_event > self.delay_data.max_tap_samples {
                         self.counting_state = CountingState::TimeOut;
                         self.timing_last_event = 0;
                         self.samples_since_last_event = 0;
+                    } else if should_record_tap
+                        && !matches!(
+                            self.counting_state,
+                            CountingState::TimeOut | CountingState::MidiLearn
+                        )
+                        && self.samples_since_last_event > 0
+                        && velocity > 0.0
+                    {
+                        // Update tap information with timing and velocity
+                        let current_tap = self.delay_data.current_tap;
+                        if current_tap > 0 {
+                            self.delay_data.delay_times[current_tap] = self
+                                .samples_since_last_event
+                                + self.delay_data.delay_times[current_tap - 1];
+                        } else {
+                            self.delay_data.delay_times[current_tap] =
+                                self.samples_since_last_event;
+                        }
+
+                        self.delay_data.velocities[current_tap] = velocity;
+                        self.delay_data.notes[current_tap] = note;
+
+                        self.releasings[current_tap] = false;
+                        self.amp_envelopes[current_tap].style =
+                            SmoothingStyle::Exponential(self.params.global.attack_ms.value());
+                        // TODO: instead of 1.0, use a combination of gain params
+                        self.amp_envelopes[current_tap].set_target(self.sample_rate, 1.0);
+                        self.delay_data.current_tap += 1;
+                        self.delay_data.current_tap = self.delay_data.current_tap;
+
+                        // Indicate filter update needed
+                        self.should_update_filter.store(true, Ordering::Release);
                     }
                 }
-
-                // Check for timeout condition and reset if necessary
-                if self.samples_since_last_event > self.delay_data.max_tap_samples {
-                    self.counting_state = CountingState::TimeOut;
-                    self.timing_last_event = 0;
-                    self.samples_since_last_event = 0;
-                } else if should_record_tap
-                    && !matches!(
-                        self.counting_state,
-                        CountingState::TimeOut | CountingState::MidiLearn
-                    )
-                    && self.samples_since_last_event > 0
-                    && velocity > 0.0
-                {
-                    // Update tap information with timing and velocity
-                    let current_tap = self.delay_data.current_tap;
-                    if current_tap > 0 {
-                        self.delay_data.delay_times[current_tap] = self.samples_since_last_event
-                            + self.delay_data.delay_times[current_tap - 1];
-                    } else {
-                        self.delay_data.delay_times[current_tap] = self.samples_since_last_event;
-                    }
-
-                    self.delay_data.velocities[current_tap] = velocity;
-                    self.delay_data.notes[current_tap] = note;
-
-                    self.releasings[current_tap] = false;
-                    self.amp_envelopes[current_tap].style =
-                        SmoothingStyle::Exponential(self.params.global.attack_ms.value());
-                    // TODO: instead on 1.0, use a combination of gain params
-                    self.amp_envelopes[current_tap].set_target(self.sample_rate, 1.0);
-                    self.delay_data.current_tap += 1;
-                    self.delay_data.current_tap = self.delay_data.current_tap;
-
-                    // Indicate filter update needed
-                    self.should_update_filter.store(true, Ordering::Release);
+                // Handling NoteOff events
+                NoteEvent::NoteOff {
+                    timing: _, note, ..
+                } => {
+                    println!("OOOOOOOOOOOOOOOOOOOOOFFFFFFFFFFFFFFFFFFFFFFFFF");
+                    self.last_played_notes.note_off(note);
+                    self.last_played_notes.print_notes();
                 }
+                _ => {} // Handle other types of events if necessary
             }
         }
     }
@@ -1090,21 +1100,21 @@ struct AtomicByteArray {
 impl AtomicByteArray {
     fn new() -> Self {
         Self {
-            data: AtomicU64::new(0), // Initialize with zero
+            data: AtomicU64::new(0),
         }
     }
 
-    fn load(&self, index: usize, ordering: Ordering) -> u8 {
+    fn load(&self, index: usize) -> u8 {
         assert!(index < 8, "Index out of bounds");
-        let value = self.data.load(ordering);
+        let value = self.data.load(Ordering::SeqCst);
         ((value >> (index * 8)) & 0xFF) as u8
     }
 
-    fn store(&self, index: usize, byte: u8, ordering: Ordering) {
+    fn store(&self, index: usize, byte: u8) {
         assert!(index < 8, "Index out of bounds");
         let mask = !(0xFFu64 << (index * 8));
         let new_value = (self.data.load(Ordering::SeqCst) & mask) | ((byte as u64) << (index * 8));
-        self.data.store(new_value, ordering);
+        self.data.store(new_value, Ordering::SeqCst);
     }
 }
 
@@ -1129,13 +1139,9 @@ impl LastPlayedNotes {
         let mut current_state = self.state.load(Ordering::SeqCst);
 
         // Check if the note is already in the table
-        if let Some(index) = (0..8).find(|&i| self.notes.load(i, Ordering::SeqCst) == note) {
-            // Note already exists, update the sequence
-            self.sequence.store(
-                index,
-                self.current_sequence.fetch_add(1, Ordering::SeqCst),
-                Ordering::SeqCst,
-            );
+        if let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
+            self.sequence
+                .store(index, self.current_sequence.fetch_add(1, Ordering::SeqCst));
             return;
         }
 
@@ -1153,26 +1159,20 @@ impl LastPlayedNotes {
                     )
                     .is_ok()
                 {
-                    self.notes.store(index, note, Ordering::SeqCst);
-                    self.sequence.store(
-                        index,
-                        self.current_sequence.fetch_add(1, Ordering::SeqCst),
-                        Ordering::SeqCst,
-                    );
+                    self.notes.store(index, note);
+                    self.sequence
+                        .store(index, self.current_sequence.fetch_add(1, Ordering::SeqCst));
                     break;
                 } else {
                     current_state = self.state.load(Ordering::SeqCst);
                 }
             } else {
                 // Overwrite the oldest active note
-                let oldest_index = (0..8)
-                    .min_by_key(|&i| self.sequence.load(i, Ordering::SeqCst))
-                    .unwrap();
-                self.notes.store(oldest_index, note, Ordering::SeqCst);
+                let oldest_index = (0..8).min_by_key(|&i| self.sequence.load(i)).unwrap();
+                self.notes.store(oldest_index, note);
                 self.sequence.store(
                     oldest_index,
                     self.current_sequence.fetch_add(1, Ordering::SeqCst),
-                    Ordering::SeqCst,
                 );
                 break;
             }
@@ -1182,7 +1182,7 @@ impl LastPlayedNotes {
     fn note_off(&self, note: u8) {
         let mut current_state = self.state.load(Ordering::SeqCst);
         loop {
-            if let Some(index) = (0..8).find(|&i| self.notes.load(i, Ordering::SeqCst) == note) {
+            if let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
                 let new_state = current_state & !(1 << index);
                 if self
                     .state
@@ -1194,7 +1194,7 @@ impl LastPlayedNotes {
                     )
                     .is_ok()
                 {
-                    self.sequence.store(index, 0, Ordering::SeqCst);
+                    self.sequence.store(index, 0);
                     break;
                 } else {
                     current_state = self.state.load(Ordering::SeqCst);
@@ -1205,8 +1205,8 @@ impl LastPlayedNotes {
         }
     }
 
-    fn is_played(&self, note: u8) -> bool {
-        if let Some(index) = (0..8).find(|&i| self.notes.load(i, Ordering::SeqCst) == note) {
+    fn is_playing(&self, note: u8) -> bool {
+        if let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
             let current_state = self.state.load(Ordering::SeqCst);
             (current_state & (1 << index)) != 0
         } else {
@@ -1214,14 +1214,14 @@ impl LastPlayedNotes {
         }
     }
     /// for testing
-    fn print_notes(&self, action: &str) {
+    fn print_notes(&self) {
         // Adjust the width as needed for alignment
         const WIDTH: usize = 4;
 
-        print!("{:^25} | ", action);
+        // print!("{:^25} | ", action);
         for i in 0..8 {
-            let note = self.notes.load(i, Ordering::SeqCst);
-            if self.is_played(note) {
+            let note = self.notes.load(i);
+            if self.is_playing(note) {
                 print!("{:>WIDTH$}", note);
             } else {
                 print!("{:>WIDTH$}", "_");
@@ -1230,16 +1230,16 @@ impl LastPlayedNotes {
 
         println!();
 
-        print!("{:^25} | ", "Sequence");
-        for i in 0..8 {
-            let seq = self.sequence.load(i, Ordering::SeqCst);
-            if self.is_played(self.notes.load(i, Ordering::SeqCst)) {
-                print!("{:>WIDTH$}", seq);
-            } else {
-                print!("{:>WIDTH$}", "_");
-            }
-        }
-        println!();
+        // print!("{:^25} | ", "Sequence");
+        // for i in 0..8 {
+        //     let seq = self.sequence.load(i);
+        //     if self.is_playing(self.notes.load(i)) {
+        //         print!("{:>WIDTH$}", seq);
+        //     } else {
+        //         print!("{:>WIDTH$}", "_");
+        //     }
+        // }
+        // println!();
     }
 }
 

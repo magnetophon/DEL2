@@ -578,6 +578,12 @@ impl ActionTrigger {
             && self.learning_index.load(Ordering::SeqCst) == self.own_index
     }
 
+    pub fn is_playing(&self) -> bool {
+        // self.last_played_notes.print_notes();
+        self.last_played_notes
+            .is_playing(self.learned_notes.load(self.own_index))
+    }
+
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //                       for drawing
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -586,6 +592,7 @@ impl ActionTrigger {
         canvas: &mut Canvas,
         bounds: BoundingBox,
         background_color: vg::Color,
+        selection_color: vg::Color,
         border_color: vg::Color,
         border_width: f32,
     ) {
@@ -597,6 +604,8 @@ impl ActionTrigger {
         // Determine the paint color based on the learning state
         let paint = if self.is_learning() {
             vg::Paint::color(border_color)
+        } else if self.is_playing() {
+            vg::Paint::color(selection_color)
         } else {
             vg::Paint::color(background_color)
         };
@@ -641,10 +650,17 @@ impl View for ActionTrigger {
         let background_color: vg::Color = draw_context.background_color().into();
         let border_color: vg::Color = draw_context.border_color().into();
         // let outline_color: vg::Color = draw_context.outline_color().into();
-        // let selection_color: vg::Color = draw_context.selection_color().into();
+        let selection_color: vg::Color = draw_context.selection_color().into();
         let border_width = draw_context.border_width();
         // let path_line_width = draw_context.outline_width();
 
-        self.draw_background(canvas, bounds, background_color, border_color, border_width);
+        self.draw_background(
+            canvas,
+            bounds,
+            background_color,
+            border_color,
+            selection_color,
+            border_width,
+        );
     }
 }
