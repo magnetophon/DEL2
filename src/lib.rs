@@ -28,7 +28,7 @@ use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::simd::f32x4;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode};
 use triple_buffer::TripleBuffer;
@@ -72,10 +72,11 @@ struct Del2 {
     input_meter: Arc<AtomicF32>,
     output_meter: Arc<AtomicF32>,
     delay_write_index: usize,
-    // for which control are we learning?
     is_learning: Arc<AtomicBool>,
+    // for which control are we learning?
     learning_index: Arc<AtomicUsize>,
     learned_notes: Arc<AtomicByteArray>,
+    last_played_notes: Arc<LastPlayedNotes>,
     samples_since_last_event: u32,
     timing_last_event: u32,
     min_tap_samples: u32,
@@ -396,9 +397,6 @@ impl Default for Del2 {
         let ladders: [LadderFilter; MAX_NR_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
-        let is_learning = Arc::new(AtomicBool::new(false));
-        let learning_index = Arc::new(AtomicUsize::new(0));
-        let learned_notes = Arc::new(AtomicByteArray::new());
         Self {
             params: Arc::new(Del2Params::new(should_update_filter.clone())),
             filter_params,
@@ -422,9 +420,10 @@ impl Default for Del2 {
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
             output_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
             delay_write_index: 0,
-            is_learning,
-            learning_index,
-            learned_notes,
+            is_learning: Arc::new(AtomicBool::new(false)),
+            learning_index: Arc::new(AtomicUsize::new(0)),
+            learned_notes: Arc::new(AtomicByteArray::new()),
+            last_played_notes: Arc::new(LastPlayedNotes::new()),
             samples_since_last_event: 0,
             timing_last_event: 0,
             min_tap_samples: 0,
@@ -509,6 +508,7 @@ impl Plugin for Del2 {
                 is_learning: self.is_learning.clone(),
                 learning_index: self.learning_index.clone(),
                 learned_notes: self.learned_notes.clone(),
+                last_played_notes: self.last_played_notes.clone(),
             },
             self.params.editor_state.clone(),
         )
@@ -1105,6 +1105,141 @@ impl AtomicByteArray {
         let mask = !(0xFFu64 << (index * 8));
         let new_value = (self.data.load(Ordering::SeqCst) & mask) | ((byte as u64) << (index * 8));
         self.data.store(new_value, ordering);
+    }
+}
+
+struct LastPlayedNotes {
+    state: AtomicU8,
+    notes: AtomicByteArray,
+    sequence: AtomicByteArray,
+    current_sequence: AtomicU8,
+}
+
+impl LastPlayedNotes {
+    fn new() -> Self {
+        Self {
+            state: AtomicU8::new(0),
+            notes: AtomicByteArray::new(),
+            sequence: AtomicByteArray::new(),
+            current_sequence: AtomicU8::new(1),
+        }
+    }
+
+    fn note_on(&self, note: u8) {
+        let mut current_state = self.state.load(Ordering::SeqCst);
+
+        // Check if the note is already in the table
+        if let Some(index) = (0..8).find(|&i| self.notes.load(i, Ordering::SeqCst) == note) {
+            // Note already exists, update the sequence
+            self.sequence.store(
+                index,
+                self.current_sequence.fetch_add(1, Ordering::SeqCst),
+                Ordering::SeqCst,
+            );
+            return;
+        }
+
+        loop {
+            if let Some(index) = (0..8).find(|i| (current_state & (1 << i)) == 0) {
+                // Occupy an empty spot
+                let new_state = current_state | (1 << index);
+                if self
+                    .state
+                    .compare_exchange_weak(
+                        current_state,
+                        new_state,
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    )
+                    .is_ok()
+                {
+                    self.notes.store(index, note, Ordering::SeqCst);
+                    self.sequence.store(
+                        index,
+                        self.current_sequence.fetch_add(1, Ordering::SeqCst),
+                        Ordering::SeqCst,
+                    );
+                    break;
+                } else {
+                    current_state = self.state.load(Ordering::SeqCst);
+                }
+            } else {
+                // Overwrite the oldest active note
+                let oldest_index = (0..8)
+                    .min_by_key(|&i| self.sequence.load(i, Ordering::SeqCst))
+                    .unwrap();
+                self.notes.store(oldest_index, note, Ordering::SeqCst);
+                self.sequence.store(
+                    oldest_index,
+                    self.current_sequence.fetch_add(1, Ordering::SeqCst),
+                    Ordering::SeqCst,
+                );
+                break;
+            }
+        }
+    }
+
+    fn note_off(&self, note: u8) {
+        let mut current_state = self.state.load(Ordering::SeqCst);
+        loop {
+            if let Some(index) = (0..8).find(|&i| self.notes.load(i, Ordering::SeqCst) == note) {
+                let new_state = current_state & !(1 << index);
+                if self
+                    .state
+                    .compare_exchange_weak(
+                        current_state,
+                        new_state,
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    )
+                    .is_ok()
+                {
+                    self.sequence.store(index, 0, Ordering::SeqCst);
+                    break;
+                } else {
+                    current_state = self.state.load(Ordering::SeqCst);
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn is_played(&self, note: u8) -> bool {
+        if let Some(index) = (0..8).find(|&i| self.notes.load(i, Ordering::SeqCst) == note) {
+            let current_state = self.state.load(Ordering::SeqCst);
+            (current_state & (1 << index)) != 0
+        } else {
+            false
+        }
+    }
+    /// for testing
+    fn print_notes(&self, action: &str) {
+        // Adjust the width as needed for alignment
+        const WIDTH: usize = 4;
+
+        print!("{:^25} | ", action);
+        for i in 0..8 {
+            let note = self.notes.load(i, Ordering::SeqCst);
+            if self.is_played(note) {
+                print!("{:>WIDTH$}", note);
+            } else {
+                print!("{:>WIDTH$}", "_");
+            }
+        }
+
+        println!();
+
+        print!("{:^25} | ", "Sequence");
+        for i in 0..8 {
+            let seq = self.sequence.load(i, Ordering::SeqCst);
+            if self.is_played(self.notes.load(i, Ordering::SeqCst)) {
+                print!("{:>WIDTH$}", seq);
+            } else {
+                print!("{:>WIDTH$}", "_");
+            }
+        }
+        println!();
     }
 }
 

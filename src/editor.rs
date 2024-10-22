@@ -11,6 +11,7 @@ use crate::AtomicByteArray;
 use crate::Del2Params;
 use crate::DelayData;
 use crate::DelayDataOutput;
+use crate::LastPlayedNotes;
 
 #[derive(Lens, Clone)]
 pub(crate) struct Data {
@@ -21,6 +22,7 @@ pub(crate) struct Data {
     pub is_learning: Arc<AtomicBool>,
     pub learning_index: Arc<AtomicUsize>,
     pub learned_notes: Arc<AtomicByteArray>,
+    pub last_played_notes: Arc<LastPlayedNotes>,
 }
 
 impl Model for Data {}
@@ -89,6 +91,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     Data::learning_index,
                     0,
                     Data::learned_notes,
+                    Data::last_played_notes,
                 );
 
                 HStack::new(cx, |cx| {
@@ -530,27 +533,30 @@ pub struct ActionTrigger {
     learning_index: Arc<AtomicUsize>,
     own_index: usize,
     learned_notes: Arc<AtomicByteArray>,
+    last_played_notes: Arc<LastPlayedNotes>,
 }
 impl ActionTrigger {
-    pub fn new<IsLearningL, LearningIndexL, LearnedNoteL>(
+    pub fn new<IsLearningL, LearningIndexL, LearnedNotesL, LastPlayedNotesL>(
         cx: &mut Context,
 
         is_learning: IsLearningL,
         learning_index: LearningIndexL,
         own_index: usize,
-        learned_notes: LearnedNoteL,
+        learned_notes: LearnedNotesL,
+        last_played_notes: LastPlayedNotesL,
     ) -> Handle<Self>
     where
         IsLearningL: Lens<Target = Arc<AtomicBool>>,
         LearningIndexL: Lens<Target = Arc<AtomicUsize>>,
-        LearnedNoteL: Lens<Target = Arc<AtomicByteArray>>,
+        LearnedNotesL: Lens<Target = Arc<AtomicByteArray>>,
+        LastPlayedNotesL: Lens<Target = Arc<LastPlayedNotes>>,
     {
         Self {
             is_learning: is_learning.get(cx),
             learning_index: learning_index.get(cx),
             own_index,
             learned_notes: learned_notes.get(cx),
-            // delay_data: delay_data.get(cx),
+            last_played_notes: last_played_notes.get(cx),
         }
         .build(cx, |_cx| {
             // Label::new(cx, "XXX").class("global-title");
