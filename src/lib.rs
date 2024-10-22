@@ -133,10 +133,10 @@ pub struct GlobalParams {
 }
 
 impl GlobalParams {
-    pub fn new(is_learning: Arc<AtomicBool>, learning_index: Arc<AtomicUsize>) -> Self {
+    pub fn new() -> Self {
         GlobalParams {
             timing_params: Arc::new(TimingParams::new()),
-            gain_params: Arc::new(GainParams::new(is_learning.clone(), learning_index.clone())),
+            gain_params: Arc::new(GainParams::new()),
 
             attack_ms: FloatParam::new(
                 "Attack",
@@ -211,15 +211,11 @@ pub struct GainParams {
     pub output_gain: FloatParam,
     #[id = "global_drive"]
     pub global_drive: FloatParam,
-    #[id = "mute_in_learn"]
-    pub mute_in_learn: BoolParam,
-    #[id = "mute_out_learn"]
-    pub mute_out_learn: BoolParam,
 }
 
 impl GainParams {
     /// Create a new [`TapSetParams`] object with a prefix for all parameter names.
-    pub fn new(is_learning: Arc<AtomicBool>, learning_index: Arc<AtomicUsize>) -> Self {
+    pub fn new() -> Self {
         GainParams {
             output_gain: FloatParam::new(
                 "out gain",
@@ -247,28 +243,6 @@ impl GainParams {
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            mute_in_learn: BoolParam::new("mute in", false).with_value_to_string(Arc::new(
-                |value| String::from(if value { "learning" } else { "not learning" }),
-            )),
-            // .with_callback({
-            //     let learning_index = learning_index.clone();
-            //     let is_learning = is_learning.clone();
-            //     Arc::new(move |_| {
-            //         learning_index.store(0, Ordering::Release);
-            //         is_learning.store(true, Ordering::Release);
-            //     })
-            // }),
-            mute_out_learn: BoolParam::new("mute out", false).with_value_to_string(Arc::new(
-                |value| String::from(if value { "learning" } else { "not learning" }),
-            )),
-            // .with_callback({
-            //     let learning_index = learning_index.clone();
-            //     let is_learning = is_learning.clone();
-            //     Arc::new(move |_| {
-            //         learning_index.store(1, Ordering::Release);
-            //         is_learning.store(true, Ordering::Release);
-            //     })
-            // }),
         }
     }
 }
@@ -426,11 +400,7 @@ impl Default for Del2 {
         let learning_index = Arc::new(AtomicUsize::new(0));
         let learned_notes = Arc::new(AtomicByteArray::new());
         Self {
-            params: Arc::new(Del2Params::new(
-                should_update_filter.clone(),
-                is_learning.clone(),
-                learning_index.clone(),
-            )),
+            params: Arc::new(Del2Params::new(should_update_filter.clone())),
             filter_params,
             ladders,
             delay_buffer: [
@@ -479,15 +449,11 @@ impl Default for DelayData {
 }
 
 impl Del2Params {
-    fn new(
-        should_update_filter: Arc<AtomicBool>,
-        is_learning: Arc<AtomicBool>,
-        learning_index: Arc<AtomicUsize>,
-    ) -> Self {
+    fn new(should_update_filter: Arc<AtomicBool>) -> Self {
         Self {
             editor_state: editor::default_state(),
             taps: TapsParams::new(should_update_filter.clone()),
-            global: GlobalParams::new(is_learning.clone(), learning_index.clone()),
+            global: GlobalParams::new(),
         }
     }
 }

@@ -634,10 +634,10 @@ impl View for ActionTrigger {
         let bounds = draw_context.bounds();
         let background_color: vg::Color = draw_context.background_color().into();
         let border_color: vg::Color = draw_context.border_color().into();
-        let outline_color: vg::Color = draw_context.outline_color().into();
-        let selection_color: vg::Color = draw_context.selection_color().into();
+        // let outline_color: vg::Color = draw_context.outline_color().into();
+        // let selection_color: vg::Color = draw_context.selection_color().into();
         let border_width = draw_context.border_width();
-        let path_line_width = draw_context.outline_width();
+        // let path_line_width = draw_context.outline_width();
 
         self.draw_background(canvas, bounds, background_color, border_color, border_width);
     }
