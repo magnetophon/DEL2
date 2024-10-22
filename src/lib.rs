@@ -25,8 +25,11 @@
 use array_init::array_init;
 use bit_mask_ring_buf::BMRingBuf;
 use nih_plug::prelude::*;
+use nih_plug_vizia::vizia::binding::Lens;
+use nih_plug_vizia::vizia::binding::LensExt;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
+use std::hash::{Hash, Hasher};
 use std::simd::f32x4;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -82,6 +85,7 @@ struct Del2 {
     delay_buffer_size: u32,
     counting_state: CountingState,
     should_update_filter: Arc<AtomicBool>,
+    learned_string: String,
 }
 
 // for use in graph
@@ -461,6 +465,7 @@ impl Default for Del2 {
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
             should_update_filter,
+            learned_string: String::from("no trigger"),
         }
     }
 }
@@ -1115,7 +1120,8 @@ impl Enum for MyLadderMode {
         })
     }
 }
-// #[derive(Debug)]
+
+#[derive(Debug)]
 pub struct AtomicByteArray {
     data: AtomicU64,
 }
@@ -1140,6 +1146,32 @@ impl AtomicByteArray {
         self.data.store(new_value, ordering);
     }
 }
+
+// impl Lens for AtomicByteArray {
+//     type Source = Self; // Adjust based on your actual source type
+//     type Target = Self; // Adjust based on your actual target type
+
+//     fn view<F: FnOnce(&Self::Target)>(&self, f: F) {
+//         // Implement logic how to view the lens
+//         f(self);
+//     }
+//     // Implement more logic here if necessary
+// }
+
+// impl Hash for AtomicByteArray {
+//     fn hash<H: Hasher>(&self, state: &mut H) {
+//         // Hash the stored u64 value
+//         self.data.load(Ordering::SeqCst).hash(state);
+//     }
+// }
+
+// impl Clone for AtomicByteArray {
+//     fn clone(&self) -> Self {
+//         AtomicByteArray {
+//             data: AtomicU64::new(self.data.load(Ordering::SeqCst)),
+//         }
+//     }
+// }
 
 nih_export_clap!(Del2);
 nih_export_vst3!(Del2);

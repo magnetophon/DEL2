@@ -7,6 +7,8 @@ use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+// use crate::editor::action_trigger_derived_lenses::learned_notes;
+// use crate::editor::data_derived_lenses::learned_notes;
 use crate::AtomicByteArray;
 use crate::Del2Params;
 use crate::DelayData;
@@ -23,7 +25,17 @@ pub(crate) struct Data {
     pub learned_notes: Arc<AtomicByteArray>,
 }
 
-impl Model for Data {}
+impl Model for Data {
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        event.map(|event, meta| match event {
+            ActionTriggerEvent::LabelChange(learned_notes) => {
+                // self.set_label_string();
+                println!("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+                meta.consume();
+            }
+        });
+    }
+}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub fn default_state() -> Arc<ViziaState> {
@@ -87,9 +99,14 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     cx,
                     Data::is_learning,
                     Data::learning_index,
-                    0,
+                    1,
                     Data::learned_notes,
-                );
+                )
+                .on_change(|ex, learned_notes| {
+                    ex.emit(ActionTriggerEvent::LabelChange(learned_notes))
+                });
+
+                // Label::new(cx, learned_string).class("slider-label");
 
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
@@ -532,6 +549,7 @@ pub struct ActionTrigger {
     own_index: usize,
     learned_notes: Arc<AtomicByteArray>,
     label_string: String,
+    on_change: Option<Box<dyn Fn(&mut EventContext, AtomicByteArray)>>,
 }
 impl ActionTrigger {
     pub fn new<IsLearningL, LearningIndexL, LearnedNoteL>(
@@ -553,6 +571,7 @@ impl ActionTrigger {
             own_index,
             learned_notes: learned_notes.get(cx),
             label_string: String::from("click to learn"),
+            on_change: None,
         }
         .build(cx, |cx| {
             Label::new(cx, Self::label_string).class("action-label");
@@ -623,7 +642,7 @@ impl View for ActionTrigger {
         Some("action-trigger")
     }
 
-    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
         event.map(|window_event, meta| match window_event {
             // We don't need special double and triple click handling
             WindowEvent::MouseDown(MouseButton::Left)
@@ -640,15 +659,31 @@ impl View for ActionTrigger {
             _ => {}
         });
     }
+
     fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
         let bounds = draw_context.bounds();
         let background_color: vg::Color = draw_context.background_color().into();
         let border_color: vg::Color = draw_context.border_color().into();
-        let outline_color: vg::Color = draw_context.outline_color().into();
-        let selection_color: vg::Color = draw_context.selection_color().into();
+        // let outline_color: vg::Color = draw_context.outline_color().into();
+        // let selection_color: vg::Color = draw_context.selection_color().into();
         let border_width = draw_context.border_width();
-        let path_line_width = draw_context.outline_width();
+        // let path_line_width = draw_context.outline_width();
 
         self.draw_background(canvas, bounds, background_color, border_color, border_width);
     }
+}
+pub trait ActionTriggerModifiers {
+    fn on_change<F: Fn(&mut EventContext, AtomicByteArray) + 'static>(self, callback: F) -> Self;
+}
+
+impl<'a> ActionTriggerModifiers for Handle<'a, ActionTrigger> {
+    fn on_change<F: Fn(&mut EventContext, AtomicByteArray) + 'static>(self, callback: F) -> Self {
+        self.modify(|actiontrigger| actiontrigger.on_change = Some(Box::new(callback)))
+    }
+}
+
+pub enum ActionTriggerEvent {
+    // LabelChange(AtomicByteArray, usize),
+    LabelChange(AtomicByteArray),
+    // ColorChange,
 }
