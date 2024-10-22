@@ -604,8 +604,6 @@ impl Del2 {
                     let should_record_tap = self.delay_data.current_tap < MAX_NR_TAPS;
 
                     self.last_played_notes.note_on(note);
-                    println!("ooooooooooooooooooooooooonnnnnnnnnnnnnnnnnnnnnnnnnn");
-                    self.last_played_notes.print_notes();
 
                     match self.counting_state {
                         CountingState::TimeOut => {
@@ -697,9 +695,7 @@ impl Del2 {
                 NoteEvent::NoteOff {
                     timing: _, note, ..
                 } => {
-                    println!("OOOOOOOOOOOOOOOOOOOOOFFFFFFFFFFFFFFFFFFFFFFFFF");
                     self.last_played_notes.note_off(note);
-                    self.last_played_notes.print_notes();
                 }
                 _ => {} // Handle other types of events if necessary
             }
@@ -1126,7 +1122,9 @@ struct LastPlayedNotes {
 }
 
 impl LastPlayedNotes {
+    /// Constructs a new instance of `LastPlayedNotes`.
     fn new() -> Self {
+        // Initializes the state, notes, sequence, and current_sequence fields.
         Self {
             state: AtomicU8::new(0),
             notes: AtomicByteArray::new(),
@@ -1135,19 +1133,41 @@ impl LastPlayedNotes {
         }
     }
 
+    /// Handles the 'note on' event.
     fn note_on(&self, note: u8) {
         let mut current_state = self.state.load(Ordering::SeqCst);
 
-        // Check if the note is already in the table
+        // Check if the note is already in the table and reactivate if so.
         if let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
+            // Update sequence and reactivate the note.
             self.sequence
                 .store(index, self.current_sequence.fetch_add(1, Ordering::SeqCst));
+            // Ensure it's marked as active in the state.
+            loop {
+                let new_state = current_state | (1 << index); // Set this index as active
+                if self
+                    .state
+                    .compare_exchange_weak(
+                        current_state,
+                        new_state,
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    )
+                    .is_ok()
+                {
+                    break;
+                } else {
+                    current_state = self.state.load(Ordering::SeqCst);
+                }
+            }
             return;
         }
 
+        // Loop until space is found in the notes array.
         loop {
+            // Find first available spot in the notes array.
             if let Some(index) = (0..8).find(|i| (current_state & (1 << i)) == 0) {
-                // Occupy an empty spot
+                // Attempt to occupy this empty spot.
                 let new_state = current_state | (1 << index);
                 if self
                     .state
@@ -1159,11 +1179,13 @@ impl LastPlayedNotes {
                     )
                     .is_ok()
                 {
+                    // Store the note and its sequence once the position is successfully claimed.
                     self.notes.store(index, note);
                     self.sequence
                         .store(index, self.current_sequence.fetch_add(1, Ordering::SeqCst));
                     break;
                 } else {
+                    // Reload state as previous compare_exchange was not successful.
                     current_state = self.state.load(Ordering::SeqCst);
                 }
             } else {
@@ -1179,10 +1201,13 @@ impl LastPlayedNotes {
         }
     }
 
+    /// Handles the 'note off' event.
     fn note_off(&self, note: u8) {
         let mut current_state = self.state.load(Ordering::SeqCst);
         loop {
+            // Check if the note exists among the recorded notes.
             if let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
+                // Calculate new state after disabling the note at the found index.
                 let new_state = current_state & !(1 << index);
                 if self
                     .state
@@ -1194,9 +1219,11 @@ impl LastPlayedNotes {
                     )
                     .is_ok()
                 {
+                    // Zero out the sequence to signify note is turned off.
                     self.sequence.store(index, 0);
                     break;
                 } else {
+                    // Reload state as previous compare_exchange was not successful.
                     current_state = self.state.load(Ordering::SeqCst);
                 }
             } else {
@@ -1205,7 +1232,9 @@ impl LastPlayedNotes {
         }
     }
 
+    /// Checks if a note is currently being played.
     fn is_playing(&self, note: u8) -> bool {
+        // Find the index of the note and check if its spot in state is occupied.
         if let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
             let current_state = self.state.load(Ordering::SeqCst);
             (current_state & (1 << index)) != 0
@@ -1213,33 +1242,23 @@ impl LastPlayedNotes {
             false
         }
     }
-    /// for testing
+
+    /// Print the notes for testing purposes.
     fn print_notes(&self) {
-        // Adjust the width as needed for alignment
+        // Width used for formatting alignment
         const WIDTH: usize = 4;
 
-        // print!("{:^25} | ", action);
         for i in 0..8 {
             let note = self.notes.load(i);
             if self.is_playing(note) {
+                // Print active notes
                 print!("{:>WIDTH$}", note);
             } else {
+                // Print placeholder for inactive notes
                 print!("{:>WIDTH$}", "_");
             }
         }
-
         println!();
-
-        // print!("{:^25} | ", "Sequence");
-        // for i in 0..8 {
-        //     let seq = self.sequence.load(i);
-        //     if self.is_playing(self.notes.load(i)) {
-        //         print!("{:>WIDTH$}", seq);
-        //     } else {
-        //         print!("{:>WIDTH$}", "_");
-        //     }
-        // }
-        // println!();
     }
 }
 
