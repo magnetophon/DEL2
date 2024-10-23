@@ -50,6 +50,9 @@ const MAX_LEARNED_NOTES: usize = 8;
 // abuse the difference in range between u8 and midi notes for special meaning
 const NO_LEARNED_NOTE: u8 = 128;
 const LEARNING: u8 = 129;
+// action trigger indexes
+// should be 0..7 because of AtomicByteArray size
+const MUTE_OUT: usize = 0;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -86,6 +89,7 @@ struct Del2 {
     delay_buffer_size: u32,
     counting_state: CountingState,
     should_update_filter: Arc<AtomicBool>,
+    mute_out_action_enabled: bool,
 }
 
 // for use in graph
@@ -433,6 +437,7 @@ impl Default for Del2 {
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
             should_update_filter,
+            mute_out_action_enabled: false,
         }
     }
 }
@@ -606,21 +611,27 @@ impl Del2 {
                     velocity,
                     ..
                 } => {
-                    let should_record_tap = self.delay_data.current_tap < MAX_NR_TAPS
+                    let mut should_record_tap = self.delay_data.current_tap < MAX_NR_TAPS
                         && !self.learned_notes.contains(note);
 
                     self.last_played_notes.note_on(note);
                     match self.counting_state {
                         CountingState::TimeOut => {
+                            println!("timeout should_record_tap: {}", should_record_tap); // Debugging line
+                            let is_tap_slot_available = self.delay_data.current_tap < MAX_NR_TAPS;
+                            let is_note_unlearned = !self.learned_notes.contains(note);
+
+                            // Print the conditions to debug
+                            println!(
+                                "current_tap: {}, is_tap_slot_available: {}",
+                                self.delay_data.current_tap, is_tap_slot_available
+                            );
+                            println!("note: {}, is_note_unlearned: {}", note, is_note_unlearned);
+
+                            self.last_played_notes._print_notes();
                             if should_record_tap {
                                 // If in TimeOut state, reset and start new counting phase
-                                for tap in 0..MAX_NR_TAPS {
-                                    self.releasings[tap] = true;
-                                    self.amp_envelopes[tap].style = SmoothingStyle::Exponential(
-                                        self.params.global.release_ms.value(),
-                                    );
-                                    self.amp_envelopes[tap].set_target(self.sample_rate, 0.0);
-                                }
+                                self.update_releasing(true);
                                 self.delay_data.current_tap = 0;
                                 self.timing_last_event = timing;
                                 self.counting_state = CountingState::CountingInBuffer;
@@ -634,7 +645,8 @@ impl Del2 {
                                 self.samples_since_last_event = timing - self.timing_last_event;
                                 self.timing_last_event = timing;
                             } else {
-                                continue; // Debounce or max taps reached, ignore tap
+                                // continue; // Debounce or max taps reached, ignore tap
+                                should_record_tap = false;
                             }
                         }
                         CountingState::CountingAcrossBuffer => {
@@ -646,7 +658,8 @@ impl Del2 {
                                 self.timing_last_event = timing;
                                 self.counting_state = CountingState::CountingInBuffer;
                             } else {
-                                continue; // Debounce across buffer or max taps, ignore
+                                // continue; // Debounce or max taps reached, ignore tap
+                                should_record_tap = false;
                             }
                         }
                         CountingState::MidiLearn => {
@@ -697,6 +710,16 @@ impl Del2 {
                         // Indicate filter update needed
                         self.should_update_filter.store(true, Ordering::Release);
                     }
+                    // Handle ActionTrigger events
+                    if self.is_playing_action(MUTE_OUT) {
+                        if self.mute_out_action_enabled {
+                            self.update_releasing(false);
+                            self.mute_out_action_enabled = false;
+                        } else {
+                            self.update_releasing(true);
+                            self.mute_out_action_enabled = true;
+                        }
+                    }
                 }
                 // Handling NoteOff events
                 NoteEvent::NoteOff {
@@ -706,6 +729,20 @@ impl Del2 {
                 }
                 _ => {} // Handle other types of events if necessary
             }
+        }
+    }
+    fn update_releasing(&mut self, releasing: bool) {
+        let time_value = if releasing {
+            self.params.global.release_ms.value()
+        } else {
+            self.params.global.attack_ms.value()
+        };
+        let target_value = if releasing { 0.0 } else { 1.0 };
+
+        for tap in 0..self.delay_data.current_tap {
+            self.releasings[tap] = releasing;
+            self.amp_envelopes[tap].style = SmoothingStyle::Exponential(time_value);
+            self.amp_envelopes[tap].set_target(self.sample_rate, target_value);
         }
     }
 
@@ -987,7 +1024,7 @@ impl Del2 {
         }
     }
 
-    pub fn _is_playing(&self, index: usize) -> bool {
+    pub fn is_playing_action(&self, index: usize) -> bool {
         self.last_played_notes
             .is_playing(self.learned_notes.load(index))
     }

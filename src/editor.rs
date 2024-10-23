@@ -13,6 +13,7 @@ use crate::DelayData;
 use crate::DelayDataOutput;
 use crate::LastPlayedNotes;
 use crate::LEARNING;
+use crate::MUTE_OUT;
 use crate::NO_LEARNED_NOTE;
 
 #[derive(Lens, Clone)]
@@ -91,7 +92,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     cx,
                     Data::is_learning,
                     Data::learning_index,
-                    0,
+                    MUTE_OUT,
                     Data::learned_notes,
                     Data::last_played_notes,
                 );
