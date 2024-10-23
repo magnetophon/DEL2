@@ -145,7 +145,6 @@ generic-ui {
     col-between: 6px;
     height: 30px;
     layout-type: row;
-    background-color: #4e4e4e;
 }
 
 /* generic-ui .column { */

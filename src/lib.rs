@@ -393,7 +393,6 @@ enum CountingState {
     TimeOut,
     CountingInBuffer,
     CountingAcrossBuffer,
-    MidiLearn,
 }
 
 impl Default for Del2 {
@@ -571,9 +570,6 @@ impl Plugin for Del2 {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         self.update_timing_params();
-        if self.is_learning.load(Ordering::SeqCst) {
-            self.counting_state = CountingState::MidiLearn;
-        }
         self.process_midi_events(context);
         self.prepare_for_delay(buffer.samples());
 
@@ -616,12 +612,14 @@ impl Del2 {
                 } => {
                     let is_tap_slot_available = self.delay_data.current_tap < MAX_NR_TAPS;
                     let is_delay_note = !self.learned_notes.contains(note);
-                    let mut should_record_tap = is_tap_slot_available && is_delay_note;
+                    let is_learning = self.is_learning.load(Ordering::SeqCst);
+                    let mut should_record_tap =
+                        is_tap_slot_available && is_delay_note && !is_learning;
 
                     self.last_played_notes.note_on(note);
                     match self.counting_state {
                         CountingState::TimeOut => {
-                            if is_delay_note {
+                            if is_delay_note && !is_learning {
                                 // If in TimeOut state, reset and start new counting phase
                                 self.mute_out(true);
                                 self.enabled_actions.store(MUTE_OUT, false);
@@ -655,14 +653,14 @@ impl Del2 {
                                 should_record_tap = false;
                             }
                         }
-                        CountingState::MidiLearn => {
-                            self.is_learning.store(false, Ordering::Release);
-                            self.learned_notes
-                                .store(self.learning_index.load(Ordering::SeqCst), note);
-                            self.counting_state = CountingState::TimeOut;
-                            self.timing_last_event = 0;
-                            self.samples_since_last_event = 0;
-                        }
+                    }
+                    if is_learning {
+                        self.is_learning.store(false, Ordering::SeqCst);
+                        self.learned_notes
+                            .store(self.learning_index.load(Ordering::SeqCst), note);
+                        self.counting_state = CountingState::TimeOut;
+                        self.timing_last_event = 0;
+                        self.samples_since_last_event = 0;
                     }
 
                     // Check for timeout condition and reset if necessary
@@ -671,10 +669,7 @@ impl Del2 {
                         self.timing_last_event = 0;
                         self.samples_since_last_event = 0;
                     } else if should_record_tap
-                        && !matches!(
-                            self.counting_state,
-                            CountingState::TimeOut | CountingState::MidiLearn
-                        )
+                        && !matches!(self.counting_state, CountingState::TimeOut)
                         && self.samples_since_last_event > 0
                         && velocity > 0.0
                     {
@@ -762,7 +757,6 @@ impl Del2 {
             CountingState::CountingAcrossBuffer => {
                 self.samples_since_last_event += buffer_samples;
             }
-            CountingState::MidiLearn => {}
         }
 
         if self.samples_since_last_event > self.delay_data.max_tap_samples {
@@ -777,8 +771,8 @@ impl Del2 {
             .compare_exchange(
                 true,
                 false,
-                std::sync::atomic::Ordering::Acquire,
-                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
             )
             .is_ok()
     }

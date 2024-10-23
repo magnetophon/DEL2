@@ -562,6 +562,9 @@ pub struct ActionTrigger {
     last_played_notes: Arc<LastPlayedNotes>,
     enabled_actions: Arc<AtomicBoolArray>,
     own_index: usize,
+    // to temp store the note we had during learning
+    // so we can keep abusing the notes above 127 to signify other things
+    last_learned_note: u8,
 }
 impl ActionTrigger {
     pub fn new<IsLearningL, LearningIndexL, LearnedNotesL, LastPlayedNotesL, EnabledActionsL>(
@@ -587,6 +590,7 @@ impl ActionTrigger {
             last_played_notes: last_played_notes.get(cx),
             enabled_actions: enabled_actions.get(cx),
             own_index,
+            last_learned_note: NO_LEARNED_NOTE,
         }
         .build(cx, move |cx| {
             Label::new(
@@ -600,19 +604,23 @@ impl ActionTrigger {
         })
     }
 
-    pub fn start_learning(&self) {
+    pub fn start_learning(&mut self) {
         self.is_learning.store(true, Ordering::SeqCst);
         let index = self.own_index;
+        self.last_learned_note = self.learned_notes.load(index);
         self.learned_notes.store(index, LEARNING);
         self.learning_index.store(index, Ordering::SeqCst);
     }
     pub fn stop_learning(&self) {
         self.is_learning.store(false, Ordering::SeqCst);
+        self.learned_notes
+            .store(self.own_index, self.last_learned_note);
     }
 
     // Checks if learning is active for this trigger
     pub fn is_learning(&self) -> bool {
-        self.learned_notes.load(self.own_index) == LEARNING
+        self.is_learning.load(Ordering::SeqCst)
+            && self.learned_notes.load(self.own_index) == LEARNING
     }
 
     pub fn is_playing(&self) -> bool {
