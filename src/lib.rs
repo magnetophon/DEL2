@@ -89,7 +89,7 @@ struct Del2 {
     delay_buffer_size: u32,
     counting_state: CountingState,
     should_update_filter: Arc<AtomicBool>,
-    mute_out_action_enabled: bool,
+    enabled_actions: Arc<AtomicBoolArray>,
 }
 
 // for use in graph
@@ -437,7 +437,7 @@ impl Default for Del2 {
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
             should_update_filter,
-            mute_out_action_enabled: false,
+            enabled_actions: Arc::new(AtomicBoolArray::new()),
         }
     }
 }
@@ -517,6 +517,7 @@ impl Plugin for Del2 {
                 learning_index: self.learning_index.clone(),
                 learned_notes: self.learned_notes.clone(),
                 last_played_notes: self.last_played_notes.clone(),
+                enabled_actions: self.enabled_actions.clone(),
             },
             self.params.editor_state.clone(),
         )
@@ -611,27 +612,17 @@ impl Del2 {
                     velocity,
                     ..
                 } => {
-                    let mut should_record_tap = self.delay_data.current_tap < MAX_NR_TAPS
-                        && !self.learned_notes.contains(note);
+                    let is_tap_slot_available = self.delay_data.current_tap < MAX_NR_TAPS;
+                    let is_delay_note = !self.learned_notes.contains(note);
+                    let mut should_record_tap = is_tap_slot_available && is_delay_note;
 
                     self.last_played_notes.note_on(note);
                     match self.counting_state {
                         CountingState::TimeOut => {
-                            println!("timeout should_record_tap: {}", should_record_tap); // Debugging line
-                            let is_tap_slot_available = self.delay_data.current_tap < MAX_NR_TAPS;
-                            let is_note_unlearned = !self.learned_notes.contains(note);
-
-                            // Print the conditions to debug
-                            println!(
-                                "current_tap: {}, is_tap_slot_available: {}",
-                                self.delay_data.current_tap, is_tap_slot_available
-                            );
-                            println!("note: {}, is_note_unlearned: {}", note, is_note_unlearned);
-
-                            self.last_played_notes._print_notes();
-                            if should_record_tap {
+                            if is_delay_note {
                                 // If in TimeOut state, reset and start new counting phase
                                 self.update_releasing(true);
+                                self.enabled_actions.store(MUTE_OUT, false);
                                 self.delay_data.current_tap = 0;
                                 self.timing_last_event = timing;
                                 self.counting_state = CountingState::CountingInBuffer;
@@ -712,12 +703,12 @@ impl Del2 {
                     }
                     // Handle ActionTrigger events
                     if self.is_playing_action(MUTE_OUT) {
-                        if self.mute_out_action_enabled {
+                        if self.enabled_actions.load(MUTE_OUT) {
                             self.update_releasing(false);
-                            self.mute_out_action_enabled = false;
+                            self.enabled_actions.store(MUTE_OUT, false);
                         } else {
                             self.update_releasing(true);
-                            self.mute_out_action_enabled = true;
+                            self.enabled_actions.store(MUTE_OUT, true);
                         }
                     }
                 }
@@ -1148,7 +1139,45 @@ impl Enum for MyLadderMode {
         })
     }
 }
-// #[derive(Debug)]
+struct AtomicBoolArray {
+    data: AtomicU8,
+}
+
+impl AtomicBoolArray {
+    fn new() -> Self {
+        Self {
+            data: AtomicU8::new(0),
+        }
+    }
+
+    #[inline(always)]
+    fn load(&self, index: usize) -> bool {
+        assert!(index < 8, "Index out of bounds");
+        let mask = 1 << index;
+        self.data.load(Ordering::SeqCst) & mask != 0
+    }
+    #[inline(always)]
+    fn store(&self, index: usize, value: bool) {
+        assert!(index < 8, "Index out of bounds");
+        let mask = 1 << index;
+        self.data
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                Some(if value {
+                    v | mask // Set bit
+                } else {
+                    v & !mask // Clear bit
+                })
+            })
+            .expect("Atomic update failed");
+    }
+    #[inline(always)]
+    fn _toggle(&self, index: usize) {
+        assert!(index < 8, "Index out of bounds");
+        let mask = 1 << index;
+        self.data.fetch_xor(mask, Ordering::SeqCst);
+    }
+}
+
 struct AtomicByteArray {
     data: AtomicU64,
 }
@@ -1160,18 +1189,21 @@ impl AtomicByteArray {
         }
     }
 
+    #[inline(always)]
     fn load(&self, index: usize) -> u8 {
         assert!(index < 8, "Index out of bounds");
         let value = self.data.load(Ordering::SeqCst);
         ((value >> (index * 8)) & 0xFF) as u8
     }
 
+    #[inline(always)]
     fn store(&self, index: usize, byte: u8) {
         assert!(index < 8, "Index out of bounds");
         let mask = !(0xFFu64 << (index * 8));
         let new_value = (self.data.load(Ordering::SeqCst) & mask) | ((byte as u64) << (index * 8));
         self.data.store(new_value, Ordering::SeqCst);
     }
+    #[inline(always)]
     fn contains(&self, byte: u8) -> bool {
         let value = self.data.load(Ordering::SeqCst);
         let byte_u64 = byte as u64;
@@ -1186,11 +1218,13 @@ impl AtomicByteArray {
     }
 }
 
+// Represents the last played notes with capabilities for managing active notes.
 struct LastPlayedNotes {
     state: AtomicU8,
     notes: AtomicByteArray,
     sequence: AtomicByteArray,
     current_sequence: AtomicU8,
+    active_notes: AtomicBoolArray, // Tracks active status of notes
 }
 
 impl LastPlayedNotes {
@@ -1202,6 +1236,7 @@ impl LastPlayedNotes {
             notes: AtomicByteArray::new(),
             sequence: AtomicByteArray::new(),
             current_sequence: AtomicU8::new(1),
+            active_notes: AtomicBoolArray::new(), // Initialize new field
         }
     }
 
@@ -1214,6 +1249,8 @@ impl LastPlayedNotes {
             // Update sequence and reactivate the note.
             self.sequence
                 .store(index, self.current_sequence.fetch_add(1, Ordering::SeqCst));
+            self.active_notes.store(index, true); // Mark as active
+
             // Ensure it's marked as active in the state.
             loop {
                 let new_state = current_state | (1 << index); // Set this index as active
@@ -1255,6 +1292,7 @@ impl LastPlayedNotes {
                     self.notes.store(index, note);
                     self.sequence
                         .store(index, self.current_sequence.fetch_add(1, Ordering::SeqCst));
+                    self.active_notes.store(index, true); // Mark as active
                     break;
                 } else {
                     // Reload state as previous compare_exchange was not successful.
@@ -1268,6 +1306,7 @@ impl LastPlayedNotes {
                     oldest_index,
                     self.current_sequence.fetch_add(1, Ordering::SeqCst),
                 );
+                self.active_notes.store(oldest_index, true); // Mark as active
                 break;
             }
         }
@@ -1291,8 +1330,8 @@ impl LastPlayedNotes {
                     )
                     .is_ok()
                 {
-                    // Zero out the sequence to signify note is turned off.
-                    self.sequence.store(index, 0);
+                    self.sequence.store(index, 0); // Reset sequence
+                    self.active_notes.store(index, false); // Mark as inactive
                     break;
                 } else {
                     // Reload state as previous compare_exchange was not successful.
@@ -1308,8 +1347,7 @@ impl LastPlayedNotes {
     fn is_playing(&self, note: u8) -> bool {
         // Find the index of the note and check if its spot in state is occupied.
         if let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
-            let current_state = self.state.load(Ordering::SeqCst);
-            (current_state & (1 << index)) != 0
+            self.active_notes.load(index)
         } else {
             false
         }

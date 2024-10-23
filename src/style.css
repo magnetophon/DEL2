@@ -118,6 +118,7 @@ action-trigger {
     top: 100px;
     background-color: #4e4e4e;
     border-color: #5879af;
+    outline-color: #e0ce91;
     selection-color: #fabdf0;
     border-width: 1px;
     transition: background-color 300ms;

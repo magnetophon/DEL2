@@ -7,6 +7,7 @@ use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::AtomicBoolArray;
 use crate::AtomicByteArray;
 use crate::Del2Params;
 use crate::DelayData;
@@ -26,6 +27,7 @@ pub(crate) struct Data {
     pub learning_index: Arc<AtomicUsize>,
     pub learned_notes: Arc<AtomicByteArray>,
     pub last_played_notes: Arc<LastPlayedNotes>,
+    pub enabled_actions: Arc<AtomicBoolArray>,
 }
 
 impl Model for Data {}
@@ -95,6 +97,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     MUTE_OUT,
                     Data::learned_notes,
                     Data::last_played_notes,
+                    Data::enabled_actions,
                 );
 
                 HStack::new(cx, |cx| {
@@ -531,21 +534,24 @@ pub struct ActionTrigger {
     own_index: usize,
     learned_notes: Arc<AtomicByteArray>,
     last_played_notes: Arc<LastPlayedNotes>,
+    enabled_actions: Arc<AtomicBoolArray>,
 }
 impl ActionTrigger {
-    pub fn new<IsLearningL, LearningIndexL, LearnedNotesL, LastPlayedNotesL>(
+    pub fn new<IsLearningL, LearningIndexL, LearnedNotesL, LastPlayedNotesL, EnabledActionsL>(
         cx: &mut Context,
         is_learning: IsLearningL,
         learning_index: LearningIndexL,
         own_index: usize,
         learned_notes: LearnedNotesL,
         last_played_notes: LastPlayedNotesL,
+        enabled_actions: EnabledActionsL,
     ) -> Handle<Self>
     where
         IsLearningL: Lens<Target = Arc<AtomicBool>>,
         LearningIndexL: Lens<Target = Arc<AtomicUsize>>,
         LearnedNotesL: Lens<Target = Arc<AtomicByteArray>>,
         LastPlayedNotesL: Lens<Target = Arc<LastPlayedNotes>>,
+        EnabledActionsL: Lens<Target = Arc<AtomicBoolArray>>,
     {
         Self {
             is_learning: is_learning.get(cx),
@@ -553,6 +559,7 @@ impl ActionTrigger {
             own_index,
             learned_notes: learned_notes.get(cx),
             last_played_notes: last_played_notes.get(cx),
+            enabled_actions: enabled_actions.get(cx),
         }
         .build(cx, move |cx| {
             Label::new(
@@ -585,6 +592,9 @@ impl ActionTrigger {
         self.last_played_notes
             .is_playing(self.learned_notes.load(self.own_index))
     }
+    pub fn is_enabled(&self) -> bool {
+        self.enabled_actions.load(self.own_index)
+    }
 
     fn get_note_name(note_nr: u8) -> String {
         if note_nr == LEARNING {
@@ -606,6 +616,7 @@ impl ActionTrigger {
         canvas: &mut Canvas,
         bounds: BoundingBox,
         background_color: vg::Color,
+        outline_color: vg::Color,
         selection_color: vg::Color,
         border_color: vg::Color,
         border_width: f32,
@@ -620,6 +631,8 @@ impl ActionTrigger {
             vg::Paint::color(border_color)
         } else if self.is_playing() {
             vg::Paint::color(selection_color)
+        } else if self.is_enabled() {
+            vg::Paint::color(outline_color)
         } else {
             vg::Paint::color(background_color)
         };
@@ -663,7 +676,7 @@ impl View for ActionTrigger {
         let bounds = draw_context.bounds();
         let background_color: vg::Color = draw_context.background_color().into();
         let border_color: vg::Color = draw_context.border_color().into();
-        // let outline_color: vg::Color = draw_context.outline_color().into();
+        let outline_color: vg::Color = draw_context.outline_color().into();
         let selection_color: vg::Color = draw_context.selection_color().into();
         let border_width = draw_context.border_width();
         // let path_line_width = draw_context.outline_width();
@@ -673,6 +686,7 @@ impl View for ActionTrigger {
             bounds,
             background_color,
             border_color,
+            outline_color,
             selection_color,
             border_width,
         );
