@@ -13,8 +13,9 @@
 
 .parameters {
     top: 0px;
-    child-left: 9px;
-    /* child-right: 9px; */
+    /* the columns are the same width, but one needs to include spacing and the other doesn't */
+    child-left: 0px;
+    child-right: 9px;
     width: auto;
 }
 
@@ -87,12 +88,10 @@ param-slider .value-entry {
 .column-title {
     font-size: 23;
     /* // This should align nicely with the right edge of the slider */
-    right: 9px;
+    right: 0px;
 }
 
 .attack-release {
-    left: 0px;
-    right: 0px;
     top: 1s;
     bottom: 0px;
 }
@@ -123,6 +122,10 @@ action-trigger {
     border-width: 1px;
     transition: background-color 300ms;
 }
+generic-ui {
+    child-left: 0px;
+    child-right: 0px;
+}
 
 generic-ui .row {
     col-between: 6px;
@@ -138,6 +141,8 @@ generic-ui .row {
 generic-ui .column {
     width: 269px;
     height: auto;
+    left: 9px;
+    right: 0px;
 }
 .column {
     width: 269px;
@@ -189,8 +194,4 @@ peak-meter .ticks__label {
     bottom: 24px;
     font-size: 15;
     width: 40px;
-}
-
-.offset-widget {
-    right: 9px;
 }
