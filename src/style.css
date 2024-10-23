@@ -21,6 +21,7 @@
 
 param-slider {
     height: 30px;
+    width: 171px;
     border-width: 1px;
     background-color: #4e4e4e;
     border-color: #fabdf0;
@@ -114,8 +115,10 @@ delay-graph {
 }
 
 action-trigger {
+    width: 171px;
     height: 30px;
-    top: 100px;
+    top: 0px;
+    bottom: 0px;
     background-color: #4e4e4e;
     border-color: #5879af;
     outline-color: #e0ce91;
@@ -123,31 +126,39 @@ action-trigger {
     border-width: 1px;
     transition: background-color 300ms;
 }
+.action-name {
+    right: 9px;
+    top: 1s;
+    bottom: 3px;
+}
 generic-ui {
     child-left: 0px;
     child-right: 0px;
 }
 
-generic-ui .row {
-    col-between: 6px;
-    height: auto;
-    layout-type: row;
-}
+/* generic-ui .row { */
+/* col-between: 6px; */
+/* height: auto; */
+/* layout-type: row; */
+/* } */
 .row {
     col-between: 6px;
-    height: auto;
+    height: 30px;
     layout-type: row;
+    background-color: #4e4e4e;
 }
 
-generic-ui .column {
-    width: 269px;
-    height: auto;
-    left: 9px;
-    right: 0px;
-}
+/* generic-ui .column { */
+/* width: 269px; */
+/* height: auto; */
+/* left: 9px; */
+/* right: 0px; */
+/* } */
 .column {
     width: 269px;
     height: auto;
+    row-between: 6px;
+    layout-type: column;
 }
 label {
     left: 1s;

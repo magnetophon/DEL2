@@ -1,21 +1,20 @@
-use crate::util;
-use nih_plug::prelude::{AtomicF32, Editor};
-use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::widgets::*;
-use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc, Mutex,
+};
 
-use crate::AtomicBoolArray;
-use crate::AtomicByteArray;
-use crate::Del2Params;
-use crate::DelayData;
-use crate::DelayDataOutput;
-use crate::LastPlayedNotes;
-use crate::LEARNING;
-use crate::MUTE_OUT;
-use crate::NO_LEARNED_NOTE;
+use nih_plug::prelude::{AtomicF32, Editor};
+use nih_plug_vizia::{
+    assets, create_vizia_editor,
+    vizia::{prelude::*, vg},
+    widgets::*,
+    ViziaState, ViziaTheming,
+};
+
+use crate::{
+    util, AtomicBoolArray, AtomicByteArray, Del2Params, DelayData, DelayDataOutput,
+    LastPlayedNotes, LEARNING, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, RESET_PATTERN,
+};
 
 #[derive(Lens, Clone)]
 pub(crate) struct Data {
@@ -90,15 +89,43 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                         });
                     });
                 });
-                ActionTrigger::new(
-                    cx,
-                    Data::is_learning,
-                    Data::learning_index,
-                    MUTE_OUT,
-                    Data::learned_notes,
-                    Data::last_played_notes,
-                    Data::enabled_actions,
-                );
+
+                HStack::new(cx, |cx| {
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "mute in").class("action-name");
+                            ActionTrigger::new(
+                                cx,
+                                Data::is_learning,
+                                Data::learning_index,
+                                Data::learned_notes,
+                                Data::last_played_notes,
+                                Data::enabled_actions,
+                                MUTE_IN,
+                            );
+                        })
+                        .class("row");
+                    })
+                    .class("column");
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "mute out").class("action-name");
+                            ActionTrigger::new(
+                                cx,
+                                Data::is_learning,
+                                Data::learning_index,
+                                Data::learned_notes,
+                                Data::last_played_notes,
+                                Data::enabled_actions,
+                                MUTE_OUT,
+                            );
+                        })
+                        .class("row");
+                    }) // TODO: make into a class
+                    .class("column");
+                })
+                // TODO: rename
+                .class("attack-release");
 
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
@@ -531,20 +558,20 @@ fn make_column(cx: &mut Context, title: &str, contents: impl FnOnce(&mut Context
 pub struct ActionTrigger {
     is_learning: Arc<AtomicBool>,
     learning_index: Arc<AtomicUsize>,
-    own_index: usize,
     learned_notes: Arc<AtomicByteArray>,
     last_played_notes: Arc<LastPlayedNotes>,
     enabled_actions: Arc<AtomicBoolArray>,
+    own_index: usize,
 }
 impl ActionTrigger {
     pub fn new<IsLearningL, LearningIndexL, LearnedNotesL, LastPlayedNotesL, EnabledActionsL>(
         cx: &mut Context,
         is_learning: IsLearningL,
         learning_index: LearningIndexL,
-        own_index: usize,
         learned_notes: LearnedNotesL,
         last_played_notes: LastPlayedNotesL,
         enabled_actions: EnabledActionsL,
+        own_index: usize,
     ) -> Handle<Self>
     where
         IsLearningL: Lens<Target = Arc<AtomicBool>>,
@@ -556,10 +583,10 @@ impl ActionTrigger {
         Self {
             is_learning: is_learning.get(cx),
             learning_index: learning_index.get(cx),
-            own_index,
             learned_notes: learned_notes.get(cx),
             last_played_notes: last_played_notes.get(cx),
             enabled_actions: enabled_actions.get(cx),
+            own_index,
         }
         .build(cx, move |cx| {
             Label::new(

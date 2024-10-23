@@ -52,7 +52,9 @@ const NO_LEARNED_NOTE: u8 = 128;
 const LEARNING: u8 = 129;
 // action trigger indexes
 // should be 0..7 because of AtomicByteArray size
-const MUTE_OUT: usize = 0;
+const MUTE_IN: usize = 0;
+const MUTE_OUT: usize = 1;
+const RESET_PATTERN: usize = 2;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -621,7 +623,7 @@ impl Del2 {
                         CountingState::TimeOut => {
                             if is_delay_note {
                                 // If in TimeOut state, reset and start new counting phase
-                                self.update_releasing(true);
+                                self.mute_out(true);
                                 self.enabled_actions.store(MUTE_OUT, false);
                                 self.delay_data.current_tap = 0;
                                 self.timing_last_event = timing;
@@ -704,10 +706,10 @@ impl Del2 {
                     // Handle ActionTrigger events
                     if self.is_playing_action(MUTE_OUT) {
                         if self.enabled_actions.load(MUTE_OUT) {
-                            self.update_releasing(false);
+                            self.mute_out(false);
                             self.enabled_actions.store(MUTE_OUT, false);
                         } else {
-                            self.update_releasing(true);
+                            self.mute_out(true);
                             self.enabled_actions.store(MUTE_OUT, true);
                         }
                     }
@@ -722,16 +724,16 @@ impl Del2 {
             }
         }
     }
-    fn update_releasing(&mut self, releasing: bool) {
-        let time_value = if releasing {
+    fn mute_out(&mut self, mute: bool) {
+        let time_value = if mute {
             self.params.global.release_ms.value()
         } else {
             self.params.global.attack_ms.value()
         };
-        let target_value = if releasing { 0.0 } else { 1.0 };
+        let target_value = if mute { 0.0 } else { 1.0 };
 
         for tap in 0..self.delay_data.current_tap {
-            self.releasings[tap] = releasing;
+            self.releasings[tap] = mute;
             self.amp_envelopes[tap].style = SmoothingStyle::Exponential(time_value);
             self.amp_envelopes[tap].set_target(self.sample_rate, target_value);
         }
