@@ -606,13 +606,13 @@ impl Del2 {
                     velocity,
                     ..
                 } => {
-                    let should_record_tap = self.delay_data.current_tap < MAX_NR_TAPS;
+                    let should_record_tap = self.delay_data.current_tap < MAX_NR_TAPS
+                        && !self.learned_notes.contains(note);
 
-                    let is_delay_note = !self.learned_notes.contains(note);
                     self.last_played_notes.note_on(note);
                     match self.counting_state {
                         CountingState::TimeOut => {
-                            if is_delay_note {
+                            if should_record_tap {
                                 // If in TimeOut state, reset and start new counting phase
                                 for tap in 0..MAX_NR_TAPS {
                                     self.releasings[tap] = true;
@@ -671,7 +671,6 @@ impl Del2 {
                         )
                         && self.samples_since_last_event > 0
                         && velocity > 0.0
-                        && is_delay_note
                     {
                         // Update tap information with timing and velocity
                         let current_tap = self.delay_data.current_tap;
