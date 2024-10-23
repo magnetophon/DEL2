@@ -47,6 +47,9 @@ const VELOCITY_HIGH_NAME_PREFIX: &str = "high velocity";
 const MAX_BLOCK_LEN: usize = 32768;
 const PEAK_METER_DECAY_MS: f64 = 150.0;
 const MAX_LEARNED_NOTES: usize = 8;
+// abuse the difference in range between u8 and midi notes for special meaning
+const NO_LEARNED_NOTE: u8 = 128;
+const LEARNING: u8 = 129;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -538,6 +541,10 @@ impl Plugin for Del2 {
         // Initialize filter parameters for each tap
         self.initialize_filter_parameters();
 
+        for i in 0..MAX_LEARNED_NOTES {
+            self.learned_notes.store(i, NO_LEARNED_NOTE);
+        }
+
         true
     }
 
@@ -570,7 +577,6 @@ impl Plugin for Del2 {
 
         self.update_peak_meter(buffer, &self.input_meter);
         self.process_audio_blocks(buffer);
-        // self.apply_fade_out(buffer);
         self.update_peak_meter(buffer, &self.output_meter);
         ProcessStatus::Normal
     }
@@ -982,11 +988,11 @@ impl Del2 {
         }
     }
 
-    pub fn is_playing(&self, index: usize) -> bool {
+    pub fn _is_playing(&self, index: usize) -> bool {
         self.last_played_notes
             .is_playing(self.learned_notes.load(index))
     }
-    pub fn no_learned_note_are_playing(&self) -> bool {
+    pub fn _no_learned_note_are_playing(&self) -> bool {
         for i in 0..MAX_LEARNED_NOTES {
             if self
                 .last_played_notes

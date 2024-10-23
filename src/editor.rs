@@ -1,5 +1,5 @@
 use crate::util;
-use nih_plug::prelude::{AtomicF32, Editor, Param};
+use nih_plug::prelude::{AtomicF32, Editor};
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 use nih_plug_vizia::widgets::*;
@@ -12,6 +12,8 @@ use crate::Del2Params;
 use crate::DelayData;
 use crate::DelayDataOutput;
 use crate::LastPlayedNotes;
+use crate::LEARNING;
+use crate::NO_LEARNED_NOTE;
 
 #[derive(Lens, Clone)]
 pub(crate) struct Data {
@@ -109,16 +111,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             Label::new(cx, "release").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
                                 .class("widget");
-                            Label::new(
-                                cx,
-                                Data::params.map(|params| {
-                                    params.global.release_ms.normalized_value_to_string(
-                                        params.global.release_ms.modulated_normalized_value(),
-                                        true,
-                                    )
-                                }),
-                            )
-                            .class("slider-label");
                         })
                         .class("row");
                     }) // TODO: make into a class
@@ -496,12 +488,6 @@ impl DelayGraph {
     }
     // TODO: .overflow(Overflow::Visible);
 
-    fn u8_note_to_name(note_nr: u8) -> String {
-        let note_name = util::NOTES[(note_nr % 12) as usize];
-        let octave = (note_nr / 12) - 1;
-        format!("{note_name}{octave}")
-    }
-
     fn draw_bounding_outline(
         &self,
         canvas: &mut Canvas,
@@ -548,7 +534,6 @@ pub struct ActionTrigger {
 impl ActionTrigger {
     pub fn new<IsLearningL, LearningIndexL, LearnedNotesL, LastPlayedNotesL>(
         cx: &mut Context,
-
         is_learning: IsLearningL,
         learning_index: LearningIndexL,
         own_index: usize,
@@ -568,15 +553,23 @@ impl ActionTrigger {
             learned_notes: learned_notes.get(cx),
             last_played_notes: last_played_notes.get(cx),
         }
-        .build(cx, |_cx| {
-            // Label::new(cx, "XXX").class("global-title");
-            // put other widgets here
+        .build(cx, move |cx| {
+            Label::new(
+                cx,
+                learned_notes.clone().map(move |notes| {
+                    let note_nr = notes.load(own_index);
+                    ActionTrigger::get_note_name(note_nr)
+                }),
+            )
+            .class("action-label");
         })
     }
 
     pub fn start_learning(&self) {
         self.is_learning.store(true, Ordering::SeqCst);
-        self.learning_index.store(self.own_index, Ordering::SeqCst);
+        let index = self.own_index;
+        self.learned_notes.store(index, LEARNING);
+        self.learning_index.store(index, Ordering::SeqCst);
     }
     pub fn stop_learning(&self) {
         self.is_learning.store(false, Ordering::SeqCst);
@@ -584,13 +577,24 @@ impl ActionTrigger {
 
     // Checks if learning is active for this trigger
     pub fn is_learning(&self) -> bool {
-        self.is_learning.load(Ordering::SeqCst)
-            && self.learning_index.load(Ordering::SeqCst) == self.own_index
+        self.learned_notes.load(self.own_index) == LEARNING
     }
 
     pub fn is_playing(&self) -> bool {
         self.last_played_notes
             .is_playing(self.learned_notes.load(self.own_index))
+    }
+
+    fn get_note_name(note_nr: u8) -> String {
+        if note_nr == LEARNING {
+            "learning".to_string()
+        } else if note_nr == NO_LEARNED_NOTE {
+            "click to learn".to_string()
+        } else {
+            let note_name = util::NOTES[(note_nr % 12) as usize];
+            let octave = (note_nr / 12) - 1;
+            format!("{note_name}{octave}")
+        }
     }
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////
