@@ -45,8 +45,8 @@ const VELOCITY_LOW_NAME_PREFIX: &str = "low velocity";
 const VELOCITY_HIGH_NAME_PREFIX: &str = "high velocity";
 // this seems to be the number JUCE is using
 const MAX_BLOCK_LEN: usize = 32768;
-
 const PEAK_METER_DECAY_MS: f64 = 150.0;
+const MAX_LEARNED_NOTES: usize = 8;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -559,7 +559,6 @@ impl Plugin for Del2 {
         if self.is_learning.load(Ordering::SeqCst) {
             self.counting_state = CountingState::MidiLearn;
         }
-
         self.process_midi_events(context);
         self.prepare_for_delay(buffer.samples());
 
@@ -603,21 +602,23 @@ impl Del2 {
                 } => {
                     let should_record_tap = self.delay_data.current_tap < MAX_NR_TAPS;
 
+                    let is_delay_note = !self.learned_notes.contains(note);
                     self.last_played_notes.note_on(note);
-
                     match self.counting_state {
                         CountingState::TimeOut => {
-                            // If in TimeOut state, reset and start new counting phase
-                            for tap in 0..MAX_NR_TAPS {
-                                self.releasings[tap] = true;
-                                self.amp_envelopes[tap].style = SmoothingStyle::Exponential(
-                                    self.params.global.release_ms.value(),
-                                );
-                                self.amp_envelopes[tap].set_target(self.sample_rate, 0.0);
+                            if is_delay_note {
+                                // If in TimeOut state, reset and start new counting phase
+                                for tap in 0..MAX_NR_TAPS {
+                                    self.releasings[tap] = true;
+                                    self.amp_envelopes[tap].style = SmoothingStyle::Exponential(
+                                        self.params.global.release_ms.value(),
+                                    );
+                                    self.amp_envelopes[tap].set_target(self.sample_rate, 0.0);
+                                }
+                                self.delay_data.current_tap = 0;
+                                self.timing_last_event = timing;
+                                self.counting_state = CountingState::CountingInBuffer;
                             }
-                            self.delay_data.current_tap = 0;
-                            self.timing_last_event = timing;
-                            self.counting_state = CountingState::CountingInBuffer;
                         }
                         CountingState::CountingInBuffer => {
                             // Validate and record a new tap within the buffer
@@ -664,6 +665,7 @@ impl Del2 {
                         )
                         && self.samples_since_last_event > 0
                         && velocity > 0.0
+                        && is_delay_note
                     {
                         // Update tap information with timing and velocity
                         let current_tap = self.delay_data.current_tap;
@@ -685,7 +687,7 @@ impl Del2 {
                         // TODO: instead of 1.0, use a combination of gain params
                         self.amp_envelopes[current_tap].set_target(self.sample_rate, 1.0);
                         self.delay_data.current_tap += 1;
-                        self.delay_data.current_tap = self.delay_data.current_tap;
+                        // self.delay_data.current_tap = self.delay_data.current_tap;
 
                         // Indicate filter update needed
                         self.should_update_filter.store(true, Ordering::Release);
@@ -979,6 +981,22 @@ impl Del2 {
             }
         }
     }
+
+    pub fn is_playing(&self, index: usize) -> bool {
+        self.last_played_notes
+            .is_playing(self.learned_notes.load(index))
+    }
+    pub fn no_learned_note_are_playing(&self) -> bool {
+        for i in 0..MAX_LEARNED_NOTES {
+            if self
+                .last_played_notes
+                .is_playing(self.learned_notes.load(i))
+            {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 impl ClapPlugin for Del2 {
@@ -1112,6 +1130,18 @@ impl AtomicByteArray {
         let new_value = (self.data.load(Ordering::SeqCst) & mask) | ((byte as u64) << (index * 8));
         self.data.store(new_value, Ordering::SeqCst);
     }
+    fn contains(&self, byte: u8) -> bool {
+        let value = self.data.load(Ordering::SeqCst);
+        let byte_u64 = byte as u64;
+
+        for i in 0..8 {
+            let shifted_byte = (value >> (i * 8)) & 0xFF;
+            if shifted_byte == byte_u64 {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 struct LastPlayedNotes {
@@ -1244,7 +1274,7 @@ impl LastPlayedNotes {
     }
 
     /// Print the notes for testing purposes.
-    fn print_notes(&self) {
+    fn _print_notes(&self) {
         // Width used for formatting alignment
         const WIDTH: usize = 4;
 

@@ -1,5 +1,5 @@
 use crate::util;
-use nih_plug::prelude::{AtomicF32, Editor};
+use nih_plug::prelude::{AtomicF32, Editor, Param};
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
 use nih_plug_vizia::widgets::*;
@@ -109,6 +109,16 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             Label::new(cx, "release").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
                                 .class("widget");
+                            Label::new(
+                                cx,
+                                Data::params.map(|params| {
+                                    params.global.release_ms.normalized_value_to_string(
+                                        params.global.release_ms.modulated_normalized_value(),
+                                        true,
+                                    )
+                                }),
+                            )
+                            .class("slider-label");
                         })
                         .class("row");
                     }) // TODO: make into a class
@@ -579,7 +589,6 @@ impl ActionTrigger {
     }
 
     pub fn is_playing(&self) -> bool {
-        // self.last_played_notes.print_notes();
         self.last_played_notes
             .is_playing(self.learned_notes.load(self.own_index))
     }
@@ -629,7 +638,7 @@ impl View for ActionTrigger {
         Some("action-trigger")
     }
 
-    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
         event.map(|window_event, meta| match window_event {
             // We don't need special double and triple click handling
             WindowEvent::MouseDown(MouseButton::Left)
