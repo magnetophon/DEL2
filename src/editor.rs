@@ -13,7 +13,7 @@ use nih_plug_vizia::{
 
 use crate::{
     util, AtomicBoolArray, AtomicByteArray, Del2Params, DelayData, DelayDataOutput,
-    LastPlayedNotes, LEARNING, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, RESET_PATTERN,
+    LastPlayedNotes, LEARNING, LOCK_PATTERN, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, RESET_PATTERN,
 };
 
 #[derive(Lens, Clone)]
@@ -127,6 +127,42 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                 // TODO: rename
                 .class("attack-release");
 
+                HStack::new(cx, |cx| {
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "reset").class("action-name");
+                            ActionTrigger::new(
+                                cx,
+                                Data::is_learning,
+                                Data::learning_index,
+                                Data::learned_notes,
+                                Data::last_played_notes,
+                                Data::enabled_actions,
+                                RESET_PATTERN,
+                            );
+                        })
+                        .class("row");
+                    })
+                    .class("column");
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "lock").class("action-name");
+                            ActionTrigger::new(
+                                cx,
+                                Data::is_learning,
+                                Data::learning_index,
+                                Data::learned_notes,
+                                Data::last_played_notes,
+                                Data::enabled_actions,
+                                LOCK_PATTERN,
+                            );
+                        })
+                        .class("row");
+                    }) // TODO: make into a class
+                    .class("column");
+                })
+                // TODO: rename
+                .class("attack-release");
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {

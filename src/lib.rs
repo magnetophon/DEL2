@@ -15,6 +15,9 @@
 //       the counter starts when the note for this trigger is pressed
 //     - stop listening for taps (so it can be used in a daw on an instrument track)
 //
+// - make mutes sample-accurate
+// - smooth all dsp params (at the end of the interpolation?)
+//
 // - always use a big buffer size,
 //   compensate the latency by adjusting the read index
 //   make sure to take the actual buffer size into account
@@ -55,6 +58,7 @@ const LEARNING: u8 = 129;
 const MUTE_IN: usize = 0;
 const MUTE_OUT: usize = 1;
 const RESET_PATTERN: usize = 2;
+const LOCK_PATTERN: usize = 3;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -63,6 +67,8 @@ struct Del2 {
 
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
+    // fake mute the input mute by delayning the output mut
+    mute_in_delay_buffer: BMRingBuf<bool>,
     // delay read buffers
     // TODO: which vecs should be arrays?
     temp_l: Vec<f32>,
@@ -413,6 +419,7 @@ impl Default for Del2 {
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
+            mute_in_delay_buffer: BMRingBuf::<bool>::from_len(TOTAL_DELAY_SAMPLES),
             temp_l: vec![0.0; MAX_BLOCK_LEN],
             temp_r: vec![0.0; MAX_BLOCK_LEN],
 
@@ -582,7 +589,7 @@ impl Plugin for Del2 {
         self.update_peak_meter(buffer, &self.input_meter);
         self.process_audio_blocks(buffer);
         self.update_peak_meter(buffer, &self.output_meter);
-        ProcessStatus::Normal
+        ProcessStatus::KeepAlive
     }
 }
 
@@ -621,7 +628,8 @@ impl Del2 {
                         CountingState::TimeOut => {
                             if is_delay_note && !is_learning {
                                 // If in TimeOut state, reset and start new counting phase
-                                self.mute_out(true);
+                                self.mute_all_outs(true);
+                                self.enabled_actions.store(MUTE_IN, false);
                                 self.enabled_actions.store(MUTE_OUT, false);
                                 self.delay_data.current_tap = 0;
                                 self.timing_last_event = timing;
@@ -699,12 +707,19 @@ impl Del2 {
                         self.should_update_filter.store(true, Ordering::Release);
                     }
                     // Handle ActionTrigger events
+                    if self.is_playing_action(MUTE_IN) {
+                        if self.enabled_actions.load(MUTE_IN) {
+                            self.enabled_actions.store(MUTE_IN, false);
+                        } else {
+                            self.enabled_actions.store(MUTE_IN, true);
+                        }
+                    }
                     if self.is_playing_action(MUTE_OUT) {
                         if self.enabled_actions.load(MUTE_OUT) {
-                            self.mute_out(false);
+                            self.mute_all_outs(false);
                             self.enabled_actions.store(MUTE_OUT, false);
                         } else {
-                            self.mute_out(true);
+                            self.mute_all_outs(true);
                             self.enabled_actions.store(MUTE_OUT, true);
                         }
                     }
@@ -719,7 +734,8 @@ impl Del2 {
             }
         }
     }
-    fn mute_out(&mut self, mute: bool) {
+
+    fn mute_all_outs(&mut self, mute: bool) {
         let time_value = if mute {
             self.params.global.release_ms.value()
         } else {
@@ -830,9 +846,13 @@ impl Del2 {
 
             let out_l = block_channels.next().expect("Left output channel missing");
             let out_r = block_channels.next().expect("Right output channel missing");
-
-            self.delay_buffer[0].write_latest(out_l, self.delay_write_index as isize);
-            self.delay_buffer[1].write_latest(out_r, self.delay_write_index as isize);
+            let write_index = self.delay_write_index as isize;
+            self.delay_buffer[0].write_latest(out_l, write_index);
+            self.delay_buffer[1].write_latest(out_r, write_index);
+            self.mute_in_delay_buffer.write_latest(
+                &vec![self.enabled_actions.load(MUTE_IN); block_len],
+                write_index,
+            );
             // TODO: no dry signal yet
             out_l.fill(0.0);
             out_r.fill(0.0);
@@ -863,6 +883,18 @@ impl Del2 {
     }
 
     fn process_temp_with_envelope(&mut self, block_len: usize, tap: usize) {
+        // Use an inline buffer to read into and directly use its first value
+        self.mute_out(tap, {
+            let mut buffer = vec![false; 1]; // This vector acts as a temporary for reading
+            self.mute_in_delay_buffer.read_into(
+                &mut buffer,
+                self.delay_write_index as isize
+                    - (self.delay_data.delay_times[tap] as isize - 1).max(0),
+            );
+            buffer[0] // Return the single bool value after reading
+                | self.enabled_actions.load(MUTE_OUT)
+        });
+
         // Initialize an envelope block for the current processing segment
         self.amp_envelopes[tap].next_block(&mut self.envelope_block[..block_len], block_len);
 
@@ -872,6 +904,19 @@ impl Del2 {
             self.temp_l[i] *= self.envelope_block[i];
             self.temp_r[i] *= self.envelope_block[i];
         }
+    }
+
+    fn mute_out(&mut self, tap: usize, mute: bool) {
+        let time_value = if mute {
+            self.params.global.release_ms.value()
+        } else {
+            self.params.global.attack_ms.value()
+        };
+        let target_value = if mute { 0.0 } else { 1.0 };
+
+        self.releasings[tap] = mute;
+        self.amp_envelopes[tap].style = SmoothingStyle::Exponential(time_value);
+        self.amp_envelopes[tap].set_target(self.sample_rate, target_value);
     }
 
     fn process_audio(
