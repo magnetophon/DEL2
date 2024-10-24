@@ -48,8 +48,8 @@ const LEARNING: u8 = 129;
 // should be 0..7 because of AtomicByteArray size
 const MUTE_IN: usize = 0;
 const MUTE_OUT: usize = 1;
-const RESET_PATTERN: usize = 2;
-const LOCK_PATTERN: usize = 3;
+const RESET_TAPS: usize = 2;
+const LOCK_TAPS: usize = 3;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -166,8 +166,8 @@ impl GlobalParams {
                     factor: FloatRange::skew_factor(-2.0),
                 },
             )
-            .with_step_size(0.1)
-            .with_unit(" ms"),
+            .with_value_to_string(Del2::v2s_f32_ms_then_s(1))
+            .with_string_to_value(Del2::s2v_f32_ms_then_s()),
         }
     }
 }
@@ -616,25 +616,25 @@ impl Del2 {
 
                     self.last_played_notes.note_on(note);
 
-                    if self.is_playing_action(LOCK_PATTERN) {
-                        self.enabled_actions.toggle(LOCK_PATTERN);
+                    if self.is_playing_action(LOCK_TAPS) {
+                        self.enabled_actions.toggle(LOCK_TAPS);
                         self.last_played_notes
-                            .note_off(self.learned_notes.load(LOCK_PATTERN));
+                            .note_off(self.learned_notes.load(LOCK_TAPS));
                     }
 
                     let mut should_record_tap = is_delay_note
                         && is_tap_slot_available
-                        && !self.enabled_actions.load(LOCK_PATTERN)
+                        && !self.enabled_actions.load(LOCK_TAPS)
                         && !is_learning;
 
                     match self.counting_state {
                         CountingState::TimeOut => {
                             if is_delay_note
                                 && !is_learning
-                                && !self.enabled_actions.load(LOCK_PATTERN)
+                                && !self.enabled_actions.load(LOCK_TAPS)
                             {
                                 // If in TimeOut state, reset and start new counting phase
-                                self.reset_pattern(timing);
+                                self.reset_taps(timing);
                             }
                         }
                         CountingState::CountingInBuffer => {
@@ -725,8 +725,8 @@ impl Del2 {
                             self.enabled_actions.store(MUTE_OUT, true);
                         }
                     }
-                    if self.is_playing_action(RESET_PATTERN) {
-                        self.reset_pattern(timing);
+                    if self.is_playing_action(RESET_TAPS) {
+                        self.reset_taps(timing);
                     }
                 }
                 // Handling NoteOff events
@@ -740,7 +740,7 @@ impl Del2 {
         }
     }
 
-    fn reset_pattern(&mut self, timing: u32) {
+    fn reset_taps(&mut self, timing: u32) {
         self.mute_all_outs(true);
         self.enabled_actions.store(MUTE_IN, false);
         self.enabled_actions.store(MUTE_OUT, false);
@@ -1075,20 +1075,32 @@ impl Del2 {
         }
     }
 
-    pub fn is_playing_action(&self, index: usize) -> bool {
+    fn is_playing_action(&self, index: usize) -> bool {
         self.last_played_notes
             .is_playing(self.learned_notes.load(index))
     }
-    pub fn _no_learned_note_are_playing(&self) -> bool {
-        for i in 0..MAX_LEARNED_NOTES {
-            if self
-                .last_played_notes
-                .is_playing(self.learned_notes.load(i))
-            {
-                return false;
+
+    fn v2s_f32_ms_then_s(digits: usize) -> Arc<dyn Fn(f32) -> String + Send + Sync> {
+        Arc::new(move |value| {
+            if value < 1000.0 {
+                format!("{value:.digits$} ms")
+            } else {
+                format!("{:.digits$} s", value / 1000.0, digits = digits.max(1))
             }
-        }
-        true
+        })
+    }
+
+    fn s2v_f32_ms_then_s() -> Arc<dyn Fn(&str) -> Option<f32> + Send + Sync> {
+        Arc::new(move |string| {
+            let string = string.trim().to_lowercase();
+            if let Some(ms_value_str) = string.strip_suffix("ms").or(string.strip_suffix(" ms")) {
+                return ms_value_str.trim().parse::<f32>().ok();
+            }
+            if let Some(s_value_str) = string.strip_suffix("s").or(string.strip_suffix(" s")) {
+                return s_value_str.trim().parse::<f32>().ok().map(|s| s * 1000.0);
+            }
+            string.parse::<f32>().ok()
+        })
     }
 }
 

@@ -13,7 +13,7 @@ use nih_plug_vizia::{
 
 use crate::{
     util, AtomicBoolArray, AtomicByteArray, Del2Params, DelayData, DelayDataOutput,
-    LastPlayedNotes, LEARNING, LOCK_PATTERN, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, RESET_PATTERN,
+    LastPlayedNotes, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, RESET_TAPS,
 };
 
 #[derive(Lens, Clone)]
@@ -118,7 +118,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                 })
                 // TODO: rename
                 .class("attack-release");
-                Label::new(cx, "action triggers").class("dsp-title");
+                Label::new(cx, "triggers").class("dsp-title");
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
@@ -146,7 +146,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 Data::learned_notes,
                                 Data::last_played_notes,
                                 Data::enabled_actions,
-                                RESET_PATTERN,
+                                RESET_TAPS,
                             );
                         })
                         .class("row");
@@ -183,7 +183,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 Data::learned_notes,
                                 Data::last_played_notes,
                                 Data::enabled_actions,
-                                LOCK_PATTERN,
+                                LOCK_TAPS,
                             );
                         })
                         .class("row");
@@ -199,7 +199,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     // make_column(cx, "velocity tracking", |cx| {
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
-                            Label::new(cx, "vel->cut").class("slider-label");
+                            Label::new(cx, "vel>cut").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| {
                                 &params.taps.velocity_to_cutoff_amount
                             })
@@ -211,7 +211,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     // make_column(cx, "note tracking", |cx| {
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
-                            Label::new(cx, "note->cut").class("slider-label");
+                            Label::new(cx, "note>cut").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| {
                                 &params.taps.note_to_cutoff_amount
                             })
@@ -296,7 +296,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                         );
                     });
                 })
-                .class("meters_and_name");
+                .class("peak-meter-group");
                 ResizeHandle::new(cx);
             });
         });
@@ -329,11 +329,11 @@ impl View for DelayGraph {
         let outline_color: vg::Color = draw_context.outline_color().into();
         let selection_color: vg::Color = draw_context.selection_color().into();
         let border_width = draw_context.border_width();
-        let path_line_width = draw_context.outline_width();
+        let outline_width = draw_context.outline_width();
 
         // Compute the time scaling factor
         let time_scaling_factor =
-            self.compute_time_scaling_factor(&delay_data, bounds.w, border_width, path_line_width);
+            self.compute_time_scaling_factor(&delay_data, bounds.w, border_width, outline_width);
 
         // Draw components
         self.draw_background(canvas, bounds, background_color, border_width);
@@ -342,7 +342,7 @@ impl View for DelayGraph {
             &delay_data,
             bounds,
             border_color,
-            1.0,
+            border_width,
             time_scaling_factor,
         );
         self.draw_time_line(
@@ -350,7 +350,7 @@ impl View for DelayGraph {
             &delay_data,
             bounds,
             selection_color,
-            path_line_width,
+            outline_width,
             time_scaling_factor,
             border_width,
         );
@@ -359,7 +359,7 @@ impl View for DelayGraph {
             &delay_data,
             bounds,
             outline_color,
-            path_line_width,
+            outline_width,
             time_scaling_factor,
             border_width,
         );
@@ -368,7 +368,7 @@ impl View for DelayGraph {
             &delay_data,
             bounds,
             selection_color,
-            path_line_width,
+            outline_width,
             time_scaling_factor,
             border_width,
             true,
@@ -395,7 +395,7 @@ impl DelayGraph {
         delay_data: &DelayData,
         rect_width: f32,
         border_width: f32,
-        path_line_width: f32,
+        outline_width: f32,
     ) -> f32 {
         let max_delay_time = if delay_data.current_tap > 0 {
             delay_data.delay_times[delay_data.current_tap - 1]
@@ -403,7 +403,7 @@ impl DelayGraph {
             0
         };
         ((max_delay_time as f32 + delay_data.max_tap_samples as f32)
-            / (rect_width - border_width - path_line_width * 0.5))
+            / (rect_width - border_width - outline_width * 0.5))
             .recip()
     }
 
@@ -431,10 +431,7 @@ impl DelayGraph {
             path.line_to(bounds.x + x_offset, end_y);
         }
 
-        canvas.stroke_path(
-            &path,
-            &vg::Paint::color(border_color).with_line_width(border_width),
-        );
+        canvas.stroke_path(&path, &vg::Paint::color(border_color).with_line_width(0.7));
     }
 
     fn draw_background(
@@ -536,20 +533,23 @@ impl DelayGraph {
         };
 
         let diamond_size = line_width * 2.0; // Width and height of a diamond
-        let available_height = bounds.h - border_width - 2.0 * diamond_size;
+
+        // Calculate available height with margins as 3 times the outline width
+        let margin = 3.0 * line_width;
+        let available_height = bounds.h - 2.0 * (margin + diamond_size + border_width);
 
         for i in 0..delay_data.current_tap {
             let x_offset = delay_data.delay_times[i] as f32 * scaling_factor + border_width * 0.5;
 
-            // Adjust note height to scale within bounds
+            // Adjust note height to scale within bounds considering margins
             let normalized_note = if max_note_value != min_note_value {
                 (delay_data.notes[i] as f32 - min_note_value) / (max_note_value - min_note_value)
             } else {
                 delay_data.notes[i] as f32 / 127.0
             };
 
-            // Use scaling to ensure the diamond fits within the available height
-            let note_height = diamond_size + (1.0 - normalized_note) * available_height;
+            // Scale the normalized note to fit within available height
+            let note_height = margin + diamond_size + (1.0 - normalized_note) * available_height;
 
             let diamond_center_x = bounds.x + x_offset;
             let diamond_center_y = bounds.y + note_height;
@@ -705,12 +705,18 @@ impl ActionTrigger {
         border_color: vg::Color,
         border_width: f32,
     ) {
+        // Adjust bounds for borders
+        let x = bounds.x + border_width * 0.5;
+        let y = bounds.y + border_width * 0.5;
+        let w = bounds.w - border_width;
+        let h = bounds.h - border_width;
+
         // Drawing the background rectangle
         let mut path = vg::Path::new();
-        path.rect(bounds.x, bounds.y, bounds.w, bounds.h);
+        path.rect(x, y, w, h);
         path.close();
 
-        // Determine the paint color based on the learning state
+        // Determine the paint color based on the state
         let paint = if self.is_learning() {
             vg::Paint::color(border_color)
         } else if self.is_playing() {
@@ -724,7 +730,7 @@ impl ActionTrigger {
 
         // Drawing the border around the rectangle
         let mut path = vg::Path::new();
-        path.rect(bounds.x, bounds.y, bounds.w, bounds.h);
+        path.rect(x, y, w, h);
         path.close();
 
         canvas.stroke_path(
@@ -763,7 +769,7 @@ impl View for ActionTrigger {
         let outline_color: vg::Color = draw_context.outline_color().into();
         let selection_color: vg::Color = draw_context.selection_color().into();
         let border_width = draw_context.border_width();
-        // let path_line_width = draw_context.outline_width();
+        // let outline_width = draw_context.outline_width();
 
         self.draw_background(
             canvas,

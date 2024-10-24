@@ -58,14 +58,8 @@ param-slider .value-entry {
 .plugin-name {
     color: #fabdf0;
     font-size: 42;
-    top: 12px;
+    top: 9px;
     right: 18px;
-}
-
-.meters_and_name {
-    top: 14px;
-    right: 9px;
-    height: 80px;
 }
 
 .global-title {
@@ -111,7 +105,7 @@ param-slider .value-entry {
 delay-graph {
     top: 9px;
     right: 9px;
-    border-width: 2px;
+    border-width: 1px;
     outline-width: 5px;
     border-color: #4e4e4e;
     outline-color: #5879af;
@@ -133,7 +127,7 @@ action-trigger {
 .action-name {
     right: 9px;
     top: 1s;
-    bottom: 3px;
+    bottom: 4px;
 }
 generic-ui {
     child-left: 0px;
@@ -178,12 +172,19 @@ generic-ui .label {
     bottom: 1s;
 }
 
+.peak-meter-group {
+    height: 73px;
+    right: 9px;
+    top: 9px;
+    bottom: 0px;
+}
+
 peak-meter {
-    height: 30px;
     width: 584px;
+    height: 18px;
     color: #e0ce91;
     left: 0px;
-    bottom: 6px;
+    bottom: 0px;
 }
 
 peak-meter .bar {
@@ -207,8 +208,8 @@ peak-meter .ticks__label {
 }
 .meter-label {
     child-left: 1s;
-    right: 3px;
-    bottom: 24px;
+    right: 6px;
+    bottom: 23px;
     font-size: 15;
     width: 40px;
 }
