@@ -151,22 +151,22 @@ impl GlobalParams {
                 10.0,
                 FloatRange::Skewed {
                     min: 0.0,
-                    max: 1000.0,
-                    factor: FloatRange::skew_factor(-1.0),
+                    max: 5_000.0,
+                    factor: FloatRange::skew_factor(-1.2),
                 },
             )
-            .with_step_size(0.1)
-            .with_unit(" ms"),
+            .with_value_to_string(Del2::v2s_f32_ms_then_s(3))
+            .with_string_to_value(Del2::s2v_f32_ms_then_s()),
             release_ms: FloatParam::new(
                 "Release",
-                10.0,
+                20.0,
                 FloatRange::Skewed {
-                    min: 0.0,
-                    max: 10_000.0,
-                    factor: FloatRange::skew_factor(-2.0),
+                    min: 5.0,
+                    max: 20_000.0,
+                    factor: FloatRange::skew_factor(-1.5),
                 },
             )
-            .with_value_to_string(Del2::v2s_f32_ms_then_s(1))
+            .with_value_to_string(Del2::v2s_f32_ms_then_s(3))
             .with_string_to_value(Del2::s2v_f32_ms_then_s()),
         }
     }
@@ -337,12 +337,12 @@ impl FilterGuiParams {
                 format!("{name_prefix} cutoff"),
                 default_cutoff, // Use the passed default value
                 FloatRange::Skewed {
-                    min: 5.0,
+                    min: 10.0,
                     max: 20_000.0,
-                    factor: FloatRange::skew_factor(-2.5),
+                    factor: FloatRange::skew_factor(-1.6),
                 },
             )
-            .with_value_to_string(formatters::v2s_f32_hz_then_khz(2))
+            .with_value_to_string(formatters::v2s_f32_hz_then_khz(1))
             .with_string_to_value(formatters::s2v_f32_hz_then_khz())
             .with_callback(Arc::new({
                 let should_update_filter = should_update_filter.clone();
@@ -1080,12 +1080,20 @@ impl Del2 {
             .is_playing(self.learned_notes.load(index))
     }
 
-    fn v2s_f32_ms_then_s(digits: usize) -> Arc<dyn Fn(f32) -> String + Send + Sync> {
+    fn v2s_f32_ms_then_s(total_digits: usize) -> Arc<dyn Fn(f32) -> String + Send + Sync> {
         Arc::new(move |value| {
             if value < 1000.0 {
-                format!("{value:.digits$} ms")
+                // Calculate the number of digits after the decimal to maintain a total of three digits
+                let digits_after_decimal = (total_digits - value.trunc().to_string().len())
+                    .max(0)
+                    .min(total_digits - 1); // Ensure it's between 0 and 2
+                format!("{:.1$} ms", value, digits_after_decimal)
             } else {
-                format!("{:.digits$} s", value / 1000.0, digits = digits.max(1))
+                let seconds = value / 1000.0;
+                // Same logic for seconds
+                let digits_after_decimal =
+                    (total_digits - seconds.trunc().to_string().len()).max(0);
+                format!("{:.1$} s", seconds, digits_after_decimal)
             }
         })
     }
