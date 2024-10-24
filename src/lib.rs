@@ -668,9 +668,6 @@ impl Del2 {
                         self.learned_notes
                             .store(self.learning_index.load(Ordering::SeqCst), note);
                         self.last_played_notes.note_off(note);
-                        self.counting_state = CountingState::TimeOut;
-                        self.timing_last_event = 0;
-                        self.samples_since_last_event = 0;
                     }
 
                     // Check for timeout condition and reset if necessary
@@ -679,7 +676,7 @@ impl Del2 {
                         self.timing_last_event = 0;
                         self.samples_since_last_event = 0;
                     } else if should_record_tap
-                        && !matches!(self.counting_state, CountingState::TimeOut)
+                        && self.counting_state != CountingState::TimeOut
                         && self.samples_since_last_event > 0
                         && velocity > 0.0
                     {
