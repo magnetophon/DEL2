@@ -277,7 +277,7 @@ impl TapsParams {
                 0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
-            .with_unit("%")
+            .with_unit(" %")
             .with_value_to_string(formatters::v2s_f32_percentage(0))
             .with_string_to_value(formatters::s2v_f32_percentage()),
             velocity_to_cutoff_amount: FloatParam::new(
@@ -285,7 +285,7 @@ impl TapsParams {
                 1.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
-            .with_unit("%")
+            .with_unit(" %")
             .with_value_to_string(formatters::v2s_f32_percentage(0))
             .with_string_to_value(formatters::s2v_f32_percentage()),
             velocity_low: Arc::new(FilterGuiParams::new(
@@ -299,7 +299,7 @@ impl TapsParams {
             velocity_high: Arc::new(FilterGuiParams::new(
                 VELOCITY_HIGH_NAME_PREFIX,
                 should_update_filter.clone(),
-                6000.0,                // Default cutoff for velocity_high
+                6_000.0,               // Default cutoff for velocity_high
                 0.4,                   // Default res for velocity_high
                 util::db_to_gain(6.0), // Default drive for velocity_high
                 MyLadderMode::lp6(),   // Default mode for velocity_high
@@ -667,6 +667,7 @@ impl Del2 {
                         self.is_learning.store(false, Ordering::SeqCst);
                         self.learned_notes
                             .store(self.learning_index.load(Ordering::SeqCst), note);
+                        self.last_played_notes.note_off(note);
                         self.counting_state = CountingState::TimeOut;
                         self.timing_last_event = 0;
                         self.samples_since_last_event = 0;
@@ -893,6 +894,15 @@ impl Del2 {
 
         self.delay_buffer[0].read_into(&mut self.temp_l, read_index);
         self.delay_buffer[1].read_into(&mut self.temp_r, read_index);
+    }
+
+    fn pan_to_haas_samples(pan: f32, sample_rate: f32) -> (i32, i32) {
+        let delay_samples = (pan.abs() * (5.0 / 1000.0) * sample_rate) as i32;
+        if pan < 0.0 {
+            (0, delay_samples) // Pan left: delay right
+        } else {
+            (delay_samples, 0) // Pan right: delay left
+        }
     }
 
     fn process_tap(&mut self, block_len: usize, tap: usize, out_l: &mut [f32], out_r: &mut [f32]) {
