@@ -73,6 +73,7 @@ struct Del2 {
     // TODO: which vecs should be arrays?
     temp_l: Vec<f32>,
     temp_r: Vec<f32>,
+    mute_in_delay_temp: Vec<bool>,
 
     delay_data: DelayData,
     delay_data_input: DelayDataInput,
@@ -422,6 +423,7 @@ impl Default for Del2 {
             mute_in_delay_buffer: BMRingBuf::<bool>::from_len(TOTAL_DELAY_SAMPLES),
             temp_l: vec![0.0; MAX_BLOCK_LEN],
             temp_r: vec![0.0; MAX_BLOCK_LEN],
+            mute_in_delay_temp: vec![false; MAX_BLOCK_LEN],
 
             delay_data: initial_delay_data,
             delay_data_input,
@@ -620,20 +622,28 @@ impl Del2 {
                     let is_tap_slot_available = self.delay_data.current_tap < MAX_NR_TAPS;
                     let is_delay_note = !self.learned_notes.contains(note);
                     let is_learning = self.is_learning.load(Ordering::SeqCst);
-                    let mut should_record_tap =
-                        is_tap_slot_available && is_delay_note && !is_learning;
 
                     self.last_played_notes.note_on(note);
+
+                    if self.is_playing_action(LOCK_PATTERN) {
+                        self.enabled_actions.toggle(LOCK_PATTERN);
+                        self.last_played_notes
+                            .note_off(self.learned_notes.load(LOCK_PATTERN));
+                    }
+
+                    let mut should_record_tap = is_delay_note
+                        && is_tap_slot_available
+                        && !self.enabled_actions.load(LOCK_PATTERN)
+                        && !is_learning;
+
                     match self.counting_state {
                         CountingState::TimeOut => {
-                            if is_delay_note && !is_learning {
+                            if is_delay_note
+                                && !is_learning
+                                && !self.enabled_actions.load(LOCK_PATTERN)
+                            {
                                 // If in TimeOut state, reset and start new counting phase
-                                self.mute_all_outs(true);
-                                self.enabled_actions.store(MUTE_IN, false);
-                                self.enabled_actions.store(MUTE_OUT, false);
-                                self.delay_data.current_tap = 0;
-                                self.timing_last_event = timing;
-                                self.counting_state = CountingState::CountingInBuffer;
+                                self.reset_pattern(timing);
                             }
                         }
                         CountingState::CountingInBuffer => {
@@ -707,14 +717,15 @@ impl Del2 {
                         self.should_update_filter.store(true, Ordering::Release);
                     }
                     // Handle ActionTrigger events
+                    // lock pattern is handled at the start
                     if self.is_playing_action(MUTE_IN) {
-                        if self.enabled_actions.load(MUTE_IN) {
-                            self.enabled_actions.store(MUTE_IN, false);
-                        } else {
-                            self.enabled_actions.store(MUTE_IN, true);
-                        }
+                        self.enabled_actions.toggle(MUTE_IN);
+                        self.last_played_notes
+                            .note_off(self.learned_notes.load(MUTE_IN));
                     }
                     if self.is_playing_action(MUTE_OUT) {
+                        self.last_played_notes
+                            .note_off(self.learned_notes.load(MUTE_OUT));
                         if self.enabled_actions.load(MUTE_OUT) {
                             self.mute_all_outs(false);
                             self.enabled_actions.store(MUTE_OUT, false);
@@ -722,6 +733,9 @@ impl Del2 {
                             self.mute_all_outs(true);
                             self.enabled_actions.store(MUTE_OUT, true);
                         }
+                    }
+                    if self.is_playing_action(RESET_PATTERN) {
+                        self.reset_pattern(timing);
                     }
                 }
                 // Handling NoteOff events
@@ -733,6 +747,15 @@ impl Del2 {
                 _ => {} // Handle other types of events if necessary
             }
         }
+    }
+
+    fn reset_pattern(&mut self, timing: u32) {
+        self.mute_all_outs(true);
+        self.enabled_actions.store(MUTE_IN, false);
+        self.enabled_actions.store(MUTE_OUT, false);
+        self.delay_data.current_tap = 0;
+        self.timing_last_event = timing;
+        self.counting_state = CountingState::CountingInBuffer;
     }
 
     fn mute_all_outs(&mut self, mute: bool) {
@@ -883,17 +906,18 @@ impl Del2 {
     }
 
     fn process_temp_with_envelope(&mut self, block_len: usize, tap: usize) {
-        // Use an inline buffer to read into and directly use its first value
-        self.mute_out(tap, {
-            let mut buffer = vec![false; 1]; // This vector acts as a temporary for reading
-            self.mute_in_delay_buffer.read_into(
-                &mut buffer,
-                self.delay_write_index as isize
-                    - (self.delay_data.delay_times[tap] as isize - 1).max(0),
-            );
-            buffer[0] // Return the single bool value after reading
-                | self.enabled_actions.load(MUTE_OUT)
-        });
+        // Perform the read operation separately and clear mutable borrow
+        self.mute_in_delay_buffer.read_into(
+            &mut self.mute_in_delay_temp,
+            self.delay_write_index as isize
+                - (self.delay_data.delay_times[tap] as isize - 1).max(0),
+        );
+
+        // Extract the value synchronously without mutable borrow overlap
+        let mute_value = self.mute_in_delay_temp[0] | self.enabled_actions.load(MUTE_OUT);
+
+        // Now call mute_out without the mutable borrow on the buffer
+        self.mute_out(tap, mute_value);
 
         // Initialize an envelope block for the current processing segment
         self.amp_envelopes[tap].next_block(&mut self.envelope_block[..block_len], block_len);
@@ -1212,7 +1236,7 @@ impl AtomicBoolArray {
             .expect("Atomic update failed");
     }
     #[inline(always)]
-    fn _toggle(&self, index: usize) {
+    fn toggle(&self, index: usize) {
         assert!(index < 8, "Index out of bounds");
         let mask = 1 << index;
         self.data.fetch_xor(mask, Ordering::SeqCst);

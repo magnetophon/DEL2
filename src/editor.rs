@@ -93,6 +93,29 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
+                            Label::new(cx, "attack").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| &params.global.attack_ms)
+                                .class("widget");
+                        })
+                        .class("row");
+                    })
+                    .class("column");
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "release").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
+                                .class("widget");
+                        })
+                        .class("row");
+                    }) // TODO: make into a class
+                    .class("column");
+                })
+                // TODO: rename
+                .class("attack-release");
+                Label::new(cx, "action triggers").class("dsp-title");
+                HStack::new(cx, |cx| {
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
                             Label::new(cx, "mute in").class("action-name");
                             ActionTrigger::new(
                                 cx,
@@ -109,7 +132,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     .class("column");
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
-                            Label::new(cx, "mute out").class("action-name");
+                            Label::new(cx, "reset taps").class("action-name");
                             ActionTrigger::new(
                                 cx,
                                 Data::is_learning,
@@ -117,7 +140,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 Data::learned_notes,
                                 Data::last_played_notes,
                                 Data::enabled_actions,
-                                MUTE_OUT,
+                                RESET_PATTERN,
                             );
                         })
                         .class("row");
@@ -130,7 +153,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
-                            Label::new(cx, "reset").class("action-name");
+                            Label::new(cx, "mute out").class("action-name");
                             ActionTrigger::new(
                                 cx,
                                 Data::is_learning,
@@ -138,7 +161,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 Data::learned_notes,
                                 Data::last_played_notes,
                                 Data::enabled_actions,
-                                RESET_PATTERN,
+                                MUTE_OUT,
                             );
                         })
                         .class("row");
@@ -146,7 +169,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     .class("column");
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
-                            Label::new(cx, "lock").class("action-name");
+                            Label::new(cx, "lock taps").class("action-name");
                             ActionTrigger::new(
                                 cx,
                                 Data::is_learning,
@@ -156,28 +179,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 Data::enabled_actions,
                                 LOCK_PATTERN,
                             );
-                        })
-                        .class("row");
-                    }) // TODO: make into a class
-                    .class("column");
-                })
-                // TODO: rename
-                .class("attack-release");
-                HStack::new(cx, |cx| {
-                    HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "attack").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| &params.global.attack_ms)
-                                .class("widget");
-                        })
-                        .class("row");
-                    })
-                    .class("column");
-                    HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "release").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
-                                .class("widget");
                         })
                         .class("row");
                     }) // TODO: make into a class
