@@ -862,6 +862,8 @@ impl Del2 {
     fn process_audio_blocks(&mut self, buffer: &mut Buffer) {
         for (_, block) in buffer.iter_blocks(buffer.samples()) {
             let block_len = block.samples();
+            let mut mute_buffer = [false; MAX_BLOCK_LEN];
+            assert!(block_len <= MAX_BLOCK_LEN);
             // Either we resize here, or in the initialization fn
             // If we don't, we are slower.
             // self.resize_temp_buffers(block_len);
@@ -872,10 +874,12 @@ impl Del2 {
             let write_index = self.delay_write_index as isize;
             self.delay_buffer[0].write_latest(out_l, write_index);
             self.delay_buffer[1].write_latest(out_r, write_index);
-            self.mute_in_delay_buffer.write_latest(
-                &vec![self.enabled_actions.load(MUTE_IN); block_len],
-                write_index,
-            );
+
+            let mute_value = self.enabled_actions.load(MUTE_IN);
+            mute_buffer[..block_len].fill(mute_value);
+
+            self.mute_in_delay_buffer
+                .write_latest(&mute_buffer[..block_len], write_index);
             // TODO: no dry signal yet
             out_l.fill(0.0);
             out_r.fill(0.0);

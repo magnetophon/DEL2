@@ -33,7 +33,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1200, 800))
+    ViziaState::new(|| (1168, 584))
 }
 
 pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -51,7 +51,8 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
             VStack::new(cx, |cx| {
                 Label::new(cx, "global").class("global-title");
                 HStack::new(cx, |cx| {
-                    make_column(cx, "gain", |cx| {
+                    HStack::new(cx, |cx| {
+                        // make_column(cx, "gain", |cx| {
                         let gain_params = Data::params.map(|p| p.global.gain_params.clone());
                         GenericUi::new_custom(cx, gain_params, |cx, param_ptr| {
                             HStack::new(cx, |cx| {
@@ -60,9 +61,11 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             })
                             .class("row");
                         });
-                    });
+                    })
+                    .class("column");
 
-                    make_column(cx, "timing", |cx| {
+                    // make_column(cx, "timing", |cx| {
+                    HStack::new(cx, |cx| {
                         let timing_params = Data::params.map(|p| p.global.timing_params.clone());
                         GenericUi::new_custom(cx, timing_params, |cx, param_ptr| {
                             let param_name = unsafe { param_ptr.name() };
@@ -87,8 +90,11 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 .class("row");
                             }
                         });
-                    });
-                });
+                    })
+                    .class("column");
+                    // });
+                })
+                .class("param-group");
 
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
@@ -148,7 +154,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     .class("column");
                 })
                 // TODO: rename
-                .class("attack-release");
+                .class("action-trigger-group");
 
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
@@ -185,32 +191,38 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     .class("column");
                 })
                 // TODO: rename
-                .class("attack-release");
+                .class("action-trigger-group");
 
                 Label::new(cx, "filters").class("dsp-title");
 
                 HStack::new(cx, |cx| {
-                    make_column(cx, "velocity tracking", |cx| {
+                    // make_column(cx, "velocity tracking", |cx| {
+                    HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
-                            Label::new(cx, "cutoff").class("slider-label");
+                            Label::new(cx, "vel->cut").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| {
                                 &params.taps.velocity_to_cutoff_amount
                             })
-                            .class("offset-widget");
+                            .class("widget");
                         })
                         .class("row");
-                    });
-                    make_column(cx, "note tracking", |cx| {
+                    })
+                    .class("column");
+                    // make_column(cx, "note tracking", |cx| {
+                    HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
-                            Label::new(cx, "cutoff").class("slider-label");
+                            Label::new(cx, "note->cut").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| {
                                 &params.taps.note_to_cutoff_amount
                             })
-                            .class("offset-widget");
+                            .class("widget");
                         })
                         .class("row");
-                    });
-                });
+                    })
+                    .class("column");
+                })
+                .class("param-group");
+
                 // })
                 // .class("attack-release");
                 // .class("cutoff-tracking");
@@ -264,6 +276,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                 VStack::new(cx, |cx| {
                     //meters
                     HStack::new(cx, |cx| {
+                        Label::new(cx, "in").class("meter-label");
                         PeakMeter::new(
                             cx,
                             Data::input_meter.map(|input_meter| {
@@ -271,9 +284,9 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             }),
                             Some(Duration::from_millis(600)),
                         );
-                        Label::new(cx, "input").class("meter-label");
                     });
                     HStack::new(cx, |cx| {
+                        Label::new(cx, "out").class("meter-label");
                         PeakMeter::new(
                             cx,
                             Data::output_meter.map(|output_meter| {
@@ -281,7 +294,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             }),
                             Some(Duration::from_millis(600)),
                         );
-                        Label::new(cx, "output").class("meter-label");
                     });
                 })
                 .class("meters_and_name");

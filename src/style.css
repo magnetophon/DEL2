@@ -82,8 +82,9 @@ param-slider .value-entry {
     /* // This should align nicely with the right edge of the slider */
     left: 269px;
     right: 1s;
-    top: 9px;
-    bottom: 0px;
+    top: 18px;
+    bottom: 9px;
+    /* background-color: #4e4e4e; */
 }
 
 .column-title {
@@ -93,8 +94,11 @@ param-slider .value-entry {
 }
 
 .attack-release {
-    top: 1s;
-    bottom: 0px;
+    height: 30px;
+}
+.action-trigger-group {
+    bottom: 6px;
+    height: 30px;
 }
 .slider-label {
     left: 1s;
@@ -142,9 +146,9 @@ generic-ui {
 /* layout-type: row; */
 /* } */
 .row {
-    col-between: 6px;
     height: 30px;
     layout-type: row;
+    bottom: 6px;
 }
 
 /* generic-ui .column { */
@@ -156,8 +160,10 @@ generic-ui {
 .column {
     width: 269px;
     height: auto;
-    row-between: 6px;
     layout-type: column;
+}
+.param-group {
+    height: auto;
 }
 label {
     left: 1s;
@@ -174,7 +180,7 @@ generic-ui .label {
 
 peak-meter {
     height: 30px;
-    width: 589px;
+    width: 584px;
     color: #e0ce91;
     left: 0px;
     bottom: 6px;
@@ -193,6 +199,7 @@ peak-meter .ticks__tick {
     top: 0px;
     width: 1px;
     height: 30%;
+    color: #4e4e4e;
 }
 peak-meter .ticks__label {
     top: 4px; /* In pixels in an attempt to get this to better align to the grid */
@@ -200,8 +207,7 @@ peak-meter .ticks__label {
 }
 .meter-label {
     child-left: 1s;
-    right: 0px;
-    /* top: 0px; */
+    right: 3px;
     bottom: 24px;
     font-size: 15;
     width: 40px;
