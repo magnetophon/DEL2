@@ -1,19 +1,10 @@
 // TODO:
 //
-// - make a midi learn struct/button
-//   the button is a custom view, that either displays the learned note, or the word "learning"
-//   it knows which via is_learning learning_index and learned_notes
-//   its color changes when that note is pressed
-//   - use it to make a few midi triggers:
-//     - mute out
-//     - mute in (fake it by recording the timing and muting the out a bit later)
-//     - mute both
-//       all mutes with choice between latch and toggle
-//     - reset pattern
+//   - for triggers:
+//      - all mutes with choice between latch and toggle
 //     - momentary mode:
 //       in this mode, the taps are only heard until the key is released
 //       the counter starts when the note for this trigger is pressed
-//     - stop listening for taps (so it can be used in a daw on an instrument track)
 //
 // - make mutes sample-accurate
 // - smooth all dsp params (at the end of the interpolation?)
