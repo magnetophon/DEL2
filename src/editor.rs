@@ -154,6 +154,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             Label::new(cx, "mute in").class("action-name");
                             ActionTrigger::new(
                                 cx,
+                                Data::params,
                                 Data::is_learning,
                                 Data::learning_index,
                                 Data::learned_notes,
@@ -170,6 +171,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             Label::new(cx, "reset taps").class("action-name");
                             ActionTrigger::new(
                                 cx,
+                                Data::params,
                                 Data::is_learning,
                                 Data::learning_index,
                                 Data::learned_notes,
@@ -190,6 +192,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             Label::new(cx, "mute out").class("action-name");
                             ActionTrigger::new(
                                 cx,
+                                Data::params,
                                 Data::is_learning,
                                 Data::learning_index,
                                 Data::learned_notes,
@@ -206,6 +209,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             Label::new(cx, "lock taps").class("action-name");
                             ActionTrigger::new(
                                 cx,
+                                Data::params,
                                 Data::is_learning,
                                 Data::learning_index,
                                 Data::learned_notes,
@@ -626,6 +630,7 @@ fn make_column(cx: &mut Context, title: &str, contents: impl FnOnce(&mut Context
 ///////////////////////////////////////////////////////////////////////////////
 
 pub struct ActionTrigger {
+    params: Arc<Del2Params>,
     is_learning: Arc<AtomicBool>,
     learning_index: Arc<AtomicUsize>,
     learned_notes: Arc<AtomicByteArray>,
@@ -637,8 +642,16 @@ pub struct ActionTrigger {
     last_learned_note: u8,
 }
 impl ActionTrigger {
-    pub fn new<IsLearningL, LearningIndexL, LearnedNotesL, LastPlayedNotesL, EnabledActionsL>(
+    pub fn new<
+        ParamsL,
+        IsLearningL,
+        LearningIndexL,
+        LearnedNotesL,
+        LastPlayedNotesL,
+        EnabledActionsL,
+    >(
         cx: &mut Context,
+        params: ParamsL,
         is_learning: IsLearningL,
         learning_index: LearningIndexL,
         learned_notes: LearnedNotesL,
@@ -647,6 +660,7 @@ impl ActionTrigger {
         own_index: usize,
     ) -> Handle<Self>
     where
+        ParamsL: Lens<Target = Arc<Del2Params>>,
         IsLearningL: Lens<Target = Arc<AtomicBool>>,
         LearningIndexL: Lens<Target = Arc<AtomicUsize>>,
         LearnedNotesL: Lens<Target = Arc<AtomicByteArray>>,
@@ -654,6 +668,7 @@ impl ActionTrigger {
         EnabledActionsL: Lens<Target = Arc<AtomicBoolArray>>,
     {
         Self {
+            params: params.get(cx),
             is_learning: is_learning.get(cx),
             learning_index: learning_index.get(cx),
             learned_notes: learned_notes.get(cx),
@@ -738,17 +753,23 @@ impl ActionTrigger {
         path.close();
 
         // Determine the paint color based on the state
-        let paint = if self.is_learning() {
-            vg::Paint::color(border_color)
-        }
-        // else if self.is_playing() {
-        //     vg::Paint::color(selection_color)
-        // }
-        else if self.is_enabled() {
-            vg::Paint::color(outline_color)
-        } else {
-            vg::Paint::color(background_color)
+
+        let paint = match (
+            self.is_learning(),
+            self.params.global.mute_is_toggle.value(),
+            self.is_enabled(),
+            self.is_playing(),
+            self.own_index == RESET_TAPS,
+        ) {
+            (true, _, _, _, _) => vg::Paint::color(border_color),
+            (_, _, _, true, true) => vg::Paint::color(outline_color),
+            (_, true, true, _, _) => vg::Paint::color(outline_color),
+            (_, true, false, _, _) => vg::Paint::color(background_color),
+            (_, _, true, _, _) => vg::Paint::color(outline_color),
+            (_, _, _, true, _) => vg::Paint::color(selection_color),
+            _ => vg::Paint::color(background_color), // Default: paint with background color
         };
+
         canvas.fill_path(&path, &paint);
 
         // Drawing the border around the rectangle
