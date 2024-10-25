@@ -561,7 +561,7 @@ impl Plugin for Del2 {
         self.update_peak_meter(buffer, &self.input_meter);
         self.process_audio_blocks(buffer);
         self.update_peak_meter(buffer, &self.output_meter);
-        ProcessStatus::KeepAlive
+        ProcessStatus::Normal
     }
 }
 
@@ -680,30 +680,49 @@ impl Del2 {
                     }
                     // Handle ActionTrigger events
                     // LOCK_TAPS is handled at the start
-                    if self.is_playing_action(MUTE_IN) {
-                        self.enabled_actions.toggle(MUTE_IN);
-                        self.last_played_notes
-                            .note_off(self.learned_notes.load(MUTE_IN));
-                    }
-                    if self.is_playing_action(MUTE_OUT) {
-                        self.last_played_notes
-                            .note_off(self.learned_notes.load(MUTE_OUT));
-                        if self.enabled_actions.load(MUTE_OUT) {
-                            self.mute_all_outs(false);
-                            self.enabled_actions.store(MUTE_OUT, false);
-                        } else {
-                            self.mute_all_outs(true);
-                            self.enabled_actions.store(MUTE_OUT, true);
+                    if !is_learning
+                    // this is the value at the start of the fn, from before we adjusted the global one
+                    {
+                        if note == self.learned_notes.load(MUTE_IN) {
+                            if self.params.global.mute_is_toggle.value() {
+                                self.enabled_actions.toggle(MUTE_IN);
+                            } else {
+                                self.enabled_actions.store(MUTE_IN, false);
+                                self.enabled_actions.store(MUTE_OUT, false);
+                                self.mute_all_outs(false);
+                            }
+                            // self.last_played_notes.note_off(note);
                         }
-                    }
-                    if self.is_playing_action(RESET_TAPS) {
-                        self.reset_taps(timing);
+                        if note == self.learned_notes.load(MUTE_OUT) {
+                            if self.params.global.mute_is_toggle.value() {
+                                self.enabled_actions.toggle(MUTE_OUT);
+                            } else {
+                                self.enabled_actions.store(MUTE_IN, false);
+                                self.enabled_actions.store(MUTE_OUT, false);
+                                self.mute_all_outs(false);
+                            }
+                            self.mute_all_outs(self.enabled_actions.load(MUTE_OUT));
+                            // self.last_played_notes.note_off(note);
+                        }
+                        if self.is_playing_action(RESET_TAPS) {
+                            self.reset_taps(timing);
+                        }
                     }
                 }
                 // Handling NoteOff events
                 NoteEvent::NoteOff {
                     timing: _, note, ..
                 } => {
+                    if note == self.learned_notes.load(MUTE_IN) {
+                        if !self.params.global.mute_is_toggle.value() {
+                            self.enabled_actions.store(MUTE_IN, true);
+                        }
+                    }
+                    if note == self.learned_notes.load(MUTE_OUT) {
+                        if !self.params.global.mute_is_toggle.value() {
+                            self.enabled_actions.store(MUTE_OUT, true);
+                        }
+                    }
                     self.last_played_notes.note_off(note);
                 }
                 _ => {} // Handle other types of events if necessary
@@ -837,7 +856,11 @@ impl Del2 {
             self.delay_buffer[0].write_latest(out_l, write_index);
             self.delay_buffer[1].write_latest(out_r, write_index);
 
-            let mute_value = self.enabled_actions.load(MUTE_IN);
+            let mute_value = if self.params.global.mute_is_toggle.value() {
+                self.enabled_actions.load(MUTE_IN)
+            } else {
+                !self.is_playing_action(MUTE_IN)
+            };
             mute_buffer[..block_len].fill(mute_value);
 
             self.mute_in_delay_buffer
@@ -881,25 +904,28 @@ impl Del2 {
     }
 
     fn process_temp_with_envelope(&mut self, block_len: usize, tap: usize) {
-        // Perform the read operation separately and clear mutable borrow
+        let mute_out_enabled = self.enabled_actions.load(MUTE_OUT);
         self.mute_in_delay_buffer.read_into(
             &mut self.mute_in_delay_temp,
             self.delay_write_index as isize
                 - (self.delay_data.delay_times[tap] as isize - 1).max(0),
         );
+        let mute_value = if self.params.global.mute_is_toggle.value() {
+            mute_out_enabled | self.mute_in_delay_temp[0]
+        } else {
+            if self.is_playing_action(MUTE_OUT) {
+                false
+            } else {
+                self.mute_in_delay_temp[0]
+            }
+        };
 
-        // Extract the value synchronously without mutable borrow overlap
-        let mute_value = self.mute_in_delay_temp[0] | self.enabled_actions.load(MUTE_OUT);
-
-        // Now call mute_out without the mutable borrow on the buffer
         self.mute_out(tap, mute_value);
 
-        // Initialize an envelope block for the current processing segment
         self.amp_envelopes[tap].next_block(&mut self.envelope_block[..block_len], block_len);
 
         // Apply the envelope to each sample in the temporary buffers
         for i in 0..block_len {
-            // Process left and right temporary buffers with the envelope value
             self.temp_l[i] *= self.envelope_block[i];
             self.temp_r[i] *= self.envelope_block[i];
         }

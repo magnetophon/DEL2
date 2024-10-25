@@ -12,6 +12,15 @@ A rhythm delay with crunch.
 - Tap a rhythm into your delay using midi
 - Each delay tap has a separate (non-linear) filter
 - The filter parameters are pair of settings, and each tap's settings is an interpolation between these two, depending on the velocity
+- There are three modes: toggle-mode, direct-mode and instrument-mode:
+  - In toggle-mode, the learned note for mute in and mute out toggles the respective mute.
+  - In direct-mode, the learned note for mute in and mute out switches on the respective mute when you press it, and off when you let it go.
+    The note also turns the other mute off when you press it.
+  - In instrument-mode, the first note you play will be silent, and start recording a new pattern, as always.
+    The next eight notes will be like playing an sampler, that plays the sample you started recording at the beginning of the pattern.
+    When you let go of a note, the tap will start the release phase.
+    The state of the mute switches will determine if a note turns on and off the input, the output, or both.
+    When you switch to instrument-mode, it turns on "mute in" and turns off "mute out", so by default the notes you play
 
 ## Planned features
 
