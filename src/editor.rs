@@ -753,7 +753,6 @@ impl ActionTrigger {
         path.close();
 
         // Determine the paint color based on the state
-
         let paint = match (
             self.is_learning(),
             self.params.global.mute_is_toggle.value(),

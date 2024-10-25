@@ -743,6 +743,7 @@ impl Del2 {
             self.enabled_actions.store(MUTE_IN, false);
             self.enabled_actions.store(MUTE_OUT, false);
         }
+        self.enabled_actions.store(LOCK_TAPS, false);
         self.delay_data.current_tap = 0;
         self.timing_last_event = timing;
         self.counting_state = CountingState::CountingInBuffer;
