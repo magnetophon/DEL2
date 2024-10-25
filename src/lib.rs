@@ -755,17 +755,8 @@ impl Del2 {
     }
 
     fn mute_all_outs(&mut self, mute: bool) {
-        let time_value = if mute {
-            self.params.global.release_ms.value()
-        } else {
-            self.params.global.attack_ms.value()
-        };
-        let target_value = if mute { 0.0 } else { 1.0 };
-
         for tap in 0..self.delay_data.current_tap {
-            self.releasings[tap] = mute;
-            self.amp_envelopes[tap].style = SmoothingStyle::Exponential(time_value);
-            self.amp_envelopes[tap].set_target(self.sample_rate, target_value);
+            self.mute_out(tap, mute);
         }
     }
 
@@ -798,7 +789,6 @@ impl Del2 {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
-            // println!("time out no_more_events");
         };
     }
     fn compare_exchange(atomic_bool: &AtomicBool) -> bool {
