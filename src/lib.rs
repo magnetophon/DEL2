@@ -614,7 +614,7 @@ impl Del2 {
                         CountingState::TimeOut => {
                             if is_delay_note && !is_learning && taps_unlocked {
                                 // If in TimeOut state, reset and start new counting phase
-                                self.reset_taps(timing);
+                                self.reset_taps(timing, true);
                             }
                         }
                         CountingState::CountingInBuffer => {
@@ -712,7 +712,7 @@ impl Del2 {
                             // self.last_played_notes.note_off(note);
                         }
                         if self.is_playing_action(RESET_TAPS) {
-                            self.reset_taps(timing);
+                            self.reset_taps(timing, false);
                         }
                     }
                 }
@@ -737,7 +737,7 @@ impl Del2 {
         }
     }
 
-    fn reset_taps(&mut self, timing: u32) {
+    fn reset_taps(&mut self, timing: u32, restart: bool) {
         self.mute_all_outs(true);
         if self.params.global.mute_is_toggle.value() {
             self.enabled_actions.store(MUTE_IN, false);
@@ -745,8 +745,14 @@ impl Del2 {
         }
         self.enabled_actions.store(LOCK_TAPS, false);
         self.delay_data.current_tap = 0;
-        self.timing_last_event = timing;
-        self.counting_state = CountingState::CountingInBuffer;
+        if restart {
+            self.timing_last_event = timing;
+            self.counting_state = CountingState::CountingInBuffer;
+        } else {
+            self.counting_state = CountingState::TimeOut;
+            self.timing_last_event = 0;
+            self.samples_since_last_event = 0;
+        }
     }
 
     fn mute_all_outs(&mut self, mute: bool) {
