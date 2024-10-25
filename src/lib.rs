@@ -149,7 +149,7 @@ struct GlobalParams {
 }
 
 impl GlobalParams {
-    pub fn new() -> Self {
+    pub fn new(enabled_actions: Arc<AtomicBoolArray>) -> Self {
         GlobalParams {
             dry_wet: FloatParam::new("mix", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_unit("%")
@@ -182,9 +182,16 @@ impl GlobalParams {
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            mute_is_toggle: BoolParam::new("mute mode", true).with_value_to_string(Arc::new(
-                |value| String::from(if value { "toggle" } else { "instant" }),
-            )),
+            mute_is_toggle: BoolParam::new("mute mode", true)
+                .with_value_to_string(Arc::new(|value| {
+                    String::from(if value { "toggle" } else { "instant" })
+                }))
+                .with_callback(Arc::new(move |value| {
+                    if !value {
+                        enabled_actions.store(MUTE_IN, true);
+                        enabled_actions.store(MUTE_OUT, false);
+                    }
+                })),
 
             attack_ms: FloatParam::new(
                 "Attack",
@@ -379,11 +386,15 @@ impl Default for Del2 {
 
         let filter_params = array_init(|_| Arc::new(FilterParams::new()));
         let should_update_filter = Arc::new(AtomicBool::new(false));
+        let enabled_actions = Arc::new(AtomicBoolArray::new());
         let ladders: [LadderFilter; MAX_NR_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
         Self {
-            params: Arc::new(Del2Params::new(should_update_filter.clone())),
+            params: Arc::new(Del2Params::new(
+                should_update_filter.clone(),
+                enabled_actions.clone(),
+            )),
             filter_params,
             ladders,
             delay_buffer: [
@@ -417,7 +428,7 @@ impl Default for Del2 {
             delay_buffer_size: 0,
             counting_state: CountingState::TimeOut,
             should_update_filter,
-            enabled_actions: Arc::new(AtomicBoolArray::new()),
+            enabled_actions,
         }
     }
 }
@@ -436,11 +447,11 @@ impl Default for DelayData {
 }
 
 impl Del2Params {
-    fn new(should_update_filter: Arc<AtomicBool>) -> Self {
+    fn new(should_update_filter: Arc<AtomicBool>, enabled_actions: Arc<AtomicBoolArray>) -> Self {
         Self {
             editor_state: editor::default_state(),
             taps: TapsParams::new(should_update_filter.clone()),
-            global: GlobalParams::new(),
+            global: GlobalParams::new(enabled_actions.clone()),
         }
     }
 }
@@ -594,18 +605,14 @@ impl Del2 {
                         self.last_played_notes
                             .note_off(self.learned_notes.load(LOCK_TAPS));
                     }
+                    let taps_unlocked = !self.enabled_actions.load(LOCK_TAPS);
 
-                    let mut should_record_tap = is_delay_note
-                        && is_tap_slot_available
-                        && !self.enabled_actions.load(LOCK_TAPS)
-                        && !is_learning;
+                    let mut should_record_tap =
+                        is_delay_note && is_tap_slot_available && taps_unlocked && !is_learning;
 
                     match self.counting_state {
                         CountingState::TimeOut => {
-                            if is_delay_note
-                                && !is_learning
-                                && !self.enabled_actions.load(LOCK_TAPS)
-                            {
+                            if is_delay_note && !is_learning && taps_unlocked {
                                 // If in TimeOut state, reset and start new counting phase
                                 self.reset_taps(timing);
                             }
@@ -732,8 +739,10 @@ impl Del2 {
 
     fn reset_taps(&mut self, timing: u32) {
         self.mute_all_outs(true);
-        self.enabled_actions.store(MUTE_IN, false);
-        self.enabled_actions.store(MUTE_OUT, false);
+        if self.params.global.mute_is_toggle.value() {
+            self.enabled_actions.store(MUTE_IN, false);
+            self.enabled_actions.store(MUTE_OUT, false);
+        }
         self.delay_data.current_tap = 0;
         self.timing_last_event = timing;
         self.counting_state = CountingState::CountingInBuffer;
@@ -855,14 +864,13 @@ impl Del2 {
             let write_index = self.delay_write_index as isize;
             self.delay_buffer[0].write_latest(out_l, write_index);
             self.delay_buffer[1].write_latest(out_r, write_index);
-
-            let mute_value = if self.params.global.mute_is_toggle.value() {
+            let is_toggle = self.params.global.mute_is_toggle.value();
+            let mute_value = if is_toggle {
                 self.enabled_actions.load(MUTE_IN)
             } else {
                 !self.is_playing_action(MUTE_IN)
             };
             mute_buffer[..block_len].fill(mute_value);
-
             self.mute_in_delay_buffer
                 .write_latest(&mute_buffer[..block_len], write_index);
             // TODO: no dry signal yet

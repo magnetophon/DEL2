@@ -740,9 +740,11 @@ impl ActionTrigger {
         // Determine the paint color based on the state
         let paint = if self.is_learning() {
             vg::Paint::color(border_color)
-        } else if self.is_playing() {
-            vg::Paint::color(selection_color)
-        } else if self.is_enabled() {
+        }
+        // else if self.is_playing() {
+        //     vg::Paint::color(selection_color)
+        // }
+        else if self.is_enabled() {
             vg::Paint::color(outline_color)
         } else {
             vg::Paint::color(background_color)
