@@ -62,21 +62,12 @@ param-slider .value-entry {
     right: 18px;
 }
 
-.global-title {
+.group-title {
     font-size: 30;
     /* // This should align nicely with the right edge of the slider */
     left: 269px;
     right: 1s;
     top: 9px;
-    bottom: 1px;
-}
-
-.dsp-title {
-    font-size: 30;
-    /* // This should align nicely with the right edge of the slider */
-    left: 269px;
-    right: 1s;
-    top: 18px;
     bottom: 9px;
     /* background-color: #4e4e4e; */
 }
@@ -87,13 +78,6 @@ param-slider .value-entry {
     right: 0px;
 }
 
-.attack-release {
-    height: 30px;
-}
-.action-trigger-group {
-    bottom: 6px;
-    height: 30px;
-}
 .slider-label {
     left: 1s;
     right: 9px;
@@ -174,13 +158,15 @@ generic-ui .label {
 
 .peak-meter-group {
     height: 73px;
+    left: 0px;
     right: 9px;
     top: 9px;
     bottom: 0px;
 }
 
 peak-meter {
-    width: 584px;
+    /* width: 584px; */
+    width: 1s;
     height: 18px;
     color: #e0ce91;
     left: 0px;
@@ -200,16 +186,16 @@ peak-meter .ticks__tick {
     top: 0px;
     width: 1px;
     height: 30%;
-    color: #4e4e4e;
+    /* color: #4e4e4e; */
 }
 peak-meter .ticks__label {
     top: 4px; /* In pixels in an attempt to get this to better align to the grid */
     font-size: 11; /* 14.667px */
 }
-.meter-label {
-    child-left: 1s;
+.peak-meter-label {
+    left: 0px;
     right: 6px;
-    bottom: 23px;
+    bottom: 24px;
     font-size: 15;
-    width: 40px;
+    width: 22px;
 }

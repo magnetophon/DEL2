@@ -136,8 +136,8 @@ struct GlobalParams {
     pub output_gain: FloatParam,
     #[id = "global_drive"]
     pub global_drive: FloatParam,
-    #[id = "mute_mode"]
-    mute_mode: BoolParam,
+    #[id = "mute_is_toggle"]
+    mute_is_toggle: BoolParam,
     #[id = "attack_ms"]
     attack_ms: FloatParam,
     #[id = "release_ms"]
@@ -151,8 +151,6 @@ struct GlobalParams {
 impl GlobalParams {
     pub fn new() -> Self {
         GlobalParams {
-            // timing_params: Arc::new(TimingParams::new()),
-            // gain_params: Arc::new(GainParams::new()),
             dry_wet: FloatParam::new("mix", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_unit("%")
                 .with_smoother(SmoothingStyle::Linear(15.0))
@@ -184,9 +182,9 @@ impl GlobalParams {
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            mute_mode: BoolParam::new("mute mode", true).with_value_to_string(Arc::new(|value| {
-                String::from(if value { "toggle" } else { "instant" })
-            })),
+            mute_is_toggle: BoolParam::new("mute mode", true).with_value_to_string(Arc::new(
+                |value| String::from(if value { "toggle" } else { "instant" }),
+            )),
 
             attack_ms: FloatParam::new(
                 "Attack",
@@ -232,89 +230,6 @@ impl GlobalParams {
             )
             .with_step_size(0.1)
             .with_unit(" s"),
-        }
-    }
-}
-
-/// This struct contains the parameters for either the high or low tap. The `Params`
-/// trait is implemented manually to avoid copy-pasting parameters for both types of compressor.
-/// Both versions will have a parameter ID and a parameter name prefix to distinguish them.
-#[derive(Params)]
-pub struct TimingParams {
-    #[id = "max_tap_seconds"]
-    pub max_tap_seconds: FloatParam,
-    #[id = "min_tap_milliseconds"]
-    pub min_tap_milliseconds: FloatParam,
-}
-
-impl TimingParams {
-    /// Create a new [`TapSetParams`] object with a prefix for all parameter names.
-    pub fn new() -> Self {
-        TimingParams {
-            max_tap_seconds: FloatParam::new(
-                "max tap",
-                3.0,
-                FloatRange::Skewed {
-                    min: 0.5,
-                    max: MAX_TAP_SECONDS as f32,
-                    factor: FloatRange::skew_factor(-0.8),
-                },
-            )
-            .with_step_size(0.1)
-            .with_unit(" s"),
-            min_tap_milliseconds: FloatParam::new(
-                "min tap",
-                10.0,
-                FloatRange::Skewed {
-                    min: 1.0,
-                    max: 1000.0,
-                    factor: FloatRange::skew_factor(-1.5),
-                },
-            )
-            .with_step_size(0.1)
-            .with_unit(" ms"),
-        }
-    }
-}
-
-#[derive(Params)]
-pub struct GainParams {
-    #[id = "output_gain"]
-    pub output_gain: FloatParam,
-    #[id = "global_drive"]
-    pub global_drive: FloatParam,
-}
-
-impl GainParams {
-    /// Create a new [`TapSetParams`] object with a prefix for all parameter names.
-    pub fn new() -> Self {
-        GainParams {
-            output_gain: FloatParam::new(
-                "out gain",
-                util::db_to_gain(0.0),
-                FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
-                },
-            )
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
-            .with_unit(" dB")
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            global_drive: FloatParam::new(
-                "drive",
-                util::db_to_gain(0.0),
-                FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
-                },
-            )
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
-            .with_unit(" dB")
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
         }
     }
 }

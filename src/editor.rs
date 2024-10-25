@@ -33,7 +33,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1220, 610))
+    ViziaState::new(|| (1212, 606))
 }
 
 pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -49,16 +49,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
 
         HStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
-                Label::new(cx, "global").class("global-title");
-                // dry/wet
-                // wet gain
-                // drive
-                // mutes
-                //
-                // attack
-                // release
-                // min tap
-                // max tap
+                Label::new(cx, "global").class("group-title");
                 HStack::new(cx, |cx| {
                     // HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
@@ -66,7 +57,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             Label::new(cx, "dry/wet").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| &params.global.dry_wet)
                                 .class("widget");
-                            //was out gain
                         })
                         .class("row");
                     })
@@ -76,7 +66,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             Label::new(cx, "attack").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| &params.global.attack_ms)
                                 .class("widget");
-                            // was drive
                         })
                         .class("row");
                     })
@@ -86,10 +75,9 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
-                            Label::new(cx, "out gain").class("slider-label");
+                            Label::new(cx, "dry gain").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| &params.global.output_gain)
                                 .class("widget");
-                            //was mutes
                         })
                         .class("row");
                     })
@@ -99,7 +87,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             Label::new(cx, "release").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
                                 .class("widget");
-                            // was dry wet
                         })
                         .class("row");
                     })
@@ -116,7 +103,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 &params.global.global_drive
                             })
                             .class("widget");
-                            // was min_tap
                         })
                         .class("row");
                     })
@@ -128,7 +114,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 &params.global.min_tap_milliseconds
                             })
                             .class("widget");
-                            // was max tap
                         })
                         .class("row");
                     })
@@ -139,10 +124,11 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
                             Label::new(cx, "mutes").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| &params.global.mute_mode)
-                                .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
-                                .class("widget");
-                            // was attack
+                            ParamSlider::new(cx, Data::params, |params| {
+                                &params.global.mute_is_toggle
+                            })
+                            .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
+                            .class("widget");
                         })
                         .class("row");
                     })
@@ -155,15 +141,13 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             })
                             .set_style(ParamSliderStyle::FromLeft)
                             .class("widget");
-                            // was release
                         })
                         .class("row");
-                    }) // TODO: make into a class
+                    })
                     .class("column");
                 })
-                // TODO: rename
-                .class("attack-release");
-                Label::new(cx, "triggers").class("dsp-title");
+                .class("param-group");
+                Label::new(cx, "triggers").class("group-title");
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
@@ -195,11 +179,10 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             );
                         })
                         .class("row");
-                    }) // TODO: make into a class
+                    })
                     .class("column");
                 })
-                // TODO: rename
-                .class("action-trigger-group");
+                .class("param-group");
 
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
@@ -232,13 +215,12 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             );
                         })
                         .class("row");
-                    }) // TODO: make into a class
+                    })
                     .class("column");
                 })
-                // TODO: rename
-                .class("action-trigger-group");
+                .class("param-group");
 
-                Label::new(cx, "filters").class("dsp-title");
+                Label::new(cx, "filters").class("group-title");
 
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
@@ -315,7 +297,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                 VStack::new(cx, |cx| {
                     //meters
                     HStack::new(cx, |cx| {
-                        Label::new(cx, "in").class("meter-label");
+                        Label::new(cx, "in").class("peak-meter-label");
                         PeakMeter::new(
                             cx,
                             Data::input_meter.map(|input_meter| {
@@ -325,7 +307,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                         );
                     });
                     HStack::new(cx, |cx| {
-                        Label::new(cx, "out").class("meter-label");
+                        Label::new(cx, "out").class("peak-meter-label");
                         PeakMeter::new(
                             cx,
                             Data::output_meter.map(|output_meter| {
