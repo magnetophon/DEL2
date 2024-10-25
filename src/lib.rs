@@ -720,14 +720,13 @@ impl Del2 {
                 NoteEvent::NoteOff {
                     timing: _, note, ..
                 } => {
-                    if note == self.learned_notes.load(MUTE_IN) {
-                        if !self.params.global.mute_is_toggle.value() {
-                            self.enabled_actions.store(MUTE_IN, true);
-                        }
-                    }
-                    if note == self.learned_notes.load(MUTE_OUT) {
-                        if !self.params.global.mute_is_toggle.value() {
-                            self.enabled_actions.store(MUTE_OUT, true);
+                    // Check if mute is toggle is inactive
+                    if !self.params.global.mute_is_toggle.value() {
+                        // For each mute action, check the condition and store the enabled action if true
+                        for &mute in &[MUTE_IN, MUTE_OUT] {
+                            if note == self.learned_notes.load(mute) {
+                                self.enabled_actions.store(mute, true);
+                            }
                         }
                     }
                     self.last_played_notes.note_off(note);
@@ -746,8 +745,8 @@ impl Del2 {
         self.enabled_actions.store(LOCK_TAPS, false);
         self.delay_data.current_tap = 0;
         if restart {
-            self.timing_last_event = timing;
             self.counting_state = CountingState::CountingInBuffer;
+            self.timing_last_event = timing;
         } else {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
