@@ -50,6 +50,7 @@ const MUTE_IN: usize = 0;
 const MUTE_OUT: usize = 1;
 const RESET_TAPS: usize = 2;
 const LOCK_TAPS: usize = 3;
+const MAX_HAAS_MS: f32 = 5.0;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -128,23 +129,64 @@ struct Del2Params {
 
 /// Contains the global parameters.
 #[derive(Params)]
-pub struct GlobalParams {
-    #[nested(id_prefix = "timing_params", group = "timing_params")]
-    pub timing_params: Arc<TimingParams>,
-    #[nested(id_prefix = "gain_params", group = "gain_params")]
-    pub gain_params: Arc<GainParams>,
+struct GlobalParams {
+    #[id = "dry_wet"]
+    dry_wet: FloatParam,
+    #[id = "output_gain"]
+    pub output_gain: FloatParam,
+    #[id = "global_drive"]
+    pub global_drive: FloatParam,
+    #[id = "mute_mode"]
+    mute_mode: BoolParam,
     #[id = "attack_ms"]
     attack_ms: FloatParam,
-    /// The amplitude envelope release time. This is the same for every voice.
     #[id = "release_ms"]
     release_ms: FloatParam,
+    #[id = "min_tap_milliseconds"]
+    pub min_tap_milliseconds: FloatParam,
+    #[id = "max_tap_seconds"]
+    pub max_tap_seconds: FloatParam,
 }
 
 impl GlobalParams {
     pub fn new() -> Self {
         GlobalParams {
-            timing_params: Arc::new(TimingParams::new()),
-            gain_params: Arc::new(GainParams::new()),
+            // timing_params: Arc::new(TimingParams::new()),
+            // gain_params: Arc::new(GainParams::new()),
+            dry_wet: FloatParam::new("mix", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_unit("%")
+                .with_smoother(SmoothingStyle::Linear(15.0))
+                .with_value_to_string(formatters::v2s_f32_percentage(0))
+                .with_string_to_value(formatters::s2v_f32_percentage()),
+            output_gain: FloatParam::new(
+                "out gain",
+                util::db_to_gain(0.0),
+                FloatRange::Skewed {
+                    min: util::db_to_gain(-30.0),
+                    max: util::db_to_gain(30.0),
+                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
+                },
+            )
+            .with_smoother(SmoothingStyle::Logarithmic(50.0))
+            .with_unit(" dB")
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
+            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            global_drive: FloatParam::new(
+                "drive",
+                util::db_to_gain(0.0),
+                FloatRange::Skewed {
+                    min: util::db_to_gain(-30.0),
+                    max: util::db_to_gain(30.0),
+                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
+                },
+            )
+            .with_smoother(SmoothingStyle::Logarithmic(50.0))
+            .with_unit(" dB")
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
+            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            mute_mode: BoolParam::new("mute mode", true).with_value_to_string(Arc::new(|value| {
+                String::from(if value { "toggle" } else { "instant" })
+            })),
 
             attack_ms: FloatParam::new(
                 "Attack",
@@ -168,6 +210,28 @@ impl GlobalParams {
             )
             .with_value_to_string(Del2::v2s_f32_ms_then_s(3))
             .with_string_to_value(Del2::s2v_f32_ms_then_s()),
+            min_tap_milliseconds: FloatParam::new(
+                "min tap",
+                10.0,
+                FloatRange::Skewed {
+                    min: 1.0,
+                    max: 1000.0,
+                    factor: FloatRange::skew_factor(-1.5),
+                },
+            )
+            .with_step_size(0.1)
+            .with_unit(" ms"),
+            max_tap_seconds: FloatParam::new(
+                "max tap",
+                3.0,
+                FloatRange::Skewed {
+                    min: 0.5,
+                    max: MAX_TAP_SECONDS as f32,
+                    factor: FloatRange::skew_factor(-0.8),
+                },
+            )
+            .with_step_size(0.1)
+            .with_unit(" s"),
         }
     }
 }
@@ -590,15 +654,9 @@ impl Del2 {
     fn update_timing_params(&mut self) {
         let sample_rate = self.sample_rate as f32;
         self.delay_data.max_tap_samples =
-            (sample_rate * self.params.global.timing_params.max_tap_seconds.value()) as u32;
-        self.min_tap_samples = (sample_rate
-            * self
-                .params
-                .global
-                .timing_params
-                .min_tap_milliseconds
-                .value()
-            * 0.001) as u32;
+            (sample_rate * self.params.global.max_tap_seconds.value()) as u32;
+        self.min_tap_samples =
+            (sample_rate * self.params.global.min_tap_milliseconds.value() * 0.001) as u32;
     }
 
     fn process_midi_events(&mut self, context: &mut impl ProcessContext<Self>) {
@@ -706,7 +764,7 @@ impl Del2 {
                         self.should_update_filter.store(true, Ordering::Release);
                     }
                     // Handle ActionTrigger events
-                    // lock pattern is handled at the start
+                    // LOCK_TAPS is handled at the start
                     if self.is_playing_action(MUTE_IN) {
                         self.enabled_actions.toggle(MUTE_IN);
                         self.last_played_notes
@@ -894,7 +952,7 @@ impl Del2 {
     }
 
     fn pan_to_haas_samples(pan: f32, sample_rate: f32) -> (i32, i32) {
-        let delay_samples = (pan.abs() * (5.0 / 1000.0) * sample_rate) as i32;
+        let delay_samples = (pan.abs() * (MAX_HAAS_MS / 1000.0) * sample_rate) as i32;
         if pan < 0.0 {
             (0, delay_samples) // Pan left: delay right
         } else {
@@ -959,12 +1017,12 @@ impl Del2 {
         // No idea how...
         // Loop through each sample, processing two channels at a time
         for i in (0..block_len).step_by(2) {
-            let output_gain1 = self.params.global.gain_params.output_gain.smoothed.next();
-            let output_gain2 = self.params.global.gain_params.output_gain.smoothed.next();
+            let output_gain1 = self.params.global.output_gain.smoothed.next();
+            let output_gain2 = self.params.global.output_gain.smoothed.next();
             let drive = self.filter_params[tap].clone().drive;
 
-            let pre_filter_gain1 = self.params.global.gain_params.global_drive.smoothed.next();
-            let pre_filter_gain2 = self.params.global.gain_params.global_drive.smoothed.next();
+            let pre_filter_gain1 = self.params.global.global_drive.smoothed.next();
+            let pre_filter_gain2 = self.params.global.global_drive.smoothed.next();
 
             // Calculate post-filter gains, including the fade effect
             let post_filter_gain1 = output_gain1 / (drive * pre_filter_gain1);

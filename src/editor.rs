@@ -33,7 +33,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1168, 584))
+    ViziaState::new(|| (1220, 610))
 }
 
 pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -50,58 +50,46 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
         HStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
                 Label::new(cx, "global").class("global-title");
+                // dry/wet
+                // wet gain
+                // drive
+                // mutes
+                //
+                // attack
+                // release
+                // min tap
+                // max tap
                 HStack::new(cx, |cx| {
+                    // HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
-                        // make_column(cx, "gain", |cx| {
-                        let gain_params = Data::params.map(|p| p.global.gain_params.clone());
-                        GenericUi::new_custom(cx, gain_params, |cx, param_ptr| {
-                            HStack::new(cx, |cx| {
-                                Label::new(cx, unsafe { param_ptr.name() }).class("label");
-                                GenericUi::draw_widget(cx, gain_params, param_ptr);
-                            })
-                            .class("row");
-                        });
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "dry/wet").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| &params.global.dry_wet)
+                                .class("widget");
+                            //was out gain
+                        })
+                        .class("row");
                     })
                     .class("column");
-
-                    // make_column(cx, "timing", |cx| {
-                    HStack::new(cx, |cx| {
-                        let timing_params = Data::params.map(|p| p.global.timing_params.clone());
-                        GenericUi::new_custom(cx, timing_params, |cx, param_ptr| {
-                            let param_name = unsafe { param_ptr.name() };
-
-                            // Check if the parameter is `max_tap_seconds` and replace with specific logic
-                            if param_name == "max tap" {
-                                HStack::new(cx, |cx| {
-                                    Label::new(cx, param_name).class("label");
-                                    ParamSlider::new(cx, Data::params, |params| {
-                                        &params.global.timing_params.max_tap_seconds
-                                    })
-                                    .set_style(ParamSliderStyle::FromLeft)
-                                    .class("widget");
-                                })
-                                .class("row");
-                            } else {
-                                // Default widget drawing for others
-                                HStack::new(cx, |cx| {
-                                    Label::new(cx, param_name).class("label");
-                                    GenericUi::draw_widget(cx, timing_params, param_ptr);
-                                })
-                                .class("row");
-                            }
-                        });
-                    })
-                    .class("column");
-                    // });
-                })
-                .class("param-group");
-
-                HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
                             Label::new(cx, "attack").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| &params.global.attack_ms)
                                 .class("widget");
+                            // was drive
+                        })
+                        .class("row");
+                    })
+                    .class("column");
+                })
+                .class("param-group");
+                HStack::new(cx, |cx| {
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "out gain").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| &params.global.output_gain)
+                                .class("widget");
+                            //was mutes
                         })
                         .class("row");
                     })
@@ -111,6 +99,63 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             Label::new(cx, "release").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
                                 .class("widget");
+                            // was dry wet
+                        })
+                        .class("row");
+                    })
+                    .class("column");
+                })
+                .class("param-group");
+
+                HStack::new(cx, |cx| {
+                    // HStack::new(cx, |cx| {
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "drive").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| {
+                                &params.global.global_drive
+                            })
+                            .class("widget");
+                            // was min_tap
+                        })
+                        .class("row");
+                    })
+                    .class("column");
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "min tap").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| {
+                                &params.global.min_tap_milliseconds
+                            })
+                            .class("widget");
+                            // was max tap
+                        })
+                        .class("row");
+                    })
+                    .class("column");
+                })
+                .class("param-group");
+                HStack::new(cx, |cx| {
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "mutes").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| &params.global.mute_mode)
+                                .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
+                                .class("widget");
+                            // was attack
+                        })
+                        .class("row");
+                    })
+                    .class("column");
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "max tap").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| {
+                                &params.global.max_tap_seconds
+                            })
+                            .set_style(ParamSliderStyle::FromLeft)
+                            .class("widget");
+                            // was release
                         })
                         .class("row");
                     }) // TODO: make into a class
@@ -196,7 +241,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                 Label::new(cx, "filters").class("dsp-title");
 
                 HStack::new(cx, |cx| {
-                    // make_column(cx, "velocity tracking", |cx| {
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
                             Label::new(cx, "vel>cut").class("slider-label");
@@ -208,7 +252,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                         .class("row");
                     })
                     .class("column");
-                    // make_column(cx, "note tracking", |cx| {
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
                             Label::new(cx, "note>cut").class("slider-label");
@@ -222,10 +265,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     .class("column");
                 })
                 .class("param-group");
-
-                // })
-                // .class("attack-release");
-                // .class("cutoff-tracking");
 
                 HStack::new(cx, |cx| {
                     make_column(cx, "low velocity", |cx| {
