@@ -6,12 +6,37 @@
 //       in this mode, the taps are only heard until the key is released
 //       the counter starts when the note for this trigger is pressed
 //
-// - make mutes sample-accurate
 // - smooth all dsp params (at the end of the interpolation?)
 //
-// - always use a big buffer size,
-//   compensate the latency by adjusting the read index
-//   make sure to take the actual buffer size into account
+//
+//
+// Proper DSP structure:
+//   - always use a big buffer size,
+//   - make mutes sample-accurate
+//
+//   lowest latency variant:
+//
+//   - process_midi_events
+//   - fill up to MAX_NR_TAPS big buffers of DSP_SIZE, beginning at the start of each tap
+//     compensate the latency by adjusting the read index
+//     make sure to take the actual buffer size into account
+//   - do drive pre-gain on DSP buffers, in block size of nih-process buffers
+//     has to be done here cause we want the gains after the delayline (so they react immediately) but before the filters
+//     we want the block sizes to be the same as the nih buffers, so we can save and re-use the smoother blocks to do the drive post gain
+//   - split up the buffers at mute events and do envelopes
+//     after the delayline but before the filters
+//     has to be done in split buffers so the envelopes are sample accurate.
+//   - recombine buffers into DSP_SIZE
+//   - do oversampling, DSP and downsampling
+//   - fill nih process buffers from DSP buffers
+//   - do drive post gain using the smoother blocks we saved from the pre-gain step wet out gain
+//
+//   lowest cpu-usage, easier to build, but has DSP_SIZE latency for the knobs (but not the midi notes):
+//   - do gains (but not envelopes!) on DSP_SIZE blocks.
+//     that way we only have to save one smoother block, and not an unknow number of blocks with various sizes
+//   - make a switch to turn on and off latency compensation:
+//     - when it's off, the delays are at the correct time, but the gains are late
+//     - when it's on, the gains are also at the correct time, but the whole DAW is late!
 
 // #![allow(non_snake_case)]
 #![feature(portable_simd)]
@@ -866,7 +891,6 @@ impl Del2 {
             // TODO: no dry signal yet
             out_l.fill(0.0);
             out_r.fill(0.0);
-            // println!("reeeeeeeeeeeeeeeeeeeeeeeeeeeed: {}", self.amp_envelopes[0].steps_left());
             for tap in 0..MAX_NR_TAPS {
                 if self.amp_envelopes[tap].is_smoothing() || (tap < self.delay_data.current_tap) {
                     self.read_tap_into_temp(tap);
@@ -919,10 +943,9 @@ impl Del2 {
             }
         };
 
-        // TODO: I think it never stops processing
-        // if !self.amp_envelopes[tap].is_smoothing()  {
+        // TODO: make the mutes sample accurate, so this is not needed anymore
+        // also fixing the issue that when RESET_TAPS is triggered, the envelope jumps to 0
         self.mute_out(tap, mute_value);
-        // }
 
         self.amp_envelopes[tap].next_block(&mut self.envelope_block[..block_len], block_len);
 
