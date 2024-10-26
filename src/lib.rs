@@ -73,7 +73,6 @@ struct Del2 {
     // N counters to know where in the fade in we are: 0 is the start
     amp_envelopes: [Smoother<f32>; MAX_NR_TAPS],
     envelope_block: Vec<f32>,
-    releasings: [bool; MAX_NR_TAPS],
     sample_rate: f32,
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
@@ -411,7 +410,6 @@ impl Default for Del2 {
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
             amp_envelopes,
             envelope_block: vec![0.0; MAX_BLOCK_LEN],
-            releasings: [false; MAX_NR_TAPS],
             //TODO: make Option<u8>
             sample_rate: 1.0,
             peak_meter_decay_weight: 1.0,
@@ -674,11 +672,7 @@ impl Del2 {
                         self.delay_data.velocities[current_tap] = velocity;
                         self.delay_data.notes[current_tap] = note;
 
-                        self.releasings[current_tap] = false;
-                        self.amp_envelopes[current_tap].style =
-                            SmoothingStyle::Exponential(self.params.global.attack_ms.value());
-                        // TODO: instead of 1.0, use a combination of gain params
-                        self.amp_envelopes[current_tap].set_target(self.sample_rate, 1.0);
+                        self.mute_out(current_tap, false);
                         self.delay_data.current_tap += 1;
                         // self.delay_data.current_tap = self.delay_data.current_tap;
 
@@ -872,8 +866,9 @@ impl Del2 {
             // TODO: no dry signal yet
             out_l.fill(0.0);
             out_r.fill(0.0);
+            // println!("reeeeeeeeeeeeeeeeeeeeeeeeeeeed: {}", self.amp_envelopes[0].steps_left());
             for tap in 0..MAX_NR_TAPS {
-                if self.releasings[tap] || tap < self.delay_data.current_tap {
+                if self.amp_envelopes[tap].is_smoothing() || (tap < self.delay_data.current_tap) {
                     self.read_tap_into_temp(tap);
                     self.process_tap(block_len, tap, out_l, out_r);
                 }
@@ -915,7 +910,7 @@ impl Del2 {
                 - (self.delay_data.delay_times[tap] as isize - 1).max(0),
         );
         let mute_value = if self.params.global.mute_is_toggle.value() {
-            mute_out_enabled | self.mute_in_delay_temp[0]
+            mute_out_enabled || self.mute_in_delay_temp[0]
         } else {
             if self.is_playing_action(MUTE_OUT) {
                 false
@@ -924,7 +919,10 @@ impl Del2 {
             }
         };
 
+        // TODO: I think it never stops processing
+        // if !self.amp_envelopes[tap].is_smoothing()  {
         self.mute_out(tap, mute_value);
+        // }
 
         self.amp_envelopes[tap].next_block(&mut self.envelope_block[..block_len], block_len);
 
@@ -943,7 +941,6 @@ impl Del2 {
         };
         let target_value = if mute { 0.0 } else { 1.0 };
 
-        self.releasings[tap] = mute;
         self.amp_envelopes[tap].style = SmoothingStyle::Exponential(time_value);
         self.amp_envelopes[tap].set_target(self.sample_rate, target_value);
     }
