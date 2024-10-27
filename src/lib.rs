@@ -694,6 +694,11 @@ impl Del2 {
                     }
 
                     // Check for timeout condition and reset if necessary
+                    let current_tap = self.delay_data.current_tap;
+                    let mute_in_note = self.learned_notes.load(MUTE_IN);
+                    let mute_out_note = self.learned_notes.load(MUTE_OUT);
+                    let previous_in_muted = self.enabled_actions.load(MUTE_IN);
+                    let previous_out_muted = self.enabled_actions.load(MUTE_OUT);
                     if self.samples_since_last_event > self.delay_data.max_tap_samples {
                         self.counting_state = CountingState::TimeOut;
                         self.timing_last_event = 0;
@@ -704,7 +709,6 @@ impl Del2 {
                         && velocity > 0.0
                     {
                         // Update tap information with timing and velocity
-                        let current_tap = self.delay_data.current_tap;
                         if current_tap > 0 {
                             self.delay_data.delay_times[current_tap] = self
                                 .samples_since_last_event
@@ -729,7 +733,7 @@ impl Del2 {
                     if !is_learning
                     // this is the value at the start of the fn, from before we adjusted the global one
                     {
-                        if note == self.learned_notes.load(MUTE_IN) {
+                        if note == mute_in_note {
                             if self.params.global.mute_is_toggle.value() {
                                 self.enabled_actions.toggle(MUTE_IN);
                             } else {
@@ -739,7 +743,7 @@ impl Del2 {
                             }
                             // self.last_played_notes.note_off(note);
                         }
-                        if note == self.learned_notes.load(MUTE_OUT) {
+                        if note == mute_out_note {
                             if self.params.global.mute_is_toggle.value() {
                                 self.enabled_actions.toggle(MUTE_OUT);
                             } else {
@@ -753,15 +757,44 @@ impl Del2 {
                         if self.is_playing_action(RESET_TAPS) {
                             self.reset_taps(timing, false);
                         }
+
+                        if note == mute_in_note || note == mute_out_note {
+                            // if mute state changed
+                            if previous_in_muted != self.enabled_actions.load(MUTE_IN)
+                                || previous_out_muted != self.enabled_actions.load(MUTE_OUT)
+                            {
+                                // Save the mute state change times
+                                if current_tap > 0 {
+                                    let time = self.samples_since_last_event
+                                        + self.delay_data.delay_times[current_tap - 1];
+
+                                    self.amp_envelope_times[current_tap].write_latest(&[time], 1);
+                                    self.amp_envelope_write_indexes[current_tap] =
+                                        (self.amp_envelope_write_indexes[current_tap] + 1)
+                                            % DSP_BLOCK_SIZE as isize;
+                                } else {
+                                    // Mute all taps
+                                    for tap in 0..MAX_NR_TAPS {
+                                        let time = self.samples_since_last_event
+                                            + self.delay_data.delay_times[tap - 1];
+
+                                        self.amp_envelope_times[tap].write_latest(&[time], 1);
+                                        self.amp_envelope_write_indexes[tap] =
+                                            (self.amp_envelope_write_indexes[tap] + 1)
+                                                % DSP_BLOCK_SIZE as isize;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 // Handling NoteOff events
                 NoteEvent::NoteOff {
                     timing: _, note, ..
                 } => {
-                    // Check if mute is toggle is inactive
+                    // if we are in direct mode
                     if !self.params.global.mute_is_toggle.value() {
-                        // For each mute action, check the condition and store the enabled action if true
+                        // mute the in and out
                         for &mute in &[MUTE_IN, MUTE_OUT] {
                             if note == self.learned_notes.load(mute) {
                                 self.enabled_actions.store(mute, true);
