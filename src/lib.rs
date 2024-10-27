@@ -107,10 +107,10 @@ struct Del2 {
     amp_envelope_write_indexes: [isize; MAX_NR_TAPS],
     // when did each mute change, relative to the start of each tap
     // so we can determine when the amp envelope should change state
-    mute_in_times: [BMRingBuf<u32>; MAX_NR_TAPS],
-    mute_out_times: [BMRingBuf<u32>; MAX_NR_TAPS],
-    mute_in_write_indexes: [isize; MAX_NR_TAPS],
-    mute_out_write_indexes: [isize; MAX_NR_TAPS],
+    mute_in_times: BMRingBuf<u32>,
+    mute_out_times: BMRingBuf<u32>,
+    mute_in_write_indexes: isize,
+    mute_out_write_indexes: isize,
     previous_mute_in_value: bool,
     previous_mute_out_value: bool,
 
@@ -440,10 +440,10 @@ impl Default for Del2 {
         let amp_envelope_times: [BMRingBuf<u32>; MAX_NR_TAPS] =
             array_init::array_init(|_| BMRingBuf::from_len(DSP_BLOCK_SIZE));
 
-        let mute_in_times: [BMRingBuf<u32>; MAX_NR_TAPS] =
-            array_init::array_init(|_| BMRingBuf::from_len(MAX_BLOCK_SIZE));
-        let mute_out_times: [BMRingBuf<u32>; MAX_NR_TAPS] =
-            array_init::array_init(|_| BMRingBuf::from_len(MAX_BLOCK_SIZE));
+        // let mute_in_times: [BMRingBuf<u32>; MAX_NR_TAPS] =
+        //     array_init::array_init(|_| BMRingBuf::from_len(MAX_BLOCK_SIZE));
+        // let mute_out_times: [BMRingBuf<u32>; MAX_NR_TAPS] =
+        //     array_init::array_init(|_| BMRingBuf::from_len(MAX_BLOCK_SIZE));
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
         Self {
             params: Arc::new(Del2Params::new(
@@ -463,10 +463,10 @@ impl Default for Del2 {
 
             amp_envelope_times,
             amp_envelope_write_indexes: [0; MAX_NR_TAPS],
-            mute_in_times,
-            mute_out_times,
-            mute_in_write_indexes: [0; MAX_NR_TAPS],
-            mute_out_write_indexes: [0; MAX_NR_TAPS],
+            mute_in_times: BMRingBuf::from_len(MAX_BLOCK_SIZE),
+            mute_out_times: BMRingBuf::from_len(MAX_BLOCK_SIZE),
+            mute_in_write_indexes: 0,
+            mute_out_write_indexes: 0,
             previous_mute_in_value: false,
             previous_mute_out_value: false,
             delay_data: initial_delay_data,
@@ -815,40 +815,21 @@ impl Del2 {
                         };
 
                         let update_mute_times =
-                            |times: &mut [BMRingBuf<u32>],
-                             write_indexes: &mut [isize],
+                            |times: &mut BMRingBuf<u32>,
+                             write_indexes: &mut isize,
                              state_changed: bool| {
                                 if state_changed {
                                     // save the time
-                                    if current_tap > 0 {
-                                        let time = self.samples_since_last_event
-                                            + self.delay_data.delay_times[current_tap - 1];
-
-                                        println!(
-                                            "state changed, current_tap: {}, time: {}",
-                                            current_tap, time
-                                        );
-                                        times[current_tap].write_latest(&[time], 1);
-                                        write_indexes[current_tap] = (write_indexes[current_tap]
-                                            + 1)
-                                            % DSP_BLOCK_SIZE as isize;
-                                    } else {
-                                        let time = self.samples_since_last_event;
-                                        println!("mute all at time: {}", time);
-                                        // Mute all taps
-                                        for tap in 0..MAX_NR_TAPS {
-                                            times[tap].write_latest(&[time], 1);
-                                            write_indexes[tap] =
-                                                (write_indexes[tap] + 1) % DSP_BLOCK_SIZE as isize;
-                                        }
-                                    }
+                                    println!("state changed, , timing: {}", timing);
+                                    times.write_latest(&[timing], 1);
+                                    *write_indexes = (*write_indexes + 1) % DSP_BLOCK_SIZE as isize;
                                 }
                             };
 
-                        println!(
-                            "self.previous_mute_in_value: {}, new_mute_in_value: {}",
-                            self.previous_mute_in_value, new_mute_in_value
-                        );
+                        // println!(
+                        //     "self.previous_mute_in_value: {}, new_mute_in_value: {}",
+                        //     self.previous_mute_in_value, new_mute_in_value
+                        // );
                         update_mute_times(
                             &mut self.mute_in_times,
                             &mut self.mute_in_write_indexes,
