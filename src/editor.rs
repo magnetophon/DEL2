@@ -12,14 +12,14 @@ use nih_plug_vizia::{
 };
 
 use crate::{
-    util, AtomicBoolArray, AtomicByteArray, Del2Params, DelayData, DelayDataOutput,
-    LastPlayedNotes, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, RESET_TAPS,
+    util, AtomicBoolArray, AtomicByteArray, Del2Params, LastPlayedNotes, SharedDelayData,
+    SharedDelayDataOutput, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, RESET_TAPS,
 };
 
 #[derive(Lens, Clone)]
 pub(crate) struct Data {
     pub params: Arc<Del2Params>,
-    pub delay_data: Arc<Mutex<DelayDataOutput>>,
+    pub delay_data: Arc<Mutex<SharedDelayDataOutput>>,
     pub input_meter: Arc<AtomicF32>,
     pub output_meter: Arc<AtomicF32>,
     pub is_learning: Arc<AtomicBool>,
@@ -333,7 +333,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
 ///////////////////////////////////////////////////////////////////////////////
 
 pub struct DelayGraph {
-    delay_data: Arc<Mutex<DelayDataOutput>>,
+    delay_data: Arc<Mutex<SharedDelayDataOutput>>,
 }
 
 // TODO: add grid to show bars & beats
@@ -403,9 +403,9 @@ impl View for DelayGraph {
 }
 
 impl DelayGraph {
-    pub fn new<DelayDataL>(cx: &mut Context, delay_data: DelayDataL) -> Handle<Self>
+    pub fn new<SharedDelayDataL>(cx: &mut Context, delay_data: SharedDelayDataL) -> Handle<Self>
     where
-        DelayDataL: Lens<Target = Arc<Mutex<DelayDataOutput>>>,
+        SharedDelayDataL: Lens<Target = Arc<Mutex<SharedDelayDataOutput>>>,
     {
         Self {
             delay_data: delay_data.get(cx),
@@ -417,7 +417,7 @@ impl DelayGraph {
 
     fn compute_time_scaling_factor(
         &self,
-        delay_data: &DelayData,
+        delay_data: &SharedDelayData,
         rect_width: f32,
         border_width: f32,
         outline_width: f32,
@@ -435,7 +435,7 @@ impl DelayGraph {
     fn draw_delay_times_as_lines(
         &self,
         canvas: &mut Canvas,
-        delay_data: &DelayData,
+        delay_data: &SharedDelayData,
         bounds: BoundingBox,
         border_color: vg::Color,
         border_width: f32,
@@ -482,7 +482,7 @@ impl DelayGraph {
     fn draw_time_line(
         &self,
         canvas: &mut Canvas,
-        delay_data: &DelayData,
+        delay_data: &SharedDelayData,
         bounds: BoundingBox,
         color: vg::Color,
         line_width: f32,
@@ -511,7 +511,7 @@ impl DelayGraph {
     fn draw_tap_velocities(
         &self,
         canvas: &mut Canvas,
-        delay_data: &DelayData,
+        delay_data: &SharedDelayData,
         bounds: BoundingBox,
         color: vg::Color,
         line_width: f32,
@@ -537,7 +537,7 @@ impl DelayGraph {
     fn draw_tap_notes_as_diamonds(
         &self,
         canvas: &mut Canvas,
-        delay_data: &DelayData,
+        delay_data: &SharedDelayData,
         bounds: BoundingBox,
         color: vg::Color,
         line_width: f32,

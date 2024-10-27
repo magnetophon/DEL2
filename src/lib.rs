@@ -18,7 +18,7 @@ Proper DSP structure:
   Steps:
   - process_midi_events
     save the timing of the envelope state changes (mutes), separate for each tap, relative to the start of the tap
-  - fill up to MAX_NR_TAPS big buffers of DSP_SIZE, beginning at the start of each tap
+  - fill up to MAX_NR_TAPS big buffers of DSP_BLOCK_SIZE, beginning at the start of each tap
     - save the length of each input block, so we can split up the smoothing block at the output and do the post gain in smaller blocks, for minimum latency
   - for each tap:
         - do drive pre-gain on DSP buffers
@@ -27,7 +27,7 @@ Proper DSP structure:
         - split up the buffers at mute events and do envelopes
           - after the delayline but before the filters
           - has to be done in split buffers so the envelopes are sample accurate.
-        - recombine buffers into DSP_SIZE
+        - recombine buffers into DSP_BLOCK_SIZE
         - do oversampling, DSP and downsampling
         - split up the DSP blocks and smoother blocks into the sizes we saved earlier
         - do drive post gain
@@ -103,16 +103,12 @@ struct Del2 {
 
     // stores the time of each target-change of the amp envelope, relative to the start of each tap
     // the state change at the start of the tap is implicit
-    // in theory we could have a new mute value every sample
-    // TODO: since it's storing just one u32 per mute state change, we can probably get away with a smaller array
-    // amp_envelope_times: [[u32; DSP_BLOCK_SIZE]; MAX_NR_TAPS],
-    // the number of entries in the
     amp_envelope_times: [BMRingBuf<u32>; MAX_NR_TAPS],
-    amp_envelope_counts: [usize; MAX_NR_TAPS],
+    amp_envelope_write_indexes: [isize; MAX_NR_TAPS],
 
-    delay_data: DelayData,
-    delay_data_input: DelayDataInput,
-    delay_data_output: Arc<Mutex<DelayDataOutput>>,
+    delay_data: SharedDelayData,
+    delay_data_input: SharedDelayDataInput,
+    delay_data_output: Arc<Mutex<SharedDelayDataOutput>>,
     // N counters to know where in the fade in we are: 0 is the start
     amp_envelopes: [Smoother<f32>; MAX_NR_TAPS],
     envelope_block: Vec<f32>,
@@ -137,7 +133,7 @@ struct Del2 {
 
 // for use in graph
 #[derive(Clone)]
-pub struct DelayData {
+pub struct SharedDelayData {
     delay_times: [u32; MAX_NR_TAPS],
     velocities: [f32; MAX_NR_TAPS],
     notes: [u8; MAX_NR_TAPS],
@@ -145,10 +141,10 @@ pub struct DelayData {
     current_time: u32,
     max_tap_samples: u32,
 }
-pub type DelayDataInput = triple_buffer::Input<DelayData>;
-pub type DelayDataOutput = triple_buffer::Output<DelayData>;
+pub type SharedDelayDataInput = triple_buffer::Input<SharedDelayData>;
+pub type SharedDelayDataOutput = triple_buffer::Output<SharedDelayData>;
 
-impl Data for DelayData {
+impl Data for SharedDelayData {
     fn same(&self, other: &Self) -> bool {
         self.delay_times == other.delay_times
             && self.velocities == other.velocities
@@ -423,7 +419,7 @@ enum CountingState {
 
 impl Default for Del2 {
     fn default() -> Self {
-        let initial_delay_data: DelayData = DelayData::default();
+        let initial_delay_data: SharedDelayData = SharedDelayData::default();
         let (delay_data_input, delay_data_output) = TripleBuffer::new(&initial_delay_data).split();
 
         let filter_params = array_init(|_| Arc::new(FilterParams::new()));
@@ -431,6 +427,8 @@ impl Default for Del2 {
         let enabled_actions = Arc::new(AtomicBoolArray::new());
         let ladders: [LadderFilter; MAX_NR_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
+        // in theory we could have a new mute value every sample
+        // TODO: since it's storing just one u32 per mute state change, we can probably get away with a smaller array
         let amp_envelope_times: [BMRingBuf<u32>; MAX_NR_TAPS] =
             array_init::array_init(|_| BMRingBuf::from_len(DSP_BLOCK_SIZE));
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
@@ -451,7 +449,7 @@ impl Default for Del2 {
             mute_in_delay_temp: vec![false; MAX_BLOCK_LEN],
 
             amp_envelope_times,
-            amp_envelope_counts: [0; MAX_NR_TAPS],
+            amp_envelope_write_indexes: [0; MAX_NR_TAPS],
             delay_data: initial_delay_data,
             delay_data_input,
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
@@ -478,7 +476,7 @@ impl Default for Del2 {
     }
 }
 
-impl Default for DelayData {
+impl Default for SharedDelayData {
     fn default() -> Self {
         Self {
             delay_times: [0; MAX_NR_TAPS],
