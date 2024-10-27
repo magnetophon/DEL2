@@ -1,42 +1,49 @@
-// TODO:
-//
-//   - for triggers:
-//      - all mutes with choice between latch and toggle
-//     - momentary mode:
-//       in this mode, the taps are only heard until the key is released
-//       the counter starts when the note for this trigger is pressed
-//
-// - smooth all dsp params (at the end of the interpolation?)
-//
-//
-//
-// Proper DSP structure:
-//   - always use a big buffer size,
-//   - make mutes sample-accurate
-//
-//   lowest latency variant:
-//
-//   - process_midi_events
-//   - fill up to MAX_NR_TAPS big buffers of DSP_SIZE, beginning at the start of each tap
-//     compensate the latency by adjusting the read index
-//     make sure to take the actual buffer size into account
-//   - do drive pre-gain on DSP buffers, in block size of nih-process buffers
-//     has to be done here cause we want the gains after the delayline (so they react immediately) but before the filters
-//     we want the block sizes to be the same as the nih buffers, so we can save and re-use the smoother blocks to do the drive post gain
-//   - split up the buffers at mute events and do envelopes
-//     after the delayline but before the filters
-//     has to be done in split buffers so the envelopes are sample accurate.
-//   - recombine buffers into DSP_SIZE
-//   - do oversampling, DSP and downsampling
-//   - fill nih process buffers from DSP buffers
-//   - do drive post gain using the smoother blocks we saved from the pre-gain step wet out gain
-//
-//   lowest cpu-usage, easier to build, but has DSP_SIZE latency for the knobs (but not the midi notes):
-//   - do gains (but not envelopes!) on DSP_SIZE blocks.
-//     that way we only have to save one smoother block, and not an unknow number of blocks with various sizes
-//   - make a switch to turn on and off latency compensation:
-//     - when it's off, the delays are at the correct time, but the gains are late
-//     - when it's on, the gains are also at the correct time, but the whole DAW is late!
+/*
+TODO:
+
+- for triggers:
+- all mutes with choice between latch and toggle
+    - momentary mode:
+in this mode, the taps are only heard until the key is released
+    the counter starts when the note for this trigger is pressed
+
+    - smooth all dsp params (at the end of the interpolation?)
+
+
+
+Proper DSP structure:
+- always use a big buffer size,
+- make mutes sample-accurate
+
+  Steps:
+  - process_midi_events
+    save the timing of the envelope state changes (mutes), separate for each tap, relative to the start of the tap
+  - fill up to MAX_NR_TAPS big buffers of DSP_SIZE, beginning at the start of each tap
+    - save the length of each input block, so we can split up the smoothing block at the output and do the post gain in smaller blocks, for minimum latency
+  - for each tap:
+        - do drive pre-gain on DSP buffers
+          - has to be done here cause we want the gains after the delayline (so they react immediately) but before the filters
+          - we save the smooted values as one big block
+        - split up the buffers at mute events and do envelopes
+          - after the delayline but before the filters
+          - has to be done in split buffers so the envelopes are sample accurate.
+        - recombine buffers into DSP_SIZE
+        - do oversampling, DSP and downsampling
+        - split up the DSP blocks and smoother blocks into the sizes we saved earlier
+        - do drive post gain
+  - mix taps into nih process buffers
+  - do output gain
+
+
+  - optional: live-mode / daw-mode switch
+    - compensate for host latency by adjusting the delay read index (optional; when latency reporting is off?)
+      take the actual buffer size into account?
+    - make a switch to turn on and off latency compensation:
+      - when it's off, the delays are at the correct time, but the gains are late
+      - when it's on, the gains are also at the correct time, but the whole DAW is late!
+
+
+ */
 
 // #![allow(non_snake_case)]
 #![feature(portable_simd)]
@@ -64,6 +71,7 @@ const VELOCITY_LOW_NAME_PREFIX: &str = "low velocity";
 const VELOCITY_HIGH_NAME_PREFIX: &str = "high velocity";
 // this seems to be the number JUCE is using
 const MAX_BLOCK_LEN: usize = 32768;
+const DSP_BLOCK_SIZE: usize = 1024;
 const PEAK_METER_DECAY_MS: f64 = 150.0;
 const MAX_LEARNED_NOTES: usize = 8;
 // abuse the difference in range between u8 and midi notes for special meaning
@@ -85,12 +93,22 @@ struct Del2 {
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
     // fake mute the input mute by delayning the output mut
+    // TODO: not needed in the new architecture, as we store the timing of the mutes elsewhere
     mute_in_delay_buffer: BMRingBuf<bool>,
     // delay read buffers
     // TODO: which vecs should be arrays?
     temp_l: Vec<f32>,
     temp_r: Vec<f32>,
     mute_in_delay_temp: Vec<bool>,
+
+    // stores the time of each target-change of the amp envelope, relative to the start of each tap
+    // the state change at the start of the tap is implicit
+    // in theory we could have a new mute value every sample
+    // TODO: since it's storing just one u32 per mute state change, we can probably get away with a smaller array
+    // amp_envelope_times: [[u32; DSP_BLOCK_SIZE]; MAX_NR_TAPS],
+    // the number of entries in the
+    amp_envelope_times: [BMRingBuf<u32>; MAX_NR_TAPS],
+    amp_envelope_counts: [usize; MAX_NR_TAPS],
 
     delay_data: DelayData,
     delay_data_input: DelayDataInput,
@@ -102,7 +120,7 @@ struct Del2 {
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
     output_meter: Arc<AtomicF32>,
-    delay_write_index: usize,
+    delay_write_index: isize,
     is_learning: Arc<AtomicBool>,
     // for which control are we learning?
     learning_index: Arc<AtomicUsize>,
@@ -413,6 +431,8 @@ impl Default for Del2 {
         let enabled_actions = Arc::new(AtomicBoolArray::new());
         let ladders: [LadderFilter; MAX_NR_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
+        let amp_envelope_times: [BMRingBuf<u32>; MAX_NR_TAPS] =
+            array_init::array_init(|_| BMRingBuf::from_len(DSP_BLOCK_SIZE));
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
         Self {
             params: Arc::new(Del2Params::new(
@@ -430,6 +450,8 @@ impl Default for Del2 {
             temp_r: vec![0.0; MAX_BLOCK_LEN],
             mute_in_delay_temp: vec![false; MAX_BLOCK_LEN],
 
+            amp_envelope_times,
+            amp_envelope_counts: [0; MAX_NR_TAPS],
             delay_data: initial_delay_data,
             delay_data_input,
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
@@ -876,7 +898,7 @@ impl Del2 {
 
             let out_l = block_channels.next().expect("Left output channel missing");
             let out_r = block_channels.next().expect("Right output channel missing");
-            let write_index = self.delay_write_index as isize;
+            let write_index = self.delay_write_index;
             self.delay_buffer[0].write_latest(out_l, write_index);
             self.delay_buffer[1].write_latest(out_r, write_index);
             let is_toggle = self.params.global.mute_is_toggle.value();
@@ -899,14 +921,14 @@ impl Del2 {
             }
 
             self.delay_write_index =
-                (self.delay_write_index + block_len) % self.delay_buffer_size as usize;
+                (self.delay_write_index + block_len as isize) % self.delay_buffer_size as isize;
         }
     }
 
     fn read_tap_into_temp(&mut self, tap: usize) {
         let delay_time = self.delay_data.delay_times[tap] as isize;
         // delay_time - 1 because we are processing 2 samples at once in process_audio
-        let read_index = self.delay_write_index as isize - (delay_time - 1).max(0);
+        let read_index = self.delay_write_index - (delay_time - 1).max(0);
 
         self.delay_buffer[0].read_into(&mut self.temp_l, read_index);
         self.delay_buffer[1].read_into(&mut self.temp_r, read_index);
@@ -930,8 +952,7 @@ impl Del2 {
         let mute_out_enabled = self.enabled_actions.load(MUTE_OUT);
         self.mute_in_delay_buffer.read_into(
             &mut self.mute_in_delay_temp,
-            self.delay_write_index as isize
-                - (self.delay_data.delay_times[tap] as isize - 1).max(0),
+            self.delay_write_index - (self.delay_data.delay_times[tap] as isize - 1).max(0),
         );
         let mute_value = if self.params.global.mute_is_toggle.value() {
             mute_out_enabled || self.mute_in_delay_temp[0]
