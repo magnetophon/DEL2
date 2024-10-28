@@ -99,8 +99,8 @@ struct Del2 {
 
     // stores the time of each target-change of the amp envelope, relative to the start of each tap
     // the state change at the start of the tap is implicit
-    amp_envelope_times: [BMRingBuf<(u32, bool)>; MAX_NR_TAPS],
-    // rolling index into amp_envelope_times
+    amp_envelope_states: [BMRingBuf<(u32, bool)>; MAX_NR_TAPS],
+    // rolling index into amp_envelope_states
     amp_envelope_write_index: [isize; MAX_NR_TAPS],
     // when did each mute change, relative to the start of the nih buffer
     // so we can determine when the amp envelope should change state
@@ -110,6 +110,7 @@ struct Del2 {
     tap_states: [(u32, bool); MAX_NR_TAPS],
     mute_in_write_index: isize,
     mute_out_write_index: isize,
+    tap_was_muted: [bool; MAX_NR_TAPS],
 
     delay_data: SharedDelayData,
     delay_data_input: SharedDelayDataInput,
@@ -434,7 +435,7 @@ impl Default for Del2 {
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
         // in theory we could have a new mute value every sample
         // TODO: since it's storing just one u32 per mute state change, we can probably get away with a smaller array
-        let amp_envelope_times: [BMRingBuf<(u32, bool)>; MAX_NR_TAPS] =
+        let amp_envelope_states: [BMRingBuf<(u32, bool)>; MAX_NR_TAPS] =
             array_init::array_init(|_| BMRingBuf::from_len(DSP_BLOCK_SIZE));
 
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
@@ -452,13 +453,14 @@ impl Default for Del2 {
             temp_l: vec![0.0; MAX_BLOCK_SIZE],
             temp_r: vec![0.0; MAX_BLOCK_SIZE],
 
-            amp_envelope_times,
+            amp_envelope_states,
             amp_envelope_write_index: [0; MAX_NR_TAPS],
             mute_in_states: BMRingBuf::from_len(MAX_BLOCK_SIZE),
             mute_out_states: BMRingBuf::from_len(MAX_BLOCK_SIZE),
             tap_states: [(0, true); MAX_NR_TAPS],
             mute_in_write_index: 0,
             mute_out_write_index: 0,
+            tap_was_muted: [true; MAX_NR_TAPS],
             delay_data: initial_delay_data,
             delay_data_input,
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
@@ -614,7 +616,7 @@ impl Plugin for Del2 {
     ) -> ProcessStatus {
         self.update_timing_params();
         self.process_midi_events(context);
-        self.set_amp_envelope_times();
+        // self.set_amp_envelope_states();
         self.prepare_for_delay(buffer.samples());
         if Del2::compare_exchange(&self.should_update_filter) {
             for tap in 0..self.delay_data.current_tap {
@@ -841,6 +843,10 @@ impl Del2 {
         for tap in 0..MAX_NR_TAPS {
             self.tap_states[tap] = (timing, true);
         }
+        println!(
+            "self.tap_states[0]: {:?}, self.tap_was_muted[0]: {}",
+            self.tap_states[0], self.tap_was_muted[0]
+        );
         if self.params.global.mute_is_toggle.value() {
             self.enabled_actions.store(MUTE_IN, false);
             self.enabled_actions.store(MUTE_OUT, false);
@@ -864,36 +870,6 @@ impl Del2 {
         times.write_latest(&[state], 1);
         *write_index = (*write_index + 1) % DSP_BLOCK_SIZE as isize;
         // println!("state changed, timing: {}, index: {}", timing, write_index);
-    }
-
-    fn set_amp_envelope_times(&mut self) {
-        for tap in 0..MAX_NR_TAPS {
-            self.amp_envelope_write_index[tap] = 0;
-        }
-        let out_index = self.mute_out_write_index;
-        // if there are any events
-        // if out_index > 0 {
-        // TODO: do we really need a ringbuf?
-        // Get slices of states from the ring buffer
-        let (mute_out_state_slices, _) = self
-            .mute_out_states
-            .as_slices_len(0, out_index.try_into().unwrap());
-
-        let mute_out_timings: Vec<u32> = mute_out_state_slices
-            .iter()
-            .map(|&(time, _)| time)
-            .collect();
-        // Process each tap
-        for tap in 0..MAX_NR_TAPS {
-            self.amp_envelope_times[tap].write_latest(&[self.tap_states[tap]], 0);
-
-            // self.amp_envelope_times[tap].write_latest(&mute_out_state_slices, 1);
-            self.amp_envelope_write_index[tap] =
-                (self.amp_envelope_write_index[tap] + 1) % DSP_BLOCK_SIZE as isize;
-        }
-        // } else {
-        // println!("no amp_envelope_times");
-        // }
     }
 
     fn prepare_for_delay(&mut self, buffer_samples: usize) {
@@ -1002,6 +978,7 @@ impl Del2 {
             out_l.fill(0.0);
             out_r.fill(0.0);
 
+            self.create_envelope_block(block_len);
             for tap in 0..MAX_NR_TAPS {
                 if self.amp_envelopes[tap].is_smoothing() || (tap < self.delay_data.current_tap) {
                     self.read_tap_into_temp(tap);
@@ -1037,15 +1014,76 @@ impl Del2 {
         self.process_audio(block_len, tap, out_l, out_r);
     }
 
+    fn set_amp_envelope_states(&mut self) {
+        for tap in 0..MAX_NR_TAPS {
+            self.amp_envelope_write_index[tap] = 0;
+        }
+        let out_index = self.mute_out_write_index;
+        let current_tap = self.delay_data.current_tap;
+        // if there are any events
+        // if out_index > 0 {
+        // TODO: do we really need a ringbuf?
+        // Get slices of states from the ring buffer
+        let (mute_out_state_slices, _) = self
+            .mute_out_states
+            .as_slices_len(0, out_index.try_into().unwrap());
+
+        let mute_out_timings: Vec<u32> = mute_out_state_slices
+            .iter()
+            .map(|&(time, _)| time)
+            .collect();
+        // Process each tap
+        // for tap in 0..MAX_NR_TAPS {
+        if current_tap > 0 {
+            let (time, state) = self.tap_states[current_tap - 1];
+            self.amp_envelope_states[current_tap - 1]
+                .write_latest(&[self.tap_states[current_tap - 1]], 0);
+
+            // self.amp_envelope_states[current_tap - 1].write_latest(&mute_out_state_slices, 1);
+            self.amp_envelope_write_index[current_tap - 1] =
+                (self.amp_envelope_write_index[current_tap - 1] + 1) % DSP_BLOCK_SIZE as isize;
+        }
+    }
+
+    fn create_envelope_block(&mut self, block_len: usize) {
+        for tap in 0..MAX_NR_TAPS {
+            let tap_state = self.tap_states[tap].1;
+            if tap_state {
+                // println!("tap_state {} {} {}", tap, tap_state, self.tap_was_muted[tap]);
+            }
+            if tap_state != self.tap_was_muted[tap] {
+                println!("set tap {} to {}", tap, tap_state);
+                self.mute_out(tap, tap_state);
+                self.amp_envelopes[tap]
+                    .next_block(&mut self.envelope_block[..block_len], block_len);
+                self.tap_was_muted[tap] = tap_state;
+            }
+        }
+    }
+
     fn process_temp_with_envelope(&mut self, block_len: usize, tap: usize) {
         // TODO: make the mutes sample accurate, so this is not needed anymore
         // also fixing the issue that when RESET_TAPS is triggered, the envelope jumps to 0
 
-        let index = self.amp_envelope_write_index[tap].try_into().unwrap();
-        let mut block_start = 0;
-        let mut block_end = block_len;
+        // let index = self.amp_envelope_write_index[tap].try_into().unwrap();
+        // let current_tap = self.delay_data.current_tap;
+        // let mut block_start = 0;
+        // let mut block_end = block_len;
 
-        println!("tap {}, index: {}", tap, index);
+        // let tap_state = self.tap_states[tap].1;
+        // if tap_state {
+        //     println!("tap_state {} {} {}", tap, tap_state, self.tap_was_muted[tap]);
+        // }
+        // if tap_state != self.tap_was_muted[tap]{
+        //     println!("turn on tap {}", tap);
+        //     self.mute_out(tap, tap_state);
+        //     self.amp_envelopes[tap].next_block(
+        //         &mut self.envelope_block[block_start..block_end],
+        //         block_end - block_start,
+        //     );
+        //     self.tap_was_muted[tap] = tap_state;
+        // }
+
         /*
         for the first
 
@@ -1057,30 +1095,39 @@ impl Del2 {
         // }
 
         // if no events
-        if index == 0 {
-            self.amp_envelopes[tap].next_block(
-                &mut self.envelope_block[block_start..block_end],
-                block_end - block_start,
-            );
-        } else {
-            for i in 1..index {
-                let (start_time, state) = self.amp_envelope_times[tap].raw_at(i - 1);
-                let (end_time, _) = self.amp_envelope_times[tap].raw_at(i);
-                block_start = *start_time as usize;
-                block_end = *end_time as usize;
-                println!("toggle tap {} to {} at {}", tap, state, block_start);
-                self.mute_out(tap, *state);
-                self.amp_envelopes[tap].next_block(
-                    &mut self.envelope_block[block_start..block_end],
-                    block_end - block_start,
-                );
-            }
-        }
+        // if index == 0 {
+        //     self.amp_envelopes[tap].next_block(
+        //         &mut self.envelope_block[block_start..block_end],
+        //         block_end - block_start,
+        //     );
+        //     // println!("no events: tap {}, index: {}", tap, index);
+        // } else {
+        //     let (end_time, state) = self.amp_envelope_states[tap].raw_at(0);
+        //     block_end = *end_time as usize;
+        //     // println!("toggle tap {} to {} at {} till {}", tap, state, block_start, block_end);
+        //     self.mute_out(tap, *state);
+        //     self.amp_envelopes[tap].next_block(
+        //         &mut self.envelope_block[block_start..block_end],
+        //         block_end - block_start,
+        //     );
+        //     for i in 1..index {
+        //         let (start_time, state) = self.amp_envelope_states[tap].raw_at(i - 1);
+        //         let (end_time, _) = self.amp_envelope_states[tap].raw_at(i);
+        //         block_start = *start_time as usize;
+        //         block_end = *end_time as usize;
+        //         // println!("toggle tap {} to {} at {}", tap, state, block_start);
+        //         self.mute_out(tap, *state);
+        //         self.amp_envelopes[tap].next_block(
+        //             &mut self.envelope_block[block_start..block_end],
+        //             block_end - block_start,
+        //         );
+        //     }
+        // }
 
         // debug
-        if self.envelope_block[7] != 1.0 && self.envelope_block[7] != 0.0 {
-            println!("self.envelope_block[7]: {}", self.envelope_block[7]);
-        }
+        // if self.envelope_block[7] != 1.0 && self.envelope_block[7] != 0.0 {
+        //     println!("self.envelope_block[7]: {}", self.envelope_block[7]);
+        // }
 
         // Apply the envelope to each sample in the temporary buffers
         for i in 0..block_len {
