@@ -709,7 +709,6 @@ impl Del2 {
                     let current_tap = self.delay_data.current_tap;
                     let mute_in_note = self.learned_notes.load(MUTE_IN);
                     let mute_out_note = self.learned_notes.load(MUTE_OUT);
-                    let is_toggle = self.params.global.mute_is_toggle.value();
 
                     // Check for timeout condition and reset if necessary
                     if self.samples_since_last_event > self.delay_data.max_tap_samples {
@@ -748,9 +747,10 @@ impl Del2 {
                     {
                         let old_mute_in = self.enabled_actions.load(MUTE_IN);
                         let old_mute_out = self.enabled_actions.load(MUTE_OUT);
+                        let is_toggle = self.params.global.mute_is_toggle.value();
 
                         if note == mute_in_note {
-                            if self.params.global.mute_is_toggle.value() {
+                            if is_toggle {
                                 self.enabled_actions.toggle(MUTE_IN);
                             } else {
                                 self.enabled_actions.store(MUTE_IN, false);
@@ -759,7 +759,7 @@ impl Del2 {
                             // self.last_played_notes.note_off(note);
                         }
                         if note == mute_out_note {
-                            if self.params.global.mute_is_toggle.value() {
+                            if is_toggle {
                                 self.enabled_actions.toggle(MUTE_OUT);
                             } else {
                                 self.enabled_actions.store(MUTE_IN, false);
@@ -875,7 +875,7 @@ impl Del2 {
     ) {
         times.write_latest(&[state], *write_index);
         *write_index = (*write_index + 1) % DSP_BLOCK_SIZE as isize;
-        println!("state changed, state: {:?}, index: {}", state, *write_index);
+        // println!("state changed, state: {:?}, index: {}", state, *write_index);
     }
 
     fn prepare_for_delay(&mut self, buffer_samples: usize) {
@@ -1042,7 +1042,6 @@ impl Del2 {
 
     fn create_envelope_block(&mut self, block_len: usize, tap: usize) {
         let index = self.amp_envelope_write_index[tap].try_into().unwrap();
-        let current_tap = self.delay_data.current_tap;
         let mut block_start = 0;
         let mut block_end = block_len;
         // if no events
@@ -1061,16 +1060,13 @@ impl Del2 {
         } else {
             let (end_time, state) = self.amp_envelope_states[tap].raw_at(0);
             block_end = *end_time as usize;
-            println!(
-                "toggle tap {} to {} at {} till {}",
-                tap, state, block_start, block_end
-            );
             self.mute_out(tap, *state);
             self.amp_envelopes[tap].next_block(
                 &mut self.envelope_block[tap][block_start..block_end],
                 block_end - block_start,
             );
             for i in 1..index {
+                println!("toggle tap {} at {} till {}", tap, block_start, block_end);
                 let (start_time, state) = self.amp_envelope_states[tap].raw_at(i - 1);
                 let (end_time, _) = self.amp_envelope_states[tap].raw_at(i);
                 block_start = *start_time as usize;
@@ -1085,12 +1081,12 @@ impl Del2 {
         }
 
         // debug
-        if self.envelope_block[tap][7] != 1.0 && self.envelope_block[tap][7] != 0.0 && tap == 0 {
-            println!(
-                "self.envelope_block[tap][7]: {}",
-                self.envelope_block[tap][7]
-            );
-        }
+        // if self.envelope_block[tap][7] != 1.0 && self.envelope_block[tap][7] != 0.0 && tap == 0 {
+        //     println!(
+        //         "self.envelope_block[tap][7]: {}",
+        //         self.envelope_block[tap][7]
+        //     );
+        // }
     }
 
     fn process_temp_with_envelope(&mut self, block_len: usize, tap: usize) {
@@ -1109,13 +1105,13 @@ impl Del2 {
         };
         let target_value = if mute { 0.0 } else { 1.0 };
 
-        if mute {
-            // linear release, otherwise too short.
-            self.amp_envelopes[tap].style = SmoothingStyle::Linear(time_value);
-        } else {
-            // exponential attack
-            self.amp_envelopes[tap].style = SmoothingStyle::Exponential(time_value);
-        }
+        // if mute {
+        // linear release, otherwise too short.
+        //     self.amp_envelopes[tap].style = SmoothingStyle::Linear(time_value);
+        // } else {
+        // exponential attack
+        self.amp_envelopes[tap].style = SmoothingStyle::Exponential(time_value);
+        // }
         self.amp_envelopes[tap].set_target(self.sample_rate, target_value);
     }
 
