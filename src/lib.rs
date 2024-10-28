@@ -1146,7 +1146,13 @@ impl Del2 {
         };
         let target_value = if mute { 0.0 } else { 1.0 };
 
-        self.amp_envelopes[tap].style = SmoothingStyle::Exponential(time_value);
+        if mute {
+            // linear release, otherwise too short.
+            self.amp_envelopes[tap].style = SmoothingStyle::Linear(time_value);
+        } else {
+            // exponential attack
+            self.amp_envelopes[tap].style = SmoothingStyle::Exponential(time_value);
+        }
         self.amp_envelopes[tap].set_target(self.sample_rate, target_value);
     }
 
