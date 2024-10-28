@@ -117,7 +117,7 @@ struct Del2 {
     delay_data_output: Arc<Mutex<SharedDelayDataOutput>>,
     // N counters to know where in the fade in we are: 0 is the start
     amp_envelopes: [Smoother<f32>; MAX_NR_TAPS],
-    envelope_block: Vec<f32>,
+    envelope_block: [[f32; DSP_BLOCK_SIZE]; MAX_NR_TAPS],
     sample_rate: f32,
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
@@ -465,7 +465,7 @@ impl Default for Del2 {
             delay_data_input,
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
             amp_envelopes,
-            envelope_block: vec![0.0; MAX_BLOCK_SIZE],
+            envelope_block: [[0.0; DSP_BLOCK_SIZE]; MAX_NR_TAPS],
             //TODO: make Option<u8>
             sample_rate: 1.0,
             peak_meter_decay_weight: 1.0,
@@ -843,10 +843,6 @@ impl Del2 {
         for tap in 0..MAX_NR_TAPS {
             self.tap_states[tap] = (timing, true);
         }
-        println!(
-            "self.tap_states[0]: {:?}, self.tap_was_muted[0]: {}",
-            self.tap_states[0], self.tap_was_muted[0]
-        );
         if self.params.global.mute_is_toggle.value() {
             self.enabled_actions.store(MUTE_IN, false);
             self.enabled_actions.store(MUTE_OUT, false);
@@ -964,7 +960,7 @@ impl Del2 {
             // assert!(block_len <= MAX_BLOCK_SIZE);
             // Either we resize here, or in the initialization fn
             // If we don't, we are slower.
-            // self.resize_temp_buffers(block_len);
+            self.resize_temp_buffers(block_len.try_into().unwrap());
             let mut block_channels = block.into_iter();
 
             let out_l = block_channels.next().expect("Left output channel missing");
@@ -978,8 +974,8 @@ impl Del2 {
             out_l.fill(0.0);
             out_r.fill(0.0);
 
-            self.create_envelope_block(block_len);
             for tap in 0..MAX_NR_TAPS {
+                self.create_envelope_block(block_len, tap);
                 if self.amp_envelopes[tap].is_smoothing() || (tap < self.delay_data.current_tap) {
                     self.read_tap_into_temp(tap);
                     self.process_tap(block_len, tap, out_l, out_r);
@@ -1045,20 +1041,19 @@ impl Del2 {
         }
     }
 
-    fn create_envelope_block(&mut self, block_len: usize) {
-        for tap in 0..MAX_NR_TAPS {
-            let tap_state = self.tap_states[tap].1;
-            if tap_state {
-                // println!("tap_state {} {} {}", tap, tap_state, self.tap_was_muted[tap]);
-            }
-            if tap_state != self.tap_was_muted[tap] {
-                println!("set tap {} to {}", tap, tap_state);
-                self.mute_out(tap, tap_state);
-                self.amp_envelopes[tap]
-                    .next_block(&mut self.envelope_block[..block_len], block_len);
-                self.tap_was_muted[tap] = tap_state;
-            }
+    fn create_envelope_block(&mut self, block_len: usize, tap: usize) {
+        // for tap in 0..MAX_NR_TAPS {
+        let tap_state = self.tap_states[tap].1;
+        if tap_state {
+            // println!("tap_state {} {} {}", tap, tap_state, self.tap_was_muted[tap]);
         }
+        if tap_state != self.tap_was_muted[tap] {
+            println!("set tap {} to {}", tap, tap_state);
+            self.mute_out(tap, tap_state);
+            self.tap_was_muted[tap] = tap_state;
+        }
+        self.amp_envelopes[tap].next_block(&mut self.envelope_block[tap], block_len);
+        // }
     }
 
     fn process_temp_with_envelope(&mut self, block_len: usize, tap: usize) {
@@ -1131,8 +1126,15 @@ impl Del2 {
 
         // Apply the envelope to each sample in the temporary buffers
         for i in 0..block_len {
-            self.temp_l[i] *= self.envelope_block[i];
-            self.temp_r[i] *= self.envelope_block[i];
+            self.temp_l[i] *= self.envelope_block[tap][i];
+            self.temp_r[i] *= self.envelope_block[tap][i];
+            if i < (block_len - 2) {
+                if self.envelope_block[tap][i] < self.envelope_block[tap][i + 1] {
+                    if tap == 1 {
+                        // println!("aaaaaaaaaaaaaaaaaaaaaaaaaaa  {}", self.envelope_block[tap][i]);
+                    }
+                }
+            }
         }
     }
 
@@ -1228,7 +1230,9 @@ impl Del2 {
         let max_size = max_buffer_size as usize;
         self.temp_l.resize(max_size, 0.0);
         self.temp_r.resize(max_size, 0.0);
-        self.envelope_block.resize(max_size, 0.0);
+        // for tap in 0..MAX_NR_TAPS {
+        //     self.envelope_block[tap].resize(max_size, 0.0);
+        // }
     }
 
     fn calculate_buffer_size(&self, buffer_size: u32) -> u32 {
