@@ -117,6 +117,7 @@ struct Del2 {
     mute_out_write_index: isize,
     previous_mute_in_value: bool,
     previous_mute_out_value: bool,
+    amp_envelope_muted: [bool; MAX_NR_TAPS],
 
     delay_data: SharedDelayData,
     delay_data_input: SharedDelayDataInput,
@@ -474,6 +475,7 @@ impl Default for Del2 {
             mute_out_write_index: 0,
             previous_mute_in_value: false,
             previous_mute_out_value: false,
+            amp_envelope_muted: [true; MAX_NR_TAPS],
             delay_data: initial_delay_data,
             delay_data_input,
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
@@ -613,8 +615,9 @@ impl Plugin for Del2 {
     }
 
     fn reset(&mut self) {
-        for i in 0..MAX_NR_TAPS {
-            self.ladders[i].s = [f32x4::splat(0.); 4];
+        for tap in 0..MAX_NR_TAPS {
+            self.ladders[tap].s = [f32x4::splat(0.); 4];
+            self.amp_envelopes[tap].reset(0.0);
         }
         // Reset buffers and envelopes here. This can be called from the audio thread and may not
         // allocate. You can remove this function if you do not need it.
@@ -752,7 +755,7 @@ impl Del2 {
                         self.delay_data.velocities[current_tap] = velocity;
                         self.delay_data.notes[current_tap] = note;
 
-                        self.mute_out(current_tap, false);
+                        // self.mute_out(current_tap, false);
                         self.delay_data.current_tap += 1;
                         // self.delay_data.current_tap = self.delay_data.current_tap;
 
@@ -770,7 +773,7 @@ impl Del2 {
                             } else {
                                 self.enabled_actions.store(MUTE_IN, false);
                                 self.enabled_actions.store(MUTE_OUT, false);
-                                self.mute_all_outs(false);
+                                // self.mute_all_outs(false);
                             }
                             // self.last_played_notes.note_off(note);
                         }
@@ -780,9 +783,9 @@ impl Del2 {
                             } else {
                                 self.enabled_actions.store(MUTE_IN, false);
                                 self.enabled_actions.store(MUTE_OUT, false);
-                                self.mute_all_outs(false);
+                                // self.mute_all_outs(false);
                             }
-                            self.mute_all_outs(self.enabled_actions.load(MUTE_OUT));
+                            // self.mute_all_outs(self.enabled_actions.load(MUTE_OUT));
                             // self.last_played_notes.note_off(note);
                         }
                         if self.is_playing_action(RESET_TAPS) {
@@ -874,7 +877,7 @@ impl Del2 {
     }
 
     fn reset_taps(&mut self, timing: u32, restart: bool) {
-        self.mute_all_outs(true);
+        // self.mute_all_outs(true);
         if self.params.global.mute_is_toggle.value() {
             self.enabled_actions.store(MUTE_IN, false);
             self.enabled_actions.store(MUTE_OUT, false);
@@ -889,7 +892,10 @@ impl Del2 {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
-            self.tap_start_times[0] = TAP_DISABLED;
+            for tap in 0..MAX_NR_TAPS {
+                self.tap_start_times[tap] = TAP_DISABLED;
+                self.amp_envelope_write_index[tap] = 0;
+            }
         }
     }
 
@@ -932,7 +938,6 @@ impl Del2 {
                 self.amp_envelope_write_index[tap] =
                     (self.amp_envelope_write_index[tap] + out_index) % DSP_BLOCK_SIZE as isize;
             }
-            println!("self.tap_start_times[0], {}", self.tap_start_times[0]);
         } else {
             // println!("no amp_envelope_times");
         }
@@ -1086,23 +1091,46 @@ impl Del2 {
         let index = self.amp_envelope_write_index[tap].try_into().unwrap();
         let mut block_start = 0;
         let mut block_end = block_len;
-        let mut previous_state = false; // start unmuted;
-                                        // if we have events
-        if index > 0 {
-            // block_start = self.amp_envelope_times[tap].raw_at(0);
+
+        // unmute when a tap first appears
+        if self.tap_start_times[tap] != TAP_DISABLED {
+            println!("turn on tap {}", tap);
+            self.amp_envelope_muted[tap] = false;
+            self.mute_out(tap, false);
+            self.tap_start_times[tap] = TAP_DISABLED;
+        }
+
+        if index == 0 {
+            // println!("index == 0 for tap {}", tap);
+            self.amp_envelopes[tap].next_block(
+                &mut self.envelope_block[block_start..block_end],
+                block_end - block_start,
+            );
+        } else {
+            println!("toggle tap {}", tap);
             for i in 0..index {
+                self.amp_envelope_muted[tap] = !self.amp_envelope_muted[tap];
                 block_end = *self.amp_envelope_times[tap].raw_at(i) as usize;
-                previous_state = !previous_state;
-
-                block_start = block_end + 1;
+                self.mute_out(tap, self.amp_envelope_muted[tap]);
+                self.amp_envelopes[tap].next_block(
+                    &mut self.envelope_block[block_start..block_end],
+                    block_end - block_start,
+                );
+                block_start = block_end; // TODO: +1?
             }
-            self.amp_envelopes[tap].next_block(&mut self.envelope_block[..block_len], block_len);
+        }
 
-            // Apply the envelope to each sample in the temporary buffers
-            for i in 0..block_len {
-                self.temp_l[i] *= self.envelope_block[i];
-                self.temp_r[i] *= self.envelope_block[i];
-            }
+        // debug
+        if self.envelope_block[7] != 1.0
+        // && self.envelope_block[0] != 0.0
+        {
+            println!("self.envelope_block[7]: {}", self.envelope_block[7]);
+        }
+
+        // Apply the envelope to each sample in the temporary buffers
+        for i in 0..block_len {
+            self.temp_l[i] *= self.envelope_block[i];
+            self.temp_r[i] *= self.envelope_block[i];
         }
     }
 
