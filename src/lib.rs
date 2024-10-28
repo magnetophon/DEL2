@@ -616,7 +616,7 @@ impl Plugin for Del2 {
     ) -> ProcessStatus {
         self.update_timing_params();
         self.process_midi_events(context);
-        // self.set_amp_envelope_states();
+        self.set_amp_envelope_states();
         self.prepare_for_delay(buffer.samples());
         if Del2::compare_exchange(&self.should_update_filter) {
             for tap in 0..self.delay_data.current_tap {
@@ -746,6 +746,9 @@ impl Del2 {
                     if !is_learning
                     // this is the value at the start of the fn, from before we adjusted the global one
                     {
+                        let old_mute_in = self.enabled_actions.load(MUTE_IN);
+                        let old_mute_out = self.enabled_actions.load(MUTE_OUT);
+
                         if note == mute_in_note {
                             if self.params.global.mute_is_toggle.value() {
                                 self.enabled_actions.toggle(MUTE_IN);
@@ -793,22 +796,30 @@ impl Del2 {
                         //     mute_value = self.enabled_actions.load(MUTE_OUT);
                         // };
 
-                        Self::update_mute_times(
-                            &mut self.mute_in_states,
-                            &mut self.mute_in_write_index,
-                            (timing, false),
-                        );
+                        let new_mute_in = self.enabled_actions.load(MUTE_IN);
+                        let new_mute_out = self.enabled_actions.load(MUTE_OUT);
 
-                        Self::update_mute_times(
-                            &mut self.mute_out_states,
-                            &mut self.mute_out_write_index,
-                            (timing, false),
-                        );
+                        if new_mute_in != old_mute_in {
+                            Self::update_mute_times(
+                                &mut self.mute_in_states,
+                                &mut self.mute_in_write_index,
+                                (timing, new_mute_in),
+                            );
+                        }
+
+                        if new_mute_out != old_mute_out {
+                            Self::update_mute_times(
+                                &mut self.mute_out_states,
+                                &mut self.mute_out_write_index,
+                                (timing, new_mute_out),
+                            );
+                        }
                     }
                 }
                 // Handling NoteOff events
                 NoteEvent::NoteOff { timing, note, .. } => {
                     if !self.params.global.mute_is_toggle.value() {
+                        println!("direct mode!");
                         // if we are in direct mode
                         // mute the in and out
                         for &mute in &[MUTE_IN, MUTE_OUT] {
@@ -862,10 +873,9 @@ impl Del2 {
         write_index: &mut isize,
         state: (u32, bool),
     ) {
-        // save the time
-        times.write_latest(&[state], 1);
+        times.write_latest(&[state], *write_index);
         *write_index = (*write_index + 1) % DSP_BLOCK_SIZE as isize;
-        // println!("state changed, timing: {}, index: {}", timing, write_index);
+        println!("state changed, state: {:?}, index: {}", state, *write_index);
     }
 
     fn prepare_for_delay(&mut self, buffer_samples: usize) {
@@ -983,7 +993,7 @@ impl Del2 {
             }
 
             self.delay_write_index =
-                (self.delay_write_index + block_len as isize) % self.delay_buffer_size as isize;
+                (write_index + block_len as isize) % self.delay_buffer_size as isize;
         }
     }
 
@@ -1011,130 +1021,83 @@ impl Del2 {
     }
 
     fn set_amp_envelope_states(&mut self) {
+        let out_index = self.mute_out_write_index;
         for tap in 0..MAX_NR_TAPS {
             self.amp_envelope_write_index[tap] = 0;
         }
-        let out_index = self.mute_out_write_index;
-        let current_tap = self.delay_data.current_tap;
         // if there are any events
-        // if out_index > 0 {
-        // TODO: do we really need a ringbuf?
-        // Get slices of states from the ring buffer
-        let (mute_out_state_slices, _) = self
-            .mute_out_states
-            .as_slices_len(0, out_index.try_into().unwrap());
+        if out_index > 0 {
+            for tap in 0..MAX_NR_TAPS {
+                let (mute_out_state_slices, _) = self
+                    .mute_out_states
+                    .as_slices_len(0, out_index.try_into().unwrap());
 
-        let mute_out_timings: Vec<u32> = mute_out_state_slices
-            .iter()
-            .map(|&(time, _)| time)
-            .collect();
-        // Process each tap
-        // for tap in 0..MAX_NR_TAPS {
-        if current_tap > 0 {
-            let (time, state) = self.tap_states[current_tap - 1];
-            self.amp_envelope_states[current_tap - 1]
-                .write_latest(&[self.tap_states[current_tap - 1]], 0);
-
-            // self.amp_envelope_states[current_tap - 1].write_latest(&mute_out_state_slices, 1);
-            self.amp_envelope_write_index[current_tap - 1] =
-                (self.amp_envelope_write_index[current_tap - 1] + 1) % DSP_BLOCK_SIZE as isize;
+                self.amp_envelope_states[tap]
+                    .write_latest(&mute_out_state_slices, self.amp_envelope_write_index[tap]);
+                self.amp_envelope_write_index[tap] =
+                    (self.amp_envelope_write_index[tap] + out_index) % DSP_BLOCK_SIZE as isize;
+            }
         }
     }
 
     fn create_envelope_block(&mut self, block_len: usize, tap: usize) {
-        // for tap in 0..MAX_NR_TAPS {
-        let tap_state = self.tap_states[tap].1;
-        if tap_state {
-            // println!("tap_state {} {} {}", tap, tap_state, self.tap_was_muted[tap]);
+        let index = self.amp_envelope_write_index[tap].try_into().unwrap();
+        let current_tap = self.delay_data.current_tap;
+        let mut block_start = 0;
+        let mut block_end = block_len;
+        // if no events
+        if index == 0 {
+            let tap_state = self.tap_states[tap].1;
+            if tap_state != self.tap_was_muted[tap] {
+                println!("set tap {} to {}", tap, tap_state);
+                self.mute_out(tap, tap_state);
+                self.tap_was_muted[tap] = tap_state;
+            }
+            self.amp_envelopes[tap].next_block(
+                &mut self.envelope_block[tap][block_start..block_end],
+                block_end - block_start,
+            );
+            // println!("no events: tap {}, index: {}", tap, index);
+        } else {
+            let (end_time, state) = self.amp_envelope_states[tap].raw_at(0);
+            block_end = *end_time as usize;
+            println!(
+                "toggle tap {} to {} at {} till {}",
+                tap, state, block_start, block_end
+            );
+            self.mute_out(tap, *state);
+            self.amp_envelopes[tap].next_block(
+                &mut self.envelope_block[tap][block_start..block_end],
+                block_end - block_start,
+            );
+            for i in 1..index {
+                let (start_time, state) = self.amp_envelope_states[tap].raw_at(i - 1);
+                let (end_time, _) = self.amp_envelope_states[tap].raw_at(i);
+                block_start = *start_time as usize;
+                block_end = *end_time as usize;
+                // println!("toggle tap {} to {} at {}", tap, state, block_start);
+                self.mute_out(tap, *state);
+                self.amp_envelopes[tap].next_block(
+                    &mut self.envelope_block[tap][block_start..block_end],
+                    block_end - block_start,
+                );
+            }
         }
-        if tap_state != self.tap_was_muted[tap] {
-            println!("set tap {} to {}", tap, tap_state);
-            self.mute_out(tap, tap_state);
-            self.tap_was_muted[tap] = tap_state;
+
+        // debug
+        if self.envelope_block[tap][7] != 1.0 && self.envelope_block[tap][7] != 0.0 && tap == 0 {
+            println!(
+                "self.envelope_block[tap][7]: {}",
+                self.envelope_block[tap][7]
+            );
         }
-        self.amp_envelopes[tap].next_block(&mut self.envelope_block[tap], block_len);
-        // }
     }
 
     fn process_temp_with_envelope(&mut self, block_len: usize, tap: usize) {
-        // TODO: make the mutes sample accurate, so this is not needed anymore
-        // also fixing the issue that when RESET_TAPS is triggered, the envelope jumps to 0
-
-        // let index = self.amp_envelope_write_index[tap].try_into().unwrap();
-        // let current_tap = self.delay_data.current_tap;
-        // let mut block_start = 0;
-        // let mut block_end = block_len;
-
-        // let tap_state = self.tap_states[tap].1;
-        // if tap_state {
-        //     println!("tap_state {} {} {}", tap, tap_state, self.tap_was_muted[tap]);
-        // }
-        // if tap_state != self.tap_was_muted[tap]{
-        //     println!("turn on tap {}", tap);
-        //     self.mute_out(tap, tap_state);
-        //     self.amp_envelopes[tap].next_block(
-        //         &mut self.envelope_block[block_start..block_end],
-        //         block_end - block_start,
-        //     );
-        //     self.tap_was_muted[tap] = tap_state;
-        // }
-
-        /*
-        for the first
-
-         */
-        // unmute when a tap first appears
-        // if !self.tap_states[0].1 {
-        // println!("turn on tap {}", tap);
-        // self.amp_envelope_muted[tap] = false;
-        // }
-
-        // if no events
-        // if index == 0 {
-        //     self.amp_envelopes[tap].next_block(
-        //         &mut self.envelope_block[block_start..block_end],
-        //         block_end - block_start,
-        //     );
-        //     // println!("no events: tap {}, index: {}", tap, index);
-        // } else {
-        //     let (end_time, state) = self.amp_envelope_states[tap].raw_at(0);
-        //     block_end = *end_time as usize;
-        //     // println!("toggle tap {} to {} at {} till {}", tap, state, block_start, block_end);
-        //     self.mute_out(tap, *state);
-        //     self.amp_envelopes[tap].next_block(
-        //         &mut self.envelope_block[block_start..block_end],
-        //         block_end - block_start,
-        //     );
-        //     for i in 1..index {
-        //         let (start_time, state) = self.amp_envelope_states[tap].raw_at(i - 1);
-        //         let (end_time, _) = self.amp_envelope_states[tap].raw_at(i);
-        //         block_start = *start_time as usize;
-        //         block_end = *end_time as usize;
-        //         // println!("toggle tap {} to {} at {}", tap, state, block_start);
-        //         self.mute_out(tap, *state);
-        //         self.amp_envelopes[tap].next_block(
-        //             &mut self.envelope_block[block_start..block_end],
-        //             block_end - block_start,
-        //         );
-        //     }
-        // }
-
-        // debug
-        // if self.envelope_block[7] != 1.0 && self.envelope_block[7] != 0.0 {
-        //     println!("self.envelope_block[7]: {}", self.envelope_block[7]);
-        // }
-
         // Apply the envelope to each sample in the temporary buffers
         for i in 0..block_len {
             self.temp_l[i] *= self.envelope_block[tap][i];
             self.temp_r[i] *= self.envelope_block[tap][i];
-            if i < (block_len - 2) {
-                if self.envelope_block[tap][i] < self.envelope_block[tap][i + 1] {
-                    if tap == 1 {
-                        // println!("aaaaaaaaaaaaaaaaaaaaaaaaaaa  {}", self.envelope_block[tap][i]);
-                    }
-                }
-            }
         }
     }
 
