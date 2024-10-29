@@ -1046,9 +1046,11 @@ impl Del2 {
         let mut block_end = block_len;
         // if no events
         if index == 0 {
+            // println!("no events: tap {}, index: {}", tap, index);
             let tap_state = self.tap_states[tap].1;
+            let state_toggled = tap_state != self.tap_was_muted[tap];
             if tap_state != self.tap_was_muted[tap] {
-                println!("set tap {} to {}", tap, tap_state);
+                // println!("set tap {} to {}", tap, tap_state);
                 self.mute_out(tap, tap_state);
                 self.tap_was_muted[tap] = tap_state;
             }
@@ -1056,13 +1058,13 @@ impl Del2 {
                 &mut self.envelope_block[tap][block_start..block_end],
                 block_end - block_start,
             );
-            // println!("no events: tap {}, index: {}", tap, index);
         } else {
             let (end_time, state) = self.amp_envelope_states[tap].raw_at(0);
             block_end = *end_time as usize;
-            if block_end == 0 {
-                block_end = block_len
-            }
+            // TODO: put back, or handle it on the next call?
+            // if block_end == 0 {
+            // block_end = block_len
+            // }
             self.mute_out(tap, *state);
             self.amp_envelopes[tap].next_block(
                 &mut self.envelope_block[tap][block_start..block_end],
