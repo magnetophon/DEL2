@@ -87,8 +87,6 @@ const RESET_TAPS: usize = 2;
 const LOCK_TAPS: usize = 3;
 const MAX_HAAS_MS: f32 = 5.0;
 
-/// The number of simultaneous voices for this synth.
-const NUM_VOICES: u32 = 16;
 // Polyphonic modulation works by assigning integer IDs to parameters. Pattern matching on these in
 // `PolyModulation` and `MonoAutomation` events makes it possible to easily link these events to the
 // correct parameter.
@@ -96,12 +94,6 @@ const GAIN_POLY_MOD_ID: u32 = 0;
 
 struct Del2 {
     params: Arc<Del2Params>,
-
-    /// The synth's voices. Inactive voices will be set to `None` values.
-    voices: [Option<Voice>; NUM_VOICES as usize],
-    /// The next internal voice ID, used only to figure out the oldest voice for voice stealing.
-    /// This is incremented by one each time a voice is created.
-    next_internal_voice_id: u64,
 
     /// The effect's delay taps. Inactive delay taps will be set to `None` values.
     delay_taps: [Option<DelayTap>; NUM_TAPS as usize],
@@ -442,41 +434,6 @@ impl FilterGuiParams {
     }
 }
 
-/// Data for a single synth voice. In a real synth where performance matter, you may want to use a
-/// struct of arrays instead of having a struct for each voice.
-#[derive(Debug, Clone)]
-struct Voice {
-    /// The identifier for this voice. Polyphonic modulation events are linked to a voice based on
-    /// these IDs. If the host doesn't provide these IDs, then this is computed through
-    /// `compute_fallback_voice_id()`. In that case polyphonic modulation will not work, but the
-    /// basic note events will still have an effect.
-    voice_id: i32,
-    /// The note's channel, in `0..16`. Only used for the voice terminated event.
-    channel: u8,
-    /// The note's key/note, in `0..128`. Only used for the voice terminated event.
-    note: u8,
-    /// The voices internal ID. Each voice has an internal voice ID one higher than the previous
-    /// voice. This is used to steal the last voice in case all 16 voices are in use.
-    internal_voice_id: u64,
-    /// The square root of the note's velocity. This is used as a gain multiplier.
-    velocity_sqrt: f32,
-
-    /// The voice's current phase. This is randomized at the start of the voice
-    phase: f32,
-    /// The phase increment. This is based on the voice's frequency, derived from the note index.
-    /// Since we don't support pitch expressions or pitch bend, this value stays constant for the
-    /// duration of the voice.
-    phase_delta: f32,
-    /// Whether the key has been released and the voice is in its release stage. The voice will be
-    /// terminated when the amplitude envelope hits 0 while the note is releasing.
-    releasing: bool,
-    /// Fades between 0 and 1 with timings based on the global attack and release settings.
-    amp_envelope: Smoother<f32>,
-
-    /// If this voice has polyphonic gain modulation applied, then this contains the normalized
-    /// offset and a smoother.
-    voice_gain: Option<(f32, Smoother<f32>)>,
-}
 #[derive(PartialEq)]
 enum CountingState {
     TimeOut,
@@ -505,10 +462,6 @@ impl Default for Del2 {
                 should_update_filter.clone(),
                 enabled_actions.clone(),
             )),
-
-            // `[None; N]` requires the `Some(T)` to be `Copy`able
-            voices: [0; NUM_VOICES as usize].map(|_| None),
-            next_internal_voice_id: 0,
 
             delay_taps: [0; NUM_TAPS as usize].map(|_| None),
             next_internal_delay_tap_id: 0,
@@ -690,7 +643,7 @@ impl Plugin for Del2 {
             self.ladders[tap].s = [f32x4::splat(0.); 4];
             self.amp_envelopes[tap].reset(0.0);
         }
-        self.voices.fill(None);
+        self.delay_taps.fill(None);
         // Reset buffers and envelopes here. This can be called from the audio thread and may not
         // allocate. You can remove this function if you do not need it.
     }
@@ -720,6 +673,9 @@ impl Plugin for Del2 {
 
         */
 
+        // write the audio buffer into the delay
+        self.write_into_delay(buffer);
+
         let num_samples = buffer.samples();
         let sample_rate = context.transport().sample_rate;
         let output = buffer.as_slice();
@@ -727,14 +683,15 @@ impl Plugin for Del2 {
         let mut next_event = context.next_event();
         let mut block_start: usize = 0;
         let mut block_end: usize = MAX_BLOCK_SIZE.min(num_samples);
+
         while block_start < num_samples {
             // First of all, handle all note events that happen at the start of the block, and cut
             // the block short if another event happens before the end of it. To handle polyphonic
             // modulation for new notes properly, we'll keep track of the next internal note index
-            // at the block's start. If we receive polyphonic modulation that matches a voice that
+            // at the block's start. If we receive polyphonic modulation that matches a delay tap that
             // has an internal note ID that's great than or equal to this one, then we should start
             // the note's smoother at the new value instead of fading in from the global value.
-            let this_sample_internal_voice_id_start = self.next_internal_voice_id;
+            let this_sample_internal_delay_tap_id_start = self.next_internal_delay_tap_id;
             'events: loop {
                 match next_event {
                     // If the event happens now, then we'll keep processing events
@@ -749,7 +706,6 @@ impl Plugin for Del2 {
                                 note,
                                 velocity,
                             } => {
-                                let initial_phase: f32 = 0.0;
                                 // This starts with the attack portion of the amplitude envelope
                                 let amp_envelope = Smoother::new(SmoothingStyle::Exponential(
                                     self.params.global.attack_ms.value(),
@@ -757,10 +713,12 @@ impl Plugin for Del2 {
                                 amp_envelope.reset(0.0);
                                 amp_envelope.set_target(sample_rate, 1.0);
 
-                                let delay_tap =
-                                    self.start_delay_tap(context, timing, voice_id, channel, note);
-                                delay_tap.velocity = velocity;
-                                delay_tap.amp_envelope = amp_envelope;
+                                {
+                                    let mut delay_tap = self
+                                        .start_delay_tap(context, timing, voice_id, channel, note);
+                                    delay_tap.velocity = velocity;
+                                    delay_tap.amp_envelope = amp_envelope;
+                                }
                             }
                             NoteEvent::NoteOff {
                                 timing: _,
@@ -768,16 +726,19 @@ impl Plugin for Del2 {
                                 channel,
                                 note,
                                 velocity: _,
-                            } => {
-                                self.start_release_for_voices(sample_rate, voice_id, channel, note)
-                            }
+                            } => self.start_release_for_delay_taps(
+                                sample_rate,
+                                voice_id,
+                                channel,
+                                note,
+                            ),
                             NoteEvent::Choke {
                                 timing,
                                 voice_id,
                                 channel,
                                 note,
                             } => {
-                                self.choke_voices(context, timing, voice_id, channel, note);
+                                self.choke_delay_taps(context, timing, voice_id, channel, note);
                             }
                             NoteEvent::PolyModulation {
                                 timing: _,
@@ -785,15 +746,16 @@ impl Plugin for Del2 {
                                 poly_modulation_id,
                                 normalized_offset,
                             } => {
-                                // Polyphonic modulation events are matched to voices using the
-                                // voice ID, and to parameters using the poly modulation ID. The
+                                // Polyphonic modulation events are matched to delay taps using the
+                                // delay tap ID, and to parameters using the poly modulation ID. The
                                 // host will probably send a modulation event every N samples. This
-                                // will happen before the voice is active, and of course also after
+                                // will happen before the delay tap is active, and of course also after
                                 // it has been terminated (because the host doesn't know that it
                                 // will be). Because of that, we won't print any assertion failures
-                                // when we can't find the voice index here.
-                                if let Some(voice_idx) = self.get_voice_idx(voice_id) {
-                                    let voice = self.voices[voice_idx].as_mut().unwrap();
+                                // when we can't find the delay tap index here.
+                                if let Some(delay_tap_idx) = self.get_delay_tap_idx(voice_id) {
+                                    let delay_tap =
+                                        self.delay_taps[delay_tap_idx].as_mut().unwrap();
 
                                     match poly_modulation_id {
                                         GAIN_POLY_MOD_ID => {
@@ -807,7 +769,7 @@ impl Plugin for Del2 {
                                                 .gain
                                                 .preview_modulated(normalized_offset);
                                             let (_, smoother) =
-                                                voice.voice_gain.get_or_insert_with(|| {
+                                                delay_tap.delay_tap_gain.get_or_insert_with(|| {
                                                     (
                                                         normalized_offset,
                                                         self.params.gain.smoothed.clone(),
@@ -815,11 +777,11 @@ impl Plugin for Del2 {
                                                 });
 
                                             // If this `PolyModulation` events happens on the
-                                            // same sample as a voice's `NoteOn` event, then it
+                                            // same sample as a delay tap's `NoteOn` event, then it
                                             // should immediately use the modulated value
                                             // instead of slowly fading in
-                                            if voice.internal_voice_id
-                                                >= this_sample_internal_voice_id_start
+                                            if delay_tap.internal_delay_tap_id
+                                                >= this_sample_internal_delay_tap_id_start
                                             {
                                                 smoother.reset(target_plain_value);
                                             } else {
@@ -829,7 +791,7 @@ impl Plugin for Del2 {
                                         }
                                         n => nih_debug_assert_failure!(
                                             "Polyphonic modulation sent for unknown poly \
-                                             modulation ID {}",
+                                                 modulation ID {}",
                                             n
                                         ),
                                     }
@@ -843,14 +805,16 @@ impl Plugin for Del2 {
                                 // Modulation always acts as an offset to the parameter's current
                                 // automated value. So if the host sends a new automation value for
                                 // a modulated parameter, the modulated values/smoothing targets
-                                // need to be updated for all polyphonically modulated voices.
-                                for voice in self.voices.iter_mut().filter_map(|v| v.as_mut()) {
+                                // need to be updated for all polyphonically modulated delay taps.
+                                for delay_tap in
+                                    self.delay_taps.iter_mut().filter_map(|v| v.as_mut())
+                                {
                                     match poly_modulation_id {
                                         GAIN_POLY_MOD_ID => {
                                             let (normalized_offset, smoother) =
-                                                match voice.voice_gain.as_mut() {
+                                                match delay_tap.delay_tap_gain.as_mut() {
                                                     Some((o, s)) => (o, s),
-                                                    // If the voice does not have existing
+                                                    // If the delay tap does not have existing
                                                     // polyphonic modulation, then there's nothing
                                                     // to do here. The global automation/monophonic
                                                     // modulation has already been taken care of by
@@ -886,70 +850,70 @@ impl Plugin for Del2 {
                 }
             }
 
-            // We'll start with silence, and then add the output from the active voices
+            // We'll start with silence, and then add the output from the active delay taps
             output[0][block_start..block_end].fill(0.0);
             output[1][block_start..block_end].fill(0.0);
 
-            // These are the smoothed global parameter values. These are used for voices that do not
+            // These are the smoothed global parameter values. These are used for delay taps that do not
             // have polyphonic modulation applied to them. With a plugin as simple as this it would
             // be possible to avoid this completely by simply always copying the smoother into the
-            // voice's struct, but that may not be realistic when the plugin has hundreds of
-            // parameters. The `voice_*` arrays are scratch arrays that an individual voice can use.
+            // delay tap's struct, but that may not be realistic when the plugin has hundreds of
+            // parameters. The `delay_tap_*` arrays are scratch arrays that an individual delay tap can use.
             let block_len = block_end - block_start;
             let mut gain = [0.0; MAX_BLOCK_SIZE];
-            let mut voice_gain = [0.0; MAX_BLOCK_SIZE];
-            let mut voice_amp_envelope = [0.0; MAX_BLOCK_SIZE];
+            let mut delay_tap_gain = [0.0; MAX_BLOCK_SIZE];
+            let mut delay_tap_amp_envelope = [0.0; MAX_BLOCK_SIZE];
             self.params.gain.smoothed.next_block(&mut gain, block_len);
 
             // TODO: Some form of band limiting
             // TODO: Filter
-            for voice in self.voices.iter_mut().filter_map(|v| v.as_mut()) {
-                // Depending on whether the voice has polyphonic modulation applied to it,
-                // either the global parameter values are used, or the voice's smoother is used
-                // to generate unique modulated values for that voice
-                let gain = match &voice.voice_gain {
+            for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
+                // delay_time - 1 because we are processing 2 samples at once in process_audio
+                let read_index = self.delay_write_index - (48_000 - 1).max(0);
+                self.delay_buffer[0].read_into(&mut delay_tap.delayed_audio_l, read_index);
+                self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index);
+
+                // Depending on whether the delay tap has polyphonic modulation applied to it,
+                // either the global parameter values are used, or the delay tap's smoother is used
+                // to generate unique modulated values for that delay tap
+                let gain = match &delay_tap.delay_tap_gain {
                     Some((_, smoother)) => {
-                        smoother.next_block(&mut voice_gain, block_len);
-                        &voice_gain
+                        smoother.next_block(&mut delay_tap_gain, block_len);
+                        &delay_tap_gain
                     }
                     None => &gain,
                 };
 
                 // This is an exponential smoother repurposed as an AR envelope with values between
                 // 0 and 1. When a note off event is received, this envelope will start fading out
-                // again. When it reaches 0, we will terminate the voice.
-                voice
+                // again. When it reaches 0, we will terminate the delay tap.
+                delay_tap
                     .amp_envelope
-                    .next_block(&mut voice_amp_envelope, block_len);
+                    .next_block(&mut delay_tap_amp_envelope, block_len);
 
                 for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                    let amp = voice.velocity_sqrt * gain[value_idx] * voice_amp_envelope[value_idx];
-                    let sample = (voice.phase * 2.0 - 1.0) * amp;
+                    let amp =
+                        delay_tap.velocity * gain[value_idx] * delay_tap_amp_envelope[value_idx];
 
-                    voice.phase += voice.phase_delta;
-                    if voice.phase >= 1.0 {
-                        voice.phase -= 1.0;
-                    }
-
-                    output[0][sample_idx] += sample;
-                    output[1][sample_idx] += sample;
+                    output[0][sample_idx] += delay_tap.delayed_audio_l[sample_idx] * amp;
+                    output[1][sample_idx] += delay_tap.delayed_audio_r[sample_idx] * amp;
                 }
             }
 
-            // Terminate voices whose release period has fully ended. This could be done as part of
+            // Terminate delay taps whose release period has fully ended. This could be done as part of
             // the previous loop but this is simpler.
-            for voice in self.voices.iter_mut() {
-                match voice {
+            for delay_tap in self.delay_taps.iter_mut() {
+                match delay_tap {
                     Some(v) if v.releasing && v.amp_envelope.previous_value() == 0.0 => {
                         // This event is very important, as it allows the host to manage its own modulation
-                        // voices
+                        // delay taps
                         context.send_event(NoteEvent::VoiceTerminated {
                             timing: block_end as u32,
-                            voice_id: Some(v.voice_id),
+                            voice_id: Some(v.delay_tap_id),
                             channel: v.channel,
                             note: v.note,
                         });
-                        *voice = None;
+                        *delay_tap = None;
                     }
                     _ => (),
                 }
@@ -1104,31 +1068,6 @@ impl Del2 {
                         if self.is_playing_action(RESET_TAPS) {
                             self.reset_taps(timing, false);
                         }
-
-                        // let mut mute_buffer = [false; MAX_BLOCK_SIZE];
-                        // let write_index = self.delay_write_index;
-                        // let is_toggle = self.params.global.mute_is_toggle.value();
-                        // let mute_value = if is_toggle {
-                        //     self.enabled_actions.load(MUTE_IN)
-                        // } else {
-                        //     !self.is_playing_action(MUTE_IN)
-                        // };
-
-                        // mute_buffer[..block_len].fill(mute_value);
-                        // self.mute_in_delay_buffer
-                        //     .write_latest(&mute_buffer[..block_len], write_index);
-
-                        // let mute_value;
-                        // if is_toggle {
-                        //     self.mute_in_delay_buffer.read_into(
-                        //         &mut self.mute_in_delay_temp,
-                        //         self.delay_write_index as isize
-                        //             - (self.delay_data.delay_times[tap] as isize - 1).max(0),
-                        //     );
-                        //     mute_value = self.enabled_actions.load(MUTE_OUT | self.mute_in_delay_temp[0]);
-                        // } else {
-                        //     mute_value = self.enabled_actions.load(MUTE_OUT);
-                        // };
 
                         let new_mute_in = self.enabled_actions.load(MUTE_IN);
                         let new_mute_out = self.enabled_actions.load(MUTE_OUT);
@@ -1297,6 +1236,45 @@ impl Del2 {
         a * (b / a).powf(x)
     }
 
+    fn write_into_delay(&mut self, buffer: &mut Buffer) {
+        for (_, block) in buffer.iter_blocks(buffer.samples()) {
+            let block_len = block.samples();
+            // TODO: assert needed?
+            // assert!(block_len <= MAX_BLOCK_SIZE);
+            // Either we resize here, or in the initialization fn
+            // If we don't, we are slower.
+            // self.resize_temp_buffers(block_len.try_into().unwrap());
+            let mut block_channels = block.into_iter();
+
+            let out_l = block_channels.next().expect("Left output channel missing");
+            let out_r = block_channels.next().expect("Right output channel missing");
+
+            let write_index = self.delay_write_index;
+
+            // println!("out_l: {}", out_l[42]);
+
+            self.delay_buffer[0].write_latest(out_l, write_index);
+            self.delay_buffer[1].write_latest(out_r, write_index);
+            self.delay_write_index =
+                (write_index + block_len as isize) % self.delay_buffer_size as isize;
+        }
+    }
+
+    fn read_into_delayed_audio(
+        &mut self,
+        delayed_audio_l: &mut [f32],
+        delayed_audio_r: &mut [f32],
+        delay_time: isize,
+    ) {
+        // delay_time - 1 because we are processing 2 samples at once in process_audio
+        let read_index = self.delay_write_index - (delay_time - 1).max(0);
+
+        self.delay_buffer[0].read_into(delayed_audio_l, read_index);
+        self.delay_buffer[1].read_into(delayed_audio_r, read_index);
+
+        println!("delayed_audio_l: {}", delayed_audio_l[42]);
+    }
+
     fn process_audio_blocks(&mut self, buffer: &mut Buffer) {
         for (_, block) in buffer.iter_blocks(buffer.samples()) {
             let block_len = block.samples();
@@ -1313,6 +1291,8 @@ impl Del2 {
             let write_index = self.delay_write_index;
             self.delay_buffer[0].write_latest(out_l, write_index);
             self.delay_buffer[1].write_latest(out_r, write_index);
+            self.delay_write_index =
+                (write_index + block_len as isize) % self.delay_buffer_size as isize;
 
             // TODO: no dry signal yet
             out_l.fill(0.0);
@@ -1325,9 +1305,6 @@ impl Del2 {
                     self.process_tap(block_len, tap, out_l, out_r);
                 }
             }
-
-            self.delay_write_index =
-                (write_index + block_len as isize) % self.delay_buffer_size as isize;
         }
     }
 
@@ -1382,7 +1359,6 @@ impl Del2 {
         if index == 0 {
             // println!("no events: tap {}, index: {}", tap, index);
             let tap_state = self.tap_states[tap].1;
-            let state_toggled = tap_state != self.tap_was_muted[tap];
             if tap_state != self.tap_was_muted[tap] {
                 // println!("set tap {} to {}", tap, tap_state);
                 self.mute_out(tap, tap_state);
@@ -1639,10 +1615,10 @@ impl Del2 {
 
     /// Get the index of a delay tap by its delay tap ID, if the delay tap exists. This does not immediately
     /// reutnr a reference to the delay tap to avoid lifetime issues.
-    fn get_delay_tap_idx(&mut self, delay_tap_id: i32) -> Option<usize> {
-        self.delay_taps
-            .iter_mut()
-            .position(|delay_tap| matches!(delay_tap, Some(delay_tap) if delay_tap.delay_tap_id == delay_tap_id))
+    fn get_delay_tap_idx(&mut self, voice_id: i32) -> Option<usize> {
+        self.delay_taps.iter_mut().position(
+            |delay_tap| matches!(delay_tap, Some(delay_tap) if delay_tap.delay_tap_id == voice_id),
+        )
     }
 
     /// Start a new delay tap with the given delay tap ID. If all delay_taps are currently in use, the oldest
@@ -1667,6 +1643,8 @@ impl Del2 {
             amp_envelope: Smoother::none(),
 
             delay_tap_gain: None,
+            delayed_audio_l: [0.0; DSP_BLOCK_SIZE],
+            delayed_audio_r: [0.0; DSP_BLOCK_SIZE],
         };
         self.next_internal_delay_tap_id = self.next_internal_delay_tap_id.wrapping_add(1);
 
@@ -1795,152 +1773,6 @@ impl Del2 {
      *
      *
      */
-    /// Get the index of a voice by its voice ID, if the voice exists. This does not immediately
-    /// reutnr a reference to the voice to avoid lifetime issues.
-    fn get_voice_idx(&mut self, voice_id: i32) -> Option<usize> {
-        self.voices
-            .iter_mut()
-            .position(|voice| matches!(voice, Some(voice) if voice.voice_id == voice_id))
-    }
-
-    /// Start a new voice with the given voice ID. If all voices are currently in use, the oldest
-    /// voice will be stolen. Returns a reference to the new voice.
-    fn start_voice(
-        &mut self,
-        context: &mut impl ProcessContext<Self>,
-        sample_offset: u32,
-        voice_id: Option<i32>,
-        channel: u8,
-        note: u8,
-    ) -> &mut Voice {
-        let new_voice = Voice {
-            voice_id: voice_id.unwrap_or_else(|| compute_fallback_voice_id(note, channel)),
-            internal_voice_id: self.next_internal_voice_id,
-            channel,
-            note,
-            velocity_sqrt: 1.0,
-
-            phase: 0.0,
-            phase_delta: 0.0,
-            releasing: false,
-            amp_envelope: Smoother::none(),
-
-            voice_gain: None,
-        };
-        self.next_internal_voice_id = self.next_internal_voice_id.wrapping_add(1);
-
-        // Can't use `.iter_mut().find()` here because nonlexical lifetimes don't apply to return
-        // values
-        match self.voices.iter().position(|voice| voice.is_none()) {
-            Some(free_voice_idx) => {
-                self.voices[free_voice_idx] = Some(new_voice);
-                return self.voices[free_voice_idx].as_mut().unwrap();
-            }
-            None => {
-                // If there is no free voice, find and steal the oldest one
-                // SAFETY: We can skip a lot of checked unwraps here since we already know all voices are in
-                //         use
-                let oldest_voice = unsafe {
-                    self.voices
-                        .iter_mut()
-                        .min_by_key(|voice| voice.as_ref().unwrap_unchecked().internal_voice_id)
-                        .unwrap_unchecked()
-                };
-
-                // The stolen voice needs to be terminated so the host can reuse its modulation
-                // resources
-                {
-                    let oldest_voice = oldest_voice.as_ref().unwrap();
-                    context.send_event(NoteEvent::VoiceTerminated {
-                        timing: sample_offset,
-                        voice_id: Some(oldest_voice.voice_id),
-                        channel: oldest_voice.channel,
-                        note: oldest_voice.note,
-                    });
-                }
-
-                *oldest_voice = Some(new_voice);
-                return oldest_voice.as_mut().unwrap();
-            }
-        }
-    }
-
-    /// Start the release process for one or more voice by changing their amplitude envelope. If
-    /// `voice_id` is not provided, then this will terminate all matching voices.
-    fn start_release_for_voices(
-        &mut self,
-        sample_rate: f32,
-        voice_id: Option<i32>,
-        channel: u8,
-        note: u8,
-    ) {
-        for voice in self.voices.iter_mut() {
-            match voice {
-                Some(Voice {
-                    voice_id: candidate_voice_id,
-                    channel: candidate_channel,
-                    note: candidate_note,
-                    releasing,
-                    amp_envelope,
-                    ..
-                }) if voice_id == Some(*candidate_voice_id)
-                    || (channel == *candidate_channel && note == *candidate_note) =>
-                {
-                    *releasing = true;
-                    amp_envelope.style =
-                        SmoothingStyle::Exponential(self.params.global.release_ms.value());
-                    amp_envelope.set_target(sample_rate, 0.0);
-
-                    // If this targeted a single voice ID, we're done here. Otherwise there may be
-                    // multiple overlapping voices as we enabled support for that in the
-                    // `PolyModulationConfig`.
-                    if voice_id.is_some() {
-                        return;
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-
-    /// Immediately terminate one or more voice, removing it from the pool and informing the host
-    /// that the voice has ended. If `voice_id` is not provided, then this will terminate all
-    /// matching voices.
-    fn choke_voices(
-        &mut self,
-        context: &mut impl ProcessContext<Self>,
-        sample_offset: u32,
-        voice_id: Option<i32>,
-        channel: u8,
-        note: u8,
-    ) {
-        for voice in self.voices.iter_mut() {
-            match voice {
-                Some(Voice {
-                    voice_id: candidate_voice_id,
-                    channel: candidate_channel,
-                    note: candidate_note,
-                    ..
-                }) if voice_id == Some(*candidate_voice_id)
-                    || (channel == *candidate_channel && note == *candidate_note) =>
-                {
-                    context.send_event(NoteEvent::VoiceTerminated {
-                        timing: sample_offset,
-                        // Notice how we always send the terminated voice ID here
-                        voice_id: Some(*candidate_voice_id),
-                        channel,
-                        note,
-                    });
-                    *voice = None;
-
-                    if voice_id.is_some() {
-                        return;
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
 }
 
 /// Compute a delay tap ID in case the host doesn't provide them. Polyphonic modulation will not work in

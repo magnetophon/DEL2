@@ -1,5 +1,7 @@
+use crate::DSP_BLOCK_SIZE;
 use nih_plug::prelude::*;
 
+#[derive(Debug, Clone)]
 pub struct DelayTap {
     /// The identifier for this delay tap. Polyphonic modulation events are linked to a delay tap based on
     /// these IDs. If the host doesn't provide these IDs, then this is computed through
@@ -23,4 +25,9 @@ pub struct DelayTap {
     /// If this delay tap has polyphonic gain modulation applied, then this contains the normalized
     /// offset and a smoother.
     pub delay_tap_gain: Option<(f32, Smoother<f32>)>,
+
+    /// The delayed audio of this tap.
+    /// Used to apply the envelopes and filters, and other DSP to.
+    pub delayed_audio_l: [f32; DSP_BLOCK_SIZE],
+    pub delayed_audio_r: [f32; DSP_BLOCK_SIZE],
 }
