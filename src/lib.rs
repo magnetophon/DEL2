@@ -1060,6 +1060,9 @@ impl Del2 {
         } else {
             let (end_time, state) = self.amp_envelope_states[tap].raw_at(0);
             block_end = *end_time as usize;
+            if block_end == 0 {
+                block_end = block_len
+            }
             self.mute_out(tap, *state);
             self.amp_envelopes[tap].next_block(
                 &mut self.envelope_block[tap][block_start..block_end],
