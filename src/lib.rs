@@ -673,6 +673,7 @@ impl Plugin for Del2 {
 
         */
 
+        self.update_timing_params();
         // write the audio buffer into the delay
         self.write_into_delay(buffer);
 
@@ -706,6 +707,7 @@ impl Plugin for Del2 {
                                 note,
                                 velocity,
                             } => {
+                                self.store_note_on_in_delay_data(timing, note, velocity);
                                 // This starts with the attack portion of the amplitude envelope
                                 let amp_envelope = Smoother::new(SmoothingStyle::Exponential(
                                     self.params.global.attack_ms.value(),
@@ -721,17 +723,20 @@ impl Plugin for Del2 {
                                 }
                             }
                             NoteEvent::NoteOff {
-                                timing: _,
+                                timing,
                                 voice_id,
                                 channel,
                                 note,
                                 velocity: _,
-                            } => self.start_release_for_delay_taps(
-                                sample_rate,
-                                voice_id,
-                                channel,
-                                note,
-                            ),
+                            } => {
+                                self.store_note_off_in_delay_data(timing, note);
+                                self.start_release_for_delay_taps(
+                                    sample_rate,
+                                    voice_id,
+                                    channel,
+                                    note,
+                                )
+                            }
                             NoteEvent::Choke {
                                 timing,
                                 voice_id,
@@ -791,7 +796,7 @@ impl Plugin for Del2 {
                                         }
                                         n => nih_debug_assert_failure!(
                                             "Polyphonic modulation sent for unknown poly \
-                                                 modulation ID {}",
+                                             modulation ID {}",
                                             n
                                         ),
                                     }
@@ -849,6 +854,8 @@ impl Plugin for Del2 {
                     _ => break 'events,
                 }
             }
+
+            self.prepare_for_delay(block_end - block_start);
 
             // We'll start with silence, and then add the output from the active delay taps
             output[0][block_start..block_end].fill(0.0);
@@ -935,6 +942,172 @@ impl Del2 {
             (sample_rate * self.params.global.max_tap_seconds.value()) as u32;
         self.min_tap_samples =
             (sample_rate * self.params.global.min_tap_milliseconds.value() * 0.001) as u32;
+    }
+
+    fn store_note_on_in_delay_data(&mut self, timing: u32, note: u8, velocity: f32) {
+        let is_tap_slot_available = self.delay_data.current_tap < NUM_TAPS;
+        let is_delay_note = !self.learned_notes.contains(note);
+        let is_learning = self.is_learning.load(Ordering::SeqCst);
+
+        self.last_played_notes.note_on(note);
+
+        if self.is_playing_action(LOCK_TAPS) {
+            self.enabled_actions.toggle(LOCK_TAPS);
+            self.last_played_notes
+                .note_off(self.learned_notes.load(LOCK_TAPS));
+        }
+        let taps_unlocked = !self.enabled_actions.load(LOCK_TAPS);
+
+        let mut should_record_tap =
+            is_delay_note && is_tap_slot_available && taps_unlocked && !is_learning;
+
+        match self.counting_state {
+            CountingState::TimeOut => {
+                if is_delay_note && !is_learning && taps_unlocked {
+                    // If in TimeOut state, reset and start new counting phase
+                    self.reset_taps(timing, true);
+                }
+            }
+            CountingState::CountingInBuffer => {
+                // Validate and record a new tap within the buffer
+                if timing - self.timing_last_event > self.min_tap_samples && should_record_tap {
+                    self.samples_since_last_event = timing - self.timing_last_event;
+                    self.timing_last_event = timing;
+                } else {
+                    // continue; // Debounce or max taps reached, ignore tap
+                    should_record_tap = false;
+                }
+            }
+            CountingState::CountingAcrossBuffer => {
+                // Handle cross-buffer taps timing
+                if self.samples_since_last_event + timing > self.min_tap_samples
+                    && should_record_tap
+                {
+                    self.samples_since_last_event += timing;
+                    self.timing_last_event = timing;
+                    self.counting_state = CountingState::CountingInBuffer;
+                } else {
+                    // continue; // Debounce or max taps reached, ignore tap
+                    should_record_tap = false;
+                }
+            }
+        }
+        if is_learning {
+            self.is_learning.store(false, Ordering::SeqCst);
+            self.learned_notes
+                .store(self.learning_index.load(Ordering::SeqCst), note);
+            self.last_played_notes.note_off(note);
+        }
+
+        let current_tap = self.delay_data.current_tap;
+        let mute_in_note = self.learned_notes.load(MUTE_IN);
+        let mute_out_note = self.learned_notes.load(MUTE_OUT);
+
+        // Check for timeout condition and reset if necessary
+        if self.samples_since_last_event > self.delay_data.max_tap_samples {
+            self.counting_state = CountingState::TimeOut;
+            self.timing_last_event = 0;
+            self.samples_since_last_event = 0;
+        } else if should_record_tap
+            && self.counting_state != CountingState::TimeOut
+            && self.samples_since_last_event > 0
+            && velocity > 0.0
+        {
+            // Update tap information with timing and velocity
+            if current_tap > 0 {
+                self.delay_data.delay_times[current_tap] =
+                    self.samples_since_last_event + self.delay_data.delay_times[current_tap - 1];
+            } else {
+                self.delay_data.delay_times[current_tap] = self.samples_since_last_event;
+            }
+            self.tap_states[current_tap] = (timing, false);
+            self.delay_data.velocities[current_tap] = velocity;
+            self.delay_data.notes[current_tap] = note;
+
+            // self.mute_out(current_tap, false);
+            self.delay_data.current_tap += 1;
+            // self.delay_data.current_tap = self.delay_data.current_tap;
+
+            // Indicate filter update needed
+            self.should_update_filter.store(true, Ordering::Release);
+        }
+        // Handle ActionTrigger events
+        // LOCK_TAPS is handled at the start
+        if !is_learning
+        // this is the value at the start of the fn, from before we adjusted the global one
+        {
+            let old_mute_in = self.enabled_actions.load(MUTE_IN);
+            let old_mute_out = self.enabled_actions.load(MUTE_OUT);
+            let is_toggle = self.params.global.mute_is_toggle.value();
+
+            if note == mute_in_note {
+                if is_toggle {
+                    self.enabled_actions.toggle(MUTE_IN);
+                } else {
+                    self.enabled_actions.store(MUTE_IN, false);
+                    self.enabled_actions.store(MUTE_OUT, false);
+                }
+                // self.last_played_notes.note_off(note);
+            }
+            if note == mute_out_note {
+                if is_toggle {
+                    self.enabled_actions.toggle(MUTE_OUT);
+                } else {
+                    self.enabled_actions.store(MUTE_IN, false);
+                    self.enabled_actions.store(MUTE_OUT, false);
+                }
+                // self.last_played_notes.note_off(note);
+            }
+            if self.is_playing_action(RESET_TAPS) {
+                self.reset_taps(timing, false);
+            }
+
+            let new_mute_in = self.enabled_actions.load(MUTE_IN);
+            let new_mute_out = self.enabled_actions.load(MUTE_OUT);
+
+            if new_mute_in != old_mute_in {
+                Self::update_mute_times(
+                    &mut self.mute_in_states,
+                    &mut self.mute_in_write_index,
+                    (timing, new_mute_in),
+                );
+            }
+
+            if new_mute_out != old_mute_out {
+                Self::update_mute_times(
+                    &mut self.mute_out_states,
+                    &mut self.mute_out_write_index,
+                    (timing, new_mute_out),
+                );
+            }
+        }
+    }
+
+    fn store_note_off_in_delay_data(&mut self, timing: u32, note: u8) {
+        if !self.params.global.mute_is_toggle.value() {
+            println!("direct mode!");
+            // if we are in direct mode
+            // mute the in and out
+            for &mute in &[MUTE_IN, MUTE_OUT] {
+                if note == self.learned_notes.load(mute) {
+                    self.enabled_actions.store(mute, true);
+                }
+            }
+            if note == self.learned_notes.load(MUTE_IN) {
+                Self::update_mute_times(
+                    &mut self.mute_in_states,
+                    &mut self.mute_in_write_index,
+                    (timing, true),
+                );
+            } else if note == self.learned_notes.load(MUTE_OUT) {
+                Self::update_mute_times(
+                    &mut self.mute_out_states,
+                    &mut self.mute_out_write_index,
+                    (timing, true),
+                );
+            }
+        }
+        self.last_played_notes.note_off(note);
     }
 
     fn process_midi_events(&mut self, context: &mut impl ProcessContext<Self>) {
