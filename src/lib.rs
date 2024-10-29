@@ -712,14 +712,24 @@ impl Plugin for Del2 {
                                 let amp_envelope = Smoother::new(SmoothingStyle::Exponential(
                                     self.params.global.attack_ms.value(),
                                 ));
+                                let delay_time = if self.delay_data.current_tap > 0 {
+                                    self.delay_data.delay_times[self.delay_data.current_tap - 1]
+                                        as isize
+                                } else {
+                                    0
+                                };
                                 amp_envelope.reset(0.0);
                                 amp_envelope.set_target(sample_rate, 1.0);
 
                                 {
-                                    let mut delay_tap = self
-                                        .start_delay_tap(context, timing, voice_id, channel, note);
-                                    delay_tap.velocity = velocity;
-                                    delay_tap.amp_envelope = amp_envelope;
+                                    if self.delay_data.current_tap > 0 {
+                                        let delay_tap = self.start_delay_tap(
+                                            context, timing, voice_id, channel, note,
+                                        );
+                                        delay_tap.velocity = velocity;
+                                        delay_tap.amp_envelope = amp_envelope;
+                                        delay_tap.delay_time = delay_time;
+                                    }
                                 }
                             }
                             NoteEvent::NoteOff {
@@ -876,7 +886,7 @@ impl Plugin for Del2 {
             // TODO: Filter
             for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
                 // delay_time - 1 because we are processing 2 samples at once in process_audio
-                let read_index = self.delay_write_index - (48_000 - 1).max(0);
+                let read_index = self.delay_write_index - (delay_tap.delay_time - 1).max(0);
                 self.delay_buffer[0].read_into(&mut delay_tap.delayed_audio_l, read_index);
                 self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index);
 
@@ -1816,6 +1826,7 @@ impl Del2 {
             amp_envelope: Smoother::none(),
 
             delay_tap_gain: None,
+            delay_time: 0,
             delayed_audio_l: [0.0; DSP_BLOCK_SIZE],
             delayed_audio_r: [0.0; DSP_BLOCK_SIZE],
         };
