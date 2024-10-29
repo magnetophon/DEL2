@@ -20,7 +20,7 @@ Proper DSP structure:
     save a tuple of the timing of the tap start and end, and its state, separate for each tap, relative to the start of the nih buffer
     save the same tuples for the mute trigger state changes, separate for each tap, relative to the start of the tap
     save the timing of the envelope state changes (mutes), separate for each tap, relative to the start of the tap
-  - fill up to MAX_NR_TAPS big buffers of DSP_BLOCK_SIZE, beginning at the start of each tap
+  - fill up to NUM_TAPS big buffers of DSP_BLOCK_SIZE, beginning at the start of each tap
     - save the length of each input block, so we can split up the smoothing block at the output and do the post gain in smaller blocks, for minimum latency
   - for each tap:
         - do drive pre-gain on DSP buffers
@@ -59,12 +59,14 @@ use std::sync::{Arc, Mutex};
 use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode};
 use triple_buffer::TripleBuffer;
 
+mod delay_tap;
 mod editor;
+use delay_tap::DelayTap;
 
 // max seconds per tap
 const MAX_TAP_SECONDS: usize = 10;
-const MAX_NR_TAPS: usize = 8;
-const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * MAX_NR_TAPS;
+const NUM_TAPS: usize = 8;
+const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * NUM_TAPS;
 const MAX_SAMPLE_RATE: usize = 192000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
 const VELOCITY_LOW_NAME_PREFIX: &str = "low velocity";
@@ -101,8 +103,14 @@ struct Del2 {
     /// This is incremented by one each time a voice is created.
     next_internal_voice_id: u64,
 
-    filter_params: [Arc<FilterParams>; MAX_NR_TAPS],
-    ladders: [LadderFilter; MAX_NR_TAPS],
+    /// The effect's delay taps. Inactive delay taps will be set to `None` values.
+    delay_taps: [Option<DelayTap>; NUM_TAPS as usize],
+    /// The next internal delay tap ID, used only to figure out the oldest delay tap for "voice stealing".
+    /// This is incremented by one each time a delay tap is created.
+    next_internal_delay_tap_id: u64,
+
+    filter_params: [Arc<FilterParams>; NUM_TAPS],
+    ladders: [LadderFilter; NUM_TAPS],
 
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
@@ -113,25 +121,25 @@ struct Del2 {
 
     // stores the time of each target-change of the amp envelope, relative to the start of each tap
     // the state change at the start of the tap is implicit
-    amp_envelope_states: [BMRingBuf<(u32, bool)>; MAX_NR_TAPS],
+    amp_envelope_states: [BMRingBuf<(u32, bool)>; NUM_TAPS],
     // rolling index into amp_envelope_states
-    amp_envelope_write_index: [isize; MAX_NR_TAPS],
+    amp_envelope_write_index: [isize; NUM_TAPS],
     // when did each mute change, relative to the start of the nih buffer
     // so we can determine when the amp envelope should change state
     mute_in_states: BMRingBuf<(u32, bool)>,
     mute_out_states: BMRingBuf<(u32, bool)>,
     // where does each tap start, relative to the nih buffer
-    tap_states: [(u32, bool); MAX_NR_TAPS],
+    tap_states: [(u32, bool); NUM_TAPS],
     mute_in_write_index: isize,
     mute_out_write_index: isize,
-    tap_was_muted: [bool; MAX_NR_TAPS],
+    tap_was_muted: [bool; NUM_TAPS],
 
     delay_data: SharedDelayData,
     delay_data_input: SharedDelayDataInput,
     delay_data_output: Arc<Mutex<SharedDelayDataOutput>>,
     // N counters to know where in the fade in we are: 0 is the start
-    amp_envelopes: [Smoother<f32>; MAX_NR_TAPS],
-    envelope_block: [[f32; DSP_BLOCK_SIZE]; MAX_NR_TAPS],
+    amp_envelopes: [Smoother<f32>; NUM_TAPS],
+    envelope_block: [[f32; DSP_BLOCK_SIZE]; NUM_TAPS],
     sample_rate: f32,
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
@@ -154,9 +162,9 @@ struct Del2 {
 // for use in graph
 #[derive(Clone)]
 pub struct SharedDelayData {
-    delay_times: [u32; MAX_NR_TAPS],
-    velocities: [f32; MAX_NR_TAPS],
-    notes: [u8; MAX_NR_TAPS],
+    delay_times: [u32; NUM_TAPS],
+    velocities: [f32; NUM_TAPS],
+    notes: [u8; NUM_TAPS],
     current_tap: usize,
     current_time: u32,
     max_tap_samples: u32,
@@ -484,11 +492,11 @@ impl Default for Del2 {
         let filter_params = array_init(|_| Arc::new(FilterParams::new()));
         let should_update_filter = Arc::new(AtomicBool::new(false));
         let enabled_actions = Arc::new(AtomicBoolArray::new());
-        let ladders: [LadderFilter; MAX_NR_TAPS] =
+        let ladders: [LadderFilter; NUM_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
         // in theory we could have a new mute value every sample
         // TODO: since it's storing just one u32 per mute state change, we can probably get away with a smaller array
-        let amp_envelope_states: [BMRingBuf<(u32, bool)>; MAX_NR_TAPS] =
+        let amp_envelope_states: [BMRingBuf<(u32, bool)>; NUM_TAPS] =
             array_init::array_init(|_| BMRingBuf::from_len(DSP_BLOCK_SIZE));
 
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
@@ -502,6 +510,9 @@ impl Default for Del2 {
             voices: [0; NUM_VOICES as usize].map(|_| None),
             next_internal_voice_id: 0,
 
+            delay_taps: [0; NUM_TAPS as usize].map(|_| None),
+            next_internal_delay_tap_id: 0,
+
             filter_params,
             ladders,
             delay_buffer: [
@@ -512,18 +523,18 @@ impl Default for Del2 {
             temp_r: vec![0.0; MAX_BLOCK_SIZE],
 
             amp_envelope_states,
-            amp_envelope_write_index: [0; MAX_NR_TAPS],
+            amp_envelope_write_index: [0; NUM_TAPS],
             mute_in_states: BMRingBuf::from_len(MAX_BLOCK_SIZE),
             mute_out_states: BMRingBuf::from_len(MAX_BLOCK_SIZE),
-            tap_states: [(0, true); MAX_NR_TAPS],
+            tap_states: [(0, true); NUM_TAPS],
             mute_in_write_index: 0,
             mute_out_write_index: 0,
-            tap_was_muted: [true; MAX_NR_TAPS],
+            tap_was_muted: [true; NUM_TAPS],
             delay_data: initial_delay_data,
             delay_data_input,
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
             amp_envelopes,
-            envelope_block: [[0.0; DSP_BLOCK_SIZE]; MAX_NR_TAPS],
+            envelope_block: [[0.0; DSP_BLOCK_SIZE]; NUM_TAPS],
             //TODO: make Option<u8>
             sample_rate: 1.0,
             peak_meter_decay_weight: 1.0,
@@ -548,9 +559,9 @@ impl Default for Del2 {
 impl Default for SharedDelayData {
     fn default() -> Self {
         Self {
-            delay_times: [0; MAX_NR_TAPS],
-            velocities: [0.0; MAX_NR_TAPS],
-            notes: [0; MAX_NR_TAPS],
+            delay_times: [0; NUM_TAPS],
+            velocities: [0.0; NUM_TAPS],
+            notes: [0; NUM_TAPS],
             current_tap: 0,
             current_time: 0,
             max_tap_samples: 0,
@@ -675,7 +686,7 @@ impl Plugin for Del2 {
     }
 
     fn reset(&mut self) {
-        for tap in 0..MAX_NR_TAPS {
+        for tap in 0..NUM_TAPS {
             self.ladders[tap].s = [f32x4::splat(0.); 4];
             self.amp_envelopes[tap].reset(0.0);
         }
@@ -746,12 +757,10 @@ impl Plugin for Del2 {
                                 amp_envelope.reset(0.0);
                                 amp_envelope.set_target(sample_rate, 1.0);
 
-                                let voice =
-                                    self.start_voice(context, timing, voice_id, channel, note);
-                                voice.velocity_sqrt = velocity.sqrt();
-                                voice.phase = initial_phase;
-                                voice.phase_delta = util::midi_note_to_freq(note) / sample_rate;
-                                voice.amp_envelope = amp_envelope;
+                                let delay_tap =
+                                    self.start_delay_tap(context, timing, voice_id, channel, note);
+                                delay_tap.velocity = velocity;
+                                delay_tap.amp_envelope = amp_envelope;
                             }
                             NoteEvent::NoteOff {
                                 timing: _,
@@ -914,7 +923,7 @@ impl Plugin for Del2 {
                     .next_block(&mut voice_amp_envelope, block_len);
 
                 for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                    let amp = 1.0; //voice.velocity_sqrt * gain[value_idx] * voice_amp_envelope[value_idx];
+                    let amp = voice.velocity_sqrt * gain[value_idx] * voice_amp_envelope[value_idx];
                     let sample = (voice.phase * 2.0 - 1.0) * amp;
 
                     voice.phase += voice.phase_delta;
@@ -975,7 +984,7 @@ impl Del2 {
                     velocity,
                     ..
                 } => {
-                    let is_tap_slot_available = self.delay_data.current_tap < MAX_NR_TAPS;
+                    let is_tap_slot_available = self.delay_data.current_tap < NUM_TAPS;
                     let is_delay_note = !self.learned_notes.contains(note);
                     let is_learning = self.is_learning.load(Ordering::SeqCst);
 
@@ -1176,7 +1185,7 @@ impl Del2 {
     fn reset_taps(&mut self, timing: u32, restart: bool) {
         self.enabled_actions.store(LOCK_TAPS, false);
         self.delay_data.current_tap = 0;
-        for tap in 0..MAX_NR_TAPS {
+        for tap in 0..NUM_TAPS {
             self.tap_states[tap] = (timing, true);
         }
         if self.params.global.mute_is_toggle.value() {
@@ -1309,7 +1318,7 @@ impl Del2 {
             out_l.fill(0.0);
             out_r.fill(0.0);
 
-            for tap in 0..MAX_NR_TAPS {
+            for tap in 0..NUM_TAPS {
                 self.create_envelope_block(block_len, tap);
                 if self.amp_envelopes[tap].is_smoothing() || (tap < self.delay_data.current_tap) {
                     self.read_tap_into_temp(tap);
@@ -1347,12 +1356,12 @@ impl Del2 {
 
     fn set_amp_envelope_states(&mut self) {
         let out_index = self.mute_out_write_index;
-        for tap in 0..MAX_NR_TAPS {
+        for tap in 0..NUM_TAPS {
             self.amp_envelope_write_index[tap] = 0;
         }
         // if there are any events
         if out_index > 0 {
-            for tap in 0..MAX_NR_TAPS {
+            for tap in 0..NUM_TAPS {
                 let (mute_out_state_slices, _) = self
                     .mute_out_states
                     .as_slices_len(0, out_index.try_into().unwrap());
@@ -1525,7 +1534,7 @@ impl Del2 {
         let max_size = max_buffer_size as usize;
         self.temp_l.resize(max_size, 0.0);
         self.temp_r.resize(max_size, 0.0);
-        // for tap in 0..MAX_NR_TAPS {
+        // for tap in 0..NUM_TAPS {
         //     self.envelope_block[tap].resize(max_size, 0.0);
         // }
     }
@@ -1548,7 +1557,7 @@ impl Del2 {
     }
 
     fn initialize_filter_parameters(&mut self) {
-        for tap in 0..MAX_NR_TAPS {
+        for tap in 0..NUM_TAPS {
             unsafe {
                 // Safety: Assumes exclusive access is guaranteed beforehand.
                 let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
@@ -1620,6 +1629,172 @@ impl Del2 {
         })
     }
 
+    /*
+     *
+     *
+     *
+     *
+     *
+     */
+
+    /// Get the index of a delay tap by its delay tap ID, if the delay tap exists. This does not immediately
+    /// reutnr a reference to the delay tap to avoid lifetime issues.
+    fn get_delay_tap_idx(&mut self, delay_tap_id: i32) -> Option<usize> {
+        self.delay_taps
+            .iter_mut()
+            .position(|delay_tap| matches!(delay_tap, Some(delay_tap) if delay_tap.delay_tap_id == delay_tap_id))
+    }
+
+    /// Start a new delay tap with the given delay tap ID. If all delay_taps are currently in use, the oldest
+    /// delay tap will be stolen. Returns a reference to the new delay tap.
+    fn start_delay_tap(
+        &mut self,
+        context: &mut impl ProcessContext<Self>,
+        sample_offset: u32,
+        delay_tap_id: Option<i32>,
+        channel: u8,
+        note: u8,
+    ) -> &mut DelayTap {
+        let new_delay_tap = DelayTap {
+            delay_tap_id: delay_tap_id
+                .unwrap_or_else(|| compute_fallback_delay_tap_id(note, channel)),
+            internal_delay_tap_id: self.next_internal_delay_tap_id,
+            channel,
+            note,
+            velocity: 1.0,
+
+            releasing: false,
+            amp_envelope: Smoother::none(),
+
+            delay_tap_gain: None,
+        };
+        self.next_internal_delay_tap_id = self.next_internal_delay_tap_id.wrapping_add(1);
+
+        // Can't use `.iter_mut().find()` here because nonlexical lifetimes don't apply to return
+        // values
+        match self
+            .delay_taps
+            .iter()
+            .position(|delay_tap| delay_tap.is_none())
+        {
+            Some(free_delay_tap_idx) => {
+                self.delay_taps[free_delay_tap_idx] = Some(new_delay_tap);
+                return self.delay_taps[free_delay_tap_idx].as_mut().unwrap();
+            }
+            None => {
+                // If there is no free delay tap, find and steal the oldest one
+                // SAFETY: We can skip a lot of checked unwraps here since we already know all delay_taps are in
+                //         use
+                let oldest_delay_tap = unsafe {
+                    self.delay_taps
+                        .iter_mut()
+                        .min_by_key(|delay_tap| {
+                            delay_tap.as_ref().unwrap_unchecked().internal_delay_tap_id
+                        })
+                        .unwrap_unchecked()
+                };
+
+                // The stolen delay tap needs to be terminated so the host can reuse its modulation
+                // resources
+                {
+                    let oldest_delay_tap = oldest_delay_tap.as_ref().unwrap();
+                    context.send_event(NoteEvent::VoiceTerminated {
+                        timing: sample_offset,
+                        voice_id: Some(oldest_delay_tap.delay_tap_id),
+                        channel: oldest_delay_tap.channel,
+                        note: oldest_delay_tap.note,
+                    });
+                }
+
+                *oldest_delay_tap = Some(new_delay_tap);
+                return oldest_delay_tap.as_mut().unwrap();
+            }
+        }
+    }
+
+    /// Start the release process for one or more delay tap by changing their amplitude envelope. If
+    /// `delay_tap_id` is not provided, then this will terminate all matching delay_taps.
+    fn start_release_for_delay_taps(
+        &mut self,
+        sample_rate: f32,
+        delay_tap_id: Option<i32>,
+        channel: u8,
+        note: u8,
+    ) {
+        for delay_tap in self.delay_taps.iter_mut() {
+            match delay_tap {
+                Some(DelayTap {
+                    delay_tap_id: candidate_delay_tap_id,
+                    channel: candidate_channel,
+                    note: candidate_note,
+                    releasing,
+                    amp_envelope,
+                    ..
+                }) if delay_tap_id == Some(*candidate_delay_tap_id)
+                    || (channel == *candidate_channel && note == *candidate_note) =>
+                {
+                    *releasing = true;
+                    amp_envelope.style =
+                        SmoothingStyle::Exponential(self.params.global.release_ms.value());
+                    amp_envelope.set_target(sample_rate, 0.0);
+
+                    // If this targeted a single delay tap ID, we're done here. Otherwise there may be
+                    // multiple overlapping delay_taps as we enabled support for that in the
+                    // `PolyModulationConfig`.
+                    if delay_tap_id.is_some() {
+                        return;
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+
+    /// Immediately terminate one or more delay tap, removing it from the pool and informing the host
+    /// that the delay tap has ended. If `delay_tap_id` is not provided, then this will terminate all
+    /// matching delay_taps.
+    fn choke_delay_taps(
+        &mut self,
+        context: &mut impl ProcessContext<Self>,
+        sample_offset: u32,
+        delay_tap_id: Option<i32>,
+        channel: u8,
+        note: u8,
+    ) {
+        for delay_tap in self.delay_taps.iter_mut() {
+            match delay_tap {
+                Some(DelayTap {
+                    delay_tap_id: candidate_delay_tap_id,
+                    channel: candidate_channel,
+                    note: candidate_note,
+                    ..
+                }) if delay_tap_id == Some(*candidate_delay_tap_id)
+                    || (channel == *candidate_channel && note == *candidate_note) =>
+                {
+                    context.send_event(NoteEvent::VoiceTerminated {
+                        timing: sample_offset,
+                        // Notice how we always send the terminated delay tap ID here
+                        voice_id: Some(*candidate_delay_tap_id),
+                        channel,
+                        note,
+                    });
+                    *delay_tap = None;
+
+                    if delay_tap_id.is_some() {
+                        return;
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+
+    /*
+     *
+     *
+     *
+     *
+     */
     /// Get the index of a voice by its voice ID, if the voice exists. This does not immediately
     /// reutnr a reference to the voice to avoid lifetime issues.
     fn get_voice_idx(&mut self, voice_id: i32) -> Option<usize> {
@@ -1768,6 +1943,11 @@ impl Del2 {
     }
 }
 
+/// Compute a delay tap ID in case the host doesn't provide them. Polyphonic modulation will not work in
+/// this case, but playing notes will.
+const fn compute_fallback_delay_tap_id(note: u8, channel: u8) -> i32 {
+    note as i32 | ((channel as i32) << 16)
+}
 /// Compute a voice ID in case the host doesn't provide them. Polyphonic modulation will not work in
 /// this case, but playing notes will.
 const fn compute_fallback_voice_id(note: u8, channel: u8) -> i32 {
