@@ -654,7 +654,7 @@ impl Plugin for Del2 {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // self.update_timing_params();
+        // self.update_min_max_tap_samples();
         // self.process_midi_events(context);
         // self.set_amp_envelope_states();
         // self.prepare_for_delay(buffer.samples());
@@ -673,7 +673,7 @@ impl Plugin for Del2 {
 
         */
 
-        self.update_timing_params();
+        self.update_min_max_tap_samples();
         // write the audio buffer into the delay
         self.write_into_delay(buffer);
 
@@ -740,12 +740,12 @@ impl Plugin for Del2 {
                                 velocity: _,
                             } => {
                                 self.store_note_off_in_delay_data(timing, note);
-                                self.start_release_for_delay_taps(
-                                    sample_rate,
-                                    voice_id,
-                                    channel,
-                                    note,
-                                )
+                                // self.start_release_for_delay_taps(
+                                // sample_rate,
+                                // voice_id,
+                                // channel,
+                                // note,
+                                // )
                             }
                             NoteEvent::Choke {
                                 timing,
@@ -946,12 +946,49 @@ impl Plugin for Del2 {
 }
 
 impl Del2 {
-    fn update_timing_params(&mut self) {
+    fn update_min_max_tap_samples(&mut self) {
         let sample_rate = self.sample_rate as f32;
         self.delay_data.max_tap_samples =
             (sample_rate * self.params.global.max_tap_seconds.value()) as u32;
         self.min_tap_samples =
             (sample_rate * self.params.global.min_tap_milliseconds.value() * 0.001) as u32;
+    }
+
+    fn write_into_delay(&mut self, buffer: &mut Buffer) {
+        for (_, block) in buffer.iter_blocks(buffer.samples()) {
+            let block_len = block.samples();
+            // TODO: assert needed?
+            // assert!(block_len <= MAX_BLOCK_SIZE);
+            // Either we resize here, or in the initialization fn
+            // If we don't, we are slower.
+            // self.resize_temp_buffers(block_len.try_into().unwrap());
+            let mut block_channels = block.into_iter();
+
+            let out_l = block_channels.next().expect("Left output channel missing");
+            let out_r = block_channels.next().expect("Right output channel missing");
+
+            let write_index = self.delay_write_index;
+
+            // println!("out_l: {}", out_l[42]);
+
+            self.delay_buffer[0].write_latest(out_l, write_index);
+            self.delay_buffer[1].write_latest(out_r, write_index);
+            self.delay_write_index =
+                (write_index + block_len as isize) % self.delay_buffer_size as isize;
+        }
+    }
+
+    fn read_into_delayed_audio(
+        &mut self,
+        delayed_audio_l: &mut [f32],
+        delayed_audio_r: &mut [f32],
+        delay_time: isize,
+    ) {
+        // delay_time - 1 because we are processing 2 samples at once in process_audio
+        let read_index = self.delay_write_index - (delay_time - 1).max(0);
+
+        self.delay_buffer[0].read_into(delayed_audio_l, read_index);
+        self.delay_buffer[1].read_into(delayed_audio_r, read_index);
     }
 
     fn store_note_on_in_delay_data(&mut self, timing: u32, note: u8, velocity: f32) {
@@ -1030,7 +1067,6 @@ impl Del2 {
             } else {
                 self.delay_data.delay_times[current_tap] = self.samples_since_last_event;
             }
-            self.tap_states[current_tap] = (timing, false);
             self.delay_data.velocities[current_tap] = velocity;
             self.delay_data.notes[current_tap] = note;
 
@@ -1094,9 +1130,8 @@ impl Del2 {
     }
 
     fn store_note_off_in_delay_data(&mut self, timing: u32, note: u8) {
+        // if we are in direct mode
         if !self.params.global.mute_is_toggle.value() {
-            println!("direct mode!");
-            // if we are in direct mode
             // mute the in and out
             for &mute in &[MUTE_IN, MUTE_OUT] {
                 if note == self.learned_notes.load(mute) {
@@ -1210,7 +1245,6 @@ impl Del2 {
                             self.delay_data.delay_times[current_tap] =
                                 self.samples_since_last_event;
                         }
-                        self.tap_states[current_tap] = (timing, false);
                         self.delay_data.velocities[current_tap] = velocity;
                         self.delay_data.notes[current_tap] = note;
 
@@ -1307,9 +1341,7 @@ impl Del2 {
     fn reset_taps(&mut self, timing: u32, restart: bool) {
         self.enabled_actions.store(LOCK_TAPS, false);
         self.delay_data.current_tap = 0;
-        for tap in 0..NUM_TAPS {
-            self.tap_states[tap] = (timing, true);
-        }
+        self.start_release_for_all_delay_taps(self.sample_rate);
         if self.params.global.mute_is_toggle.value() {
             self.enabled_actions.store(MUTE_IN, false);
             self.enabled_actions.store(MUTE_OUT, false);
@@ -1417,45 +1449,6 @@ impl Del2 {
     }
     fn log_interpolate(a: f32, b: f32, x: f32) -> f32 {
         a * (b / a).powf(x)
-    }
-
-    fn write_into_delay(&mut self, buffer: &mut Buffer) {
-        for (_, block) in buffer.iter_blocks(buffer.samples()) {
-            let block_len = block.samples();
-            // TODO: assert needed?
-            // assert!(block_len <= MAX_BLOCK_SIZE);
-            // Either we resize here, or in the initialization fn
-            // If we don't, we are slower.
-            // self.resize_temp_buffers(block_len.try_into().unwrap());
-            let mut block_channels = block.into_iter();
-
-            let out_l = block_channels.next().expect("Left output channel missing");
-            let out_r = block_channels.next().expect("Right output channel missing");
-
-            let write_index = self.delay_write_index;
-
-            // println!("out_l: {}", out_l[42]);
-
-            self.delay_buffer[0].write_latest(out_l, write_index);
-            self.delay_buffer[1].write_latest(out_r, write_index);
-            self.delay_write_index =
-                (write_index + block_len as isize) % self.delay_buffer_size as isize;
-        }
-    }
-
-    fn read_into_delayed_audio(
-        &mut self,
-        delayed_audio_l: &mut [f32],
-        delayed_audio_r: &mut [f32],
-        delay_time: isize,
-    ) {
-        // delay_time - 1 because we are processing 2 samples at once in process_audio
-        let read_index = self.delay_write_index - (delay_time - 1).max(0);
-
-        self.delay_buffer[0].read_into(delayed_audio_l, read_index);
-        self.delay_buffer[1].read_into(delayed_audio_r, read_index);
-
-        println!("delayed_audio_l: {}", delayed_audio_l[42]);
     }
 
     fn process_audio_blocks(&mut self, buffer: &mut Buffer) {
@@ -1874,6 +1867,24 @@ impl Del2 {
         }
     }
 
+    /// Start the release process for all delay taps by changing their amplitude envelope.
+    fn start_release_for_all_delay_taps(&mut self, sample_rate: f32) {
+        for delay_tap in self.delay_taps.iter_mut() {
+            match delay_tap {
+                Some(DelayTap {
+                    releasing,
+                    amp_envelope,
+                    ..
+                }) => {
+                    *releasing = true;
+                    amp_envelope.style =
+                        SmoothingStyle::Exponential(self.params.global.release_ms.value());
+                    amp_envelope.set_target(sample_rate, 0.0);
+                }
+                _ => (),
+            }
+        }
+    }
     /// Start the release process for one or more delay tap by changing their amplitude envelope. If
     /// `delay_tap_id` is not provided, then this will terminate all matching delay_taps.
     fn start_release_for_delay_taps(
