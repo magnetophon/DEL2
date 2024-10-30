@@ -26,6 +26,8 @@ pub struct DelayTap {
     /// offset and a smoother.
     pub delay_tap_gain: Option<(f32, Smoother<f32>)>,
 
+    /// Are we currently muting? To determine if we need to trigger the amp envelope,
+    pub is_muted: bool,
     /// Which of the NUM_TAPS taps is this.
     pub tap_index: usize,
     /// The delayed audio of this tap.

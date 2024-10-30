@@ -106,11 +106,14 @@ struct Del2 {
 
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
+    mute_in_delay_buffer: BMRingBuf<bool>,
+    mute_in_delay_temp: [bool; DSP_BLOCK_SIZE],
     // delay read buffers
     // TODO: which vecs should be arrays?
     temp_l: Vec<f32>,
     temp_r: Vec<f32>,
 
+    // TODO: remove this block
     // stores the time of each target-change of the amp envelope, relative to the start of each tap
     // the state change at the start of the tap is implicit
     amp_envelope_states: [BMRingBuf<(u32, bool)>; NUM_TAPS],
@@ -488,6 +491,8 @@ impl Default for Del2 {
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
+            mute_in_delay_buffer: BMRingBuf::<bool>::from_len(TOTAL_DELAY_SAMPLES),
+            mute_in_delay_temp: [false; DSP_BLOCK_SIZE],
             temp_l: vec![0.0; MAX_BLOCK_SIZE],
             temp_r: vec![0.0; MAX_BLOCK_SIZE],
 
@@ -676,9 +681,10 @@ impl Plugin for Del2 {
 
         */
 
-        self.update_min_max_tap_samples();
         // write the audio buffer into the delay
         self.write_into_delay(buffer);
+
+        self.update_min_max_tap_samples();
 
         let num_samples = buffer.samples();
         let sample_rate = context.transport().sample_rate;
@@ -689,8 +695,6 @@ impl Plugin for Del2 {
         let mut block_end: usize = MAX_BLOCK_SIZE.min(num_samples);
 
         while block_start < num_samples {
-            let old_mute_out = self.enabled_actions.load(MUTE_OUT);
-            let old_mute_in = self.enabled_actions.load(MUTE_IN);
             let old_nr_taps = self.delay_data.current_tap;
 
             // First of all, handle all note events that happen at the start of the block, and cut
@@ -732,8 +736,8 @@ impl Plugin for Del2 {
                             }
                             NoteEvent::NoteOff {
                                 timing,
-                                voice_id,
-                                channel,
+                                voice_id: _,
+                                channel: _,
                                 note,
                                 velocity: _,
                             } => {
@@ -866,13 +870,12 @@ impl Plugin for Del2 {
                 }
             }
 
-            self.prepare_for_delay(block_end - block_start);
-            let new_mute_out = self.enabled_actions.load(MUTE_OUT);
-            let new_mute_in = self.enabled_actions.load(MUTE_IN);
+            // write the audio buffer and mute in state into the delay
+            self.write_into_mute_in_delay(block_end - block_start);
 
-            if old_mute_out != new_mute_out {
-                self.set_mute_for_all_delay_taps(sample_rate, self.enabled_actions.load(MUTE_OUT));
-            }
+            self.prepare_for_delay(block_end - block_start);
+
+            self.set_mute_for_all_delay_taps(sample_rate);
 
             // We'll start with silence, and then add the output from the active delay taps
             output[0][block_start..block_end].fill(0.0);
@@ -893,10 +896,16 @@ impl Plugin for Del2 {
             // TODO: Filter
             for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
                 let delay_time = self.delay_data.delay_times[delay_tap.tap_index] as isize;
+                let write_index = self.delay_write_index;
                 // delay_time - 1 because we are processing 2 samples at once in process_audio
-                let read_index = self.delay_write_index - (delay_time - 1).max(0);
+                let read_index = write_index - (delay_time - 1).max(0);
                 self.delay_buffer[0].read_into(&mut delay_tap.delayed_audio_l, read_index);
                 self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index);
+
+                self.mute_in_delay_buffer.read_into(
+                    &mut self.mute_in_delay_temp,
+                    write_index - (delay_time - 1).max(0),
+                );
 
                 // Depending on whether the delay tap has polyphonic modulation applied to it,
                 // either the global parameter values are used, or the delay tap's smoother is used
@@ -981,9 +990,31 @@ impl Del2 {
 
             self.delay_buffer[0].write_latest(out_l, write_index);
             self.delay_buffer[1].write_latest(out_r, write_index);
+
+            let mute_in_value = self.enabled_actions.load(MUTE_IN);
+            let mute_buffer = [mute_in_value; DSP_BLOCK_SIZE];
+            // mute_buffer[block_start..block_end].fill(mute_in_value);
+
+            self.mute_in_delay_buffer
+                .write_latest(&mute_buffer[..block_len], write_index);
+
             self.delay_write_index =
                 (write_index + block_len as isize) % self.delay_buffer_size as isize;
         }
+    }
+
+    fn write_into_mute_in_delay(&mut self, block_len: usize) {
+        let write_index = self.delay_write_index;
+
+        let mute_in_value = self.enabled_actions.load(MUTE_IN);
+        let mute_buffer = [mute_in_value; DSP_BLOCK_SIZE];
+        // mute_buffer[block_start..block_end].fill(mute_in_value);
+
+        self.mute_in_delay_buffer
+            .write_latest(&mute_buffer[..block_len], write_index);
+
+        self.delay_write_index =
+            (write_index + block_len as isize) % self.delay_buffer_size as isize;
     }
 
     fn read_into_delayed_audio(
@@ -1003,6 +1034,8 @@ impl Del2 {
         let is_tap_slot_available = self.delay_data.current_tap < NUM_TAPS;
         let is_delay_note = !self.learned_notes.contains(note);
         let is_learning = self.is_learning.load(Ordering::SeqCst);
+        let old_mute_in = self.enabled_actions.load(MUTE_IN);
+        let old_mute_out = self.enabled_actions.load(MUTE_OUT);
 
         self.last_played_notes.note_on(note);
 
@@ -1090,8 +1123,6 @@ impl Del2 {
         if !is_learning
         // this is the value at the start of the fn, from before we adjusted the global one
         {
-            let old_mute_in = self.enabled_actions.load(MUTE_IN);
-            let old_mute_out = self.enabled_actions.load(MUTE_OUT);
             let is_toggle = self.params.global.mute_is_toggle.value();
 
             if note == mute_in_note {
@@ -1815,6 +1846,7 @@ impl Del2 {
             amp_envelope: Smoother::none(),
 
             delay_tap_gain: None,
+            is_muted: false,
             tap_index: NUM_TAPS, // start with tap_index out of bounds, to make sure it gets set.
             delayed_audio_l: [0.0; DSP_BLOCK_SIZE],
             delayed_audio_r: [0.0; DSP_BLOCK_SIZE],
@@ -1885,23 +1917,27 @@ impl Del2 {
     }
 
     /// Set mute for all delay taps by changing their amplitude envelope.
-    fn set_mute_for_all_delay_taps(&mut self, sample_rate: f32, mute: bool) {
+    fn set_mute_for_all_delay_taps(&mut self, sample_rate: f32) {
         for delay_tap in self.delay_taps.iter_mut() {
             match delay_tap {
                 Some(DelayTap {
+                    is_muted,
                     amp_envelope,
-                    tap_index,
                     ..
                 }) => {
-                    // *releasing = true; // we don't want the tap to stop existing after the release is done
-                    if mute {
-                        amp_envelope.style =
-                            SmoothingStyle::Linear(self.params.global.release_ms.value());
-                        amp_envelope.set_target(sample_rate, 0.0);
-                    } else {
-                        amp_envelope.style =
-                            SmoothingStyle::Exponential(self.params.global.attack_ms.value());
-                        amp_envelope.set_target(sample_rate, 1.0);
+                    let new_mute = self.mute_in_delay_temp[0] | self.enabled_actions.load(MUTE_OUT);
+                    if *is_muted != new_mute {
+                        // *releasing = true; // we don't want the tap to stop existing after the release is done
+                        if new_mute {
+                            amp_envelope.style =
+                                SmoothingStyle::Linear(self.params.global.release_ms.value());
+                            amp_envelope.set_target(sample_rate, 0.0);
+                        } else {
+                            amp_envelope.style =
+                                SmoothingStyle::Exponential(self.params.global.attack_ms.value());
+                            amp_envelope.set_target(sample_rate, 1.0);
+                        }
+                        *is_muted = new_mute;
                     }
                 }
                 _ => (),
