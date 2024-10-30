@@ -157,10 +157,26 @@ pub struct SharedDelayData {
     delay_times: [u32; NUM_TAPS],
     velocities: [f32; NUM_TAPS],
     notes: [u8; NUM_TAPS],
+    /// The identifier for this voice.
+    internal_delay_tap_ids: [u64; NUM_TAPS],
     current_tap: usize,
     current_time: u32,
     max_tap_samples: u32,
 }
+impl Default for SharedDelayData {
+    fn default() -> Self {
+        Self {
+            delay_times: [0; NUM_TAPS],
+            velocities: [0.0; NUM_TAPS],
+            notes: [0; NUM_TAPS],
+            internal_delay_tap_ids: [0; NUM_TAPS],
+            current_tap: 0,
+            current_time: 0,
+            max_tap_samples: 0,
+        }
+    }
+}
+
 pub type SharedDelayDataInput = triple_buffer::Input<SharedDelayData>;
 pub type SharedDelayDataOutput = triple_buffer::Output<SharedDelayData>;
 
@@ -509,19 +525,6 @@ impl Default for Del2 {
     }
 }
 
-impl Default for SharedDelayData {
-    fn default() -> Self {
-        Self {
-            delay_times: [0; NUM_TAPS],
-            velocities: [0.0; NUM_TAPS],
-            notes: [0; NUM_TAPS],
-            current_tap: 0,
-            current_time: 0,
-            max_tap_samples: 0,
-        }
-    }
-}
-
 impl Del2Params {
     fn new(should_update_filter: Arc<AtomicBool>, enabled_actions: Arc<AtomicBoolArray>) -> Self {
         Self {
@@ -708,28 +711,19 @@ impl Plugin for Del2 {
                                 velocity,
                             } => {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
-                                // This starts with the attack portion of the amplitude envelope
-                                let amp_envelope = Smoother::new(SmoothingStyle::Exponential(
-                                    self.params.global.attack_ms.value(),
-                                ));
-                                let delay_time = if self.delay_data.current_tap > 0 {
-                                    self.delay_data.delay_times[self.delay_data.current_tap - 1]
-                                        as isize
-                                } else {
-                                    0
-                                };
-                                amp_envelope.reset(0.0);
-                                amp_envelope.set_target(sample_rate, 1.0);
-
-                                {
-                                    if self.delay_data.current_tap > 0 {
-                                        let delay_tap = self.start_delay_tap(
-                                            context, timing, voice_id, channel, note,
-                                        );
-                                        delay_tap.velocity = velocity;
-                                        delay_tap.amp_envelope = amp_envelope;
-                                        delay_tap.delay_time = delay_time;
-                                    }
+                                if self.delay_data.current_tap > 0 {
+                                    let tap_index = self.delay_data.current_tap - 1;
+                                    // This starts with the attack portion of the amplitude envelope
+                                    let amp_envelope = Smoother::new(SmoothingStyle::Exponential(
+                                        self.params.global.attack_ms.value(),
+                                    ));
+                                    amp_envelope.reset(0.0);
+                                    amp_envelope.set_target(sample_rate, 1.0);
+                                    let delay_tap = self
+                                        .start_delay_tap(context, timing, voice_id, channel, note);
+                                    delay_tap.velocity = velocity;
+                                    delay_tap.amp_envelope = amp_envelope;
+                                    delay_tap.tap_index = tap_index;
                                 }
                             }
                             NoteEvent::NoteOff {
@@ -740,12 +734,15 @@ impl Plugin for Del2 {
                                 velocity: _,
                             } => {
                                 self.store_note_off_in_delay_data(timing, note);
-                                // self.start_release_for_delay_taps(
+                                // if we are in instrument mode
+                                // if !self.params.global.mute_is_toggle.value() {
+                                // self.start_mute_for_delay_tap(
                                 // sample_rate,
                                 // voice_id,
                                 // channel,
                                 // note,
                                 // )
+                                // }
                             }
                             NoteEvent::Choke {
                                 timing,
@@ -885,8 +882,9 @@ impl Plugin for Del2 {
             // TODO: Some form of band limiting
             // TODO: Filter
             for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
+                let delay_time = self.delay_data.delay_times[delay_tap.tap_index] as isize;
                 // delay_time - 1 because we are processing 2 samples at once in process_audio
-                let read_index = self.delay_write_index - (delay_tap.delay_time - 1).max(0);
+                let read_index = self.delay_write_index - (delay_time - 1).max(0);
                 self.delay_buffer[0].read_into(&mut delay_tap.delayed_audio_l, read_index);
                 self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index);
 
@@ -1781,16 +1779,8 @@ impl Del2 {
         })
     }
 
-    /*
-     *
-     *
-     *
-     *
-     *
-     */
-
     /// Get the index of a delay tap by its delay tap ID, if the delay tap exists. This does not immediately
-    /// reutnr a reference to the delay tap to avoid lifetime issues.
+    /// return a reference to the delay tap to avoid lifetime issues.
     fn get_delay_tap_idx(&mut self, voice_id: i32) -> Option<usize> {
         self.delay_taps.iter_mut().position(
             |delay_tap| matches!(delay_tap, Some(delay_tap) if delay_tap.delay_tap_id == voice_id),
@@ -1819,7 +1809,7 @@ impl Del2 {
             amp_envelope: Smoother::none(),
 
             delay_tap_gain: None,
-            delay_time: 0,
+            tap_index: NUM_TAPS, // start with tap_index out of bounds, to make sure it gets set.
             delayed_audio_l: [0.0; DSP_BLOCK_SIZE],
             delayed_audio_r: [0.0; DSP_BLOCK_SIZE],
         };
@@ -1885,6 +1875,44 @@ impl Del2 {
             }
         }
     }
+
+    /// Mute a delay tap by changing its amplitude envelope.
+    fn start_mute_for_delay_tap(
+        &mut self,
+        sample_rate: f32,
+        delay_tap_id: Option<i32>,
+        channel: u8,
+        note: u8,
+    ) {
+        for delay_tap in self.delay_taps.iter_mut() {
+            match delay_tap {
+                Some(DelayTap {
+                    delay_tap_id: candidate_delay_tap_id,
+                    channel: candidate_channel,
+                    note: candidate_note,
+                    releasing,
+                    amp_envelope,
+                    ..
+                }) if delay_tap_id == Some(*candidate_delay_tap_id)
+                    || (channel == *candidate_channel && note == *candidate_note) =>
+                {
+                    // *releasing = true; // we don't want the note to stop existing after the release is done
+                    amp_envelope.style =
+                        SmoothingStyle::Exponential(self.params.global.release_ms.value());
+                    amp_envelope.set_target(sample_rate, 0.0);
+
+                    // If this targeted a single delay tap ID, we're done here. Otherwise there may be
+                    // multiple overlapping delay_taps as we enabled support for that in the
+                    // `PolyModulationConfig`.
+                    if delay_tap_id.is_some() {
+                        return;
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+
     /// Start the release process for one or more delay tap by changing their amplitude envelope. If
     /// `delay_tap_id` is not provided, then this will terminate all matching delay_taps.
     fn start_release_for_delay_taps(
@@ -1961,23 +1989,11 @@ impl Del2 {
             }
         }
     }
-
-    /*
-     *
-     *
-     *
-     *
-     */
 }
 
 /// Compute a delay tap ID in case the host doesn't provide them. Polyphonic modulation will not work in
 /// this case, but playing notes will.
 const fn compute_fallback_delay_tap_id(note: u8, channel: u8) -> i32 {
-    note as i32 | ((channel as i32) << 16)
-}
-/// Compute a voice ID in case the host doesn't provide them. Polyphonic modulation will not work in
-/// this case, but playing notes will.
-const fn compute_fallback_voice_id(note: u8, channel: u8) -> i32 {
     note as i32 | ((channel as i32) << 16)
 }
 
