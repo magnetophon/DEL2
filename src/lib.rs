@@ -1350,10 +1350,6 @@ impl Del2 {
         self.enabled_actions.store(LOCK_TAPS, false);
         self.delay_data.current_tap = 0;
         self.start_release_for_all_delay_taps(self.sample_rate);
-        if self.params.global.mute_is_toggle.value() {
-            self.enabled_actions.store(MUTE_IN, false);
-            self.enabled_actions.store(MUTE_OUT, false);
-        }
         if restart {
             self.counting_state = CountingState::CountingInBuffer;
             self.timing_last_event = timing;
@@ -1824,6 +1820,8 @@ impl Del2 {
             delayed_audio_r: [0.0; DSP_BLOCK_SIZE],
         };
         self.next_internal_delay_tap_id = self.next_internal_delay_tap_id.wrapping_add(1);
+
+        self.enabled_actions.store(MUTE_OUT, false);
 
         // Can't use `.iter_mut().find()` here because nonlexical lifetimes don't apply to return
         // values
