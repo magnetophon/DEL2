@@ -107,7 +107,7 @@ struct Del2 {
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
     mute_in_delay_buffer: BMRingBuf<bool>,
-    mute_in_delay_temp: [bool; DSP_BLOCK_SIZE],
+    mute_in_delayed: [[bool; DSP_BLOCK_SIZE]; NUM_TAPS],
     // delay read buffers
     // TODO: which vecs should be arrays?
     temp_l: Vec<f32>,
@@ -492,7 +492,7 @@ impl Default for Del2 {
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
             mute_in_delay_buffer: BMRingBuf::<bool>::from_len(TOTAL_DELAY_SAMPLES),
-            mute_in_delay_temp: [false; DSP_BLOCK_SIZE],
+            mute_in_delayed: [[false; DSP_BLOCK_SIZE]; NUM_TAPS],
             temp_l: vec![0.0; MAX_BLOCK_SIZE],
             temp_r: vec![0.0; MAX_BLOCK_SIZE],
 
@@ -538,7 +538,7 @@ impl Del2Params {
             global: GlobalParams::new(enabled_actions.clone()),
             gain: FloatParam::new(
                 "Gain",
-                util::db_to_gain(-12.0),
+                util::db_to_gain(0.0),
                 // Because we're representing gain as decibels the range is already logarithmic
                 FloatRange::Linear {
                     min: util::db_to_gain(-36.0),
@@ -671,9 +671,8 @@ impl Plugin for Del2 {
         // self.update_filter(tap);
         // }
         // }
-        // self.update_peak_meter(buffer, &self.input_meter);
+        self.update_peak_meter(buffer, &self.input_meter);
         // self.process_audio_blocks(buffer);
-        // self.update_peak_meter(buffer, &self.output_meter);
 
         /*
 
@@ -721,6 +720,9 @@ impl Plugin for Del2 {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
                                 if self.delay_data.current_tap > old_nr_taps {
                                     let tap_index = self.delay_data.current_tap - 1;
+                                    // let mute_in = self.mute_in_delayed[tap_index][0];
+                                    // let mute_out = self.enabled_actions.load(MUTE_OUT);
+                                    // let is_muted = mute_in || mute_out;
                                     // This starts with the attack portion of the amplitude envelope
                                     let amp_envelope = Smoother::new(SmoothingStyle::Exponential(
                                         self.params.global.attack_ms.value(),
@@ -732,6 +734,10 @@ impl Plugin for Del2 {
                                     delay_tap.velocity = velocity;
                                     delay_tap.amp_envelope = amp_envelope;
                                     delay_tap.tap_index = tap_index;
+                                    delay_tap.is_muted = true;
+                                    delay_tap.delay_tap_id = voice_id.unwrap_or_else(|| {
+                                        compute_fallback_delay_tap_id(note, channel, tap_index)
+                                    })
                                 }
                             }
                             NoteEvent::NoteOff {
@@ -875,11 +881,11 @@ impl Plugin for Del2 {
 
             self.prepare_for_delay(block_end - block_start);
 
-            self.set_mute_for_all_delay_taps(sample_rate);
-
             // We'll start with silence, and then add the output from the active delay taps
             output[0][block_start..block_end].fill(0.0);
             output[1][block_start..block_end].fill(0.0);
+
+            self.set_mute_for_all_delay_taps(sample_rate);
 
             // These are the smoothed global parameter values. These are used for delay taps that do not
             // have polyphonic modulation applied to them. With a plugin as simple as this it would
@@ -895,7 +901,8 @@ impl Plugin for Del2 {
             // TODO: Some form of band limiting
             // TODO: Filter
             for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
-                let delay_time = self.delay_data.delay_times[delay_tap.tap_index] as isize;
+                let tap_index = delay_tap.tap_index;
+                let delay_time = self.delay_data.delay_times[tap_index] as isize;
                 let write_index = self.delay_write_index;
                 // delay_time - 1 because we are processing 2 samples at once in process_audio
                 let read_index = write_index - (delay_time - 1).max(0);
@@ -903,7 +910,7 @@ impl Plugin for Del2 {
                 self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index);
 
                 self.mute_in_delay_buffer.read_into(
-                    &mut self.mute_in_delay_temp,
+                    &mut self.mute_in_delayed[tap_index],
                     write_index - (delay_time - 1).max(0),
                 );
 
@@ -957,6 +964,8 @@ impl Plugin for Del2 {
             block_start = block_end;
             block_end = (block_start + MAX_BLOCK_SIZE).min(num_samples);
         }
+
+        self.update_peak_meter(buffer, &self.output_meter);
 
         ProcessStatus::Normal
     }
@@ -1379,6 +1388,7 @@ impl Del2 {
 
     fn reset_taps(&mut self, timing: u32, restart: bool) {
         self.enabled_actions.store(LOCK_TAPS, false);
+        self.enabled_actions.store(MUTE_IN, false);
         self.delay_data.current_tap = 0;
         self.start_release_for_all_delay_taps(self.sample_rate);
         if restart {
@@ -1835,8 +1845,7 @@ impl Del2 {
         note: u8,
     ) -> &mut DelayTap {
         let new_delay_tap = DelayTap {
-            delay_tap_id: delay_tap_id
-                .unwrap_or_else(|| compute_fallback_delay_tap_id(note, channel)),
+            delay_tap_id: 0,
             internal_delay_tap_id: self.next_internal_delay_tap_id,
             channel,
             note,
@@ -1846,7 +1855,7 @@ impl Del2 {
             amp_envelope: Smoother::none(),
 
             delay_tap_gain: None,
-            is_muted: false,
+            is_muted: true,
             tap_index: NUM_TAPS, // start with tap_index out of bounds, to make sure it gets set.
             delayed_audio_l: [0.0; DSP_BLOCK_SIZE],
             delayed_audio_r: [0.0; DSP_BLOCK_SIZE],
@@ -1923,10 +1932,22 @@ impl Del2 {
                 Some(DelayTap {
                     is_muted,
                     amp_envelope,
+                    tap_index,
+                    delay_tap_id,
                     ..
                 }) => {
-                    let new_mute = self.mute_in_delay_temp[0] | self.enabled_actions.load(MUTE_OUT);
+                    let new_mute_in = self.mute_in_delayed[*tap_index][0];
+                    let new_mute_out = self.enabled_actions.load(MUTE_OUT);
+                    let new_mute =
+                    // new_mute_in ||
+                        new_mute_out;
                     if *is_muted != new_mute {
+                        // println!("self.mute_in_delayed[0]: {} self.enabled_actions.load(MUTE_OUT): {}", self.mute_in_delayed[0] , self.enabled_actions.load(MUTE_OUT));
+                        println!(
+                            "is_muted: {}, tap_index: {}, delay_tap_id: {}",
+                            *is_muted, tap_index, delay_tap_id
+                        );
+                        println!("new_mute: {}", new_mute);
                         // *releasing = true; // we don't want the tap to stop existing after the release is done
                         if new_mute {
                             amp_envelope.style =
@@ -2061,8 +2082,14 @@ impl Del2 {
 
 /// Compute a delay tap ID in case the host doesn't provide them. Polyphonic modulation will not work in
 /// this case, but playing notes will.
-const fn compute_fallback_delay_tap_id(note: u8, channel: u8) -> i32 {
-    note as i32 | ((channel as i32) << 16)
+const fn compute_fallback_delay_tap_id(note: u8, channel: u8, tap_index: usize) -> i32 {
+    // Ensure tap_index is within the valid range (0-7)
+    if tap_index > 7 {
+        panic!("tap_index must be between 0 and 7");
+    }
+
+    // Combine tap_index, note, and channel into a single 32-bit integer
+    (note as i32) | ((channel as i32) << 16) | ((tap_index as i32) << 29)
 }
 
 impl ClapPlugin for Del2 {
