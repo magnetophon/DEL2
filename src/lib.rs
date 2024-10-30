@@ -1878,7 +1878,7 @@ impl Del2 {
                 }) => {
                     *releasing = true;
                     amp_envelope.style =
-                        SmoothingStyle::Exponential(self.params.global.release_ms.value());
+                        SmoothingStyle::Linear(self.params.global.release_ms.value());
                     amp_envelope.set_target(sample_rate, 0.0);
                 }
                 _ => (),
@@ -1898,7 +1898,7 @@ impl Del2 {
                     // *releasing = true; // we don't want the tap to stop existing after the release is done
                     if mute {
                         amp_envelope.style =
-                            SmoothingStyle::Exponential(self.params.global.release_ms.value());
+                            SmoothingStyle::Linear(self.params.global.release_ms.value());
                         amp_envelope.set_target(sample_rate, 0.0);
                     } else {
                         amp_envelope.style =
@@ -1932,7 +1932,7 @@ impl Del2 {
                 {
                     // *releasing = true; // we don't want the tap to stop existing after the release is done
                     amp_envelope.style =
-                        SmoothingStyle::Exponential(self.params.global.release_ms.value());
+                        SmoothingStyle::Linear(self.params.global.release_ms.value());
                     amp_envelope.set_target(sample_rate, 0.0);
 
                     // If this targeted a single delay tap ID, we're done here. Otherwise there may be
@@ -1970,7 +1970,7 @@ impl Del2 {
                 {
                     *releasing = true;
                     amp_envelope.style =
-                        SmoothingStyle::Exponential(self.params.global.release_ms.value());
+                        SmoothingStyle::Linear(self.params.global.release_ms.value());
                     amp_envelope.set_target(sample_rate, 0.0);
 
                     // If this targeted a single delay tap ID, we're done here. Otherwise there may be
