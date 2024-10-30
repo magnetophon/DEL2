@@ -689,6 +689,10 @@ impl Plugin for Del2 {
         let mut block_end: usize = MAX_BLOCK_SIZE.min(num_samples);
 
         while block_start < num_samples {
+            let old_mute_out = self.enabled_actions.load(MUTE_OUT);
+            let old_mute_in = self.enabled_actions.load(MUTE_IN);
+            let old_nr_taps = self.delay_data.current_tap;
+
             // First of all, handle all note events that happen at the start of the block, and cut
             // the block short if another event happens before the end of it. To handle polyphonic
             // modulation for new notes properly, we'll keep track of the next internal note index
@@ -711,7 +715,7 @@ impl Plugin for Del2 {
                                 velocity,
                             } => {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
-                                if self.delay_data.current_tap > 0 {
+                                if self.delay_data.current_tap > old_nr_taps {
                                     let tap_index = self.delay_data.current_tap - 1;
                                     // This starts with the attack portion of the amplitude envelope
                                     let amp_envelope = Smoother::new(SmoothingStyle::Exponential(
@@ -863,6 +867,12 @@ impl Plugin for Del2 {
             }
 
             self.prepare_for_delay(block_end - block_start);
+            let new_mute_out = self.enabled_actions.load(MUTE_OUT);
+            let new_mute_in = self.enabled_actions.load(MUTE_IN);
+
+            if old_mute_out != new_mute_out {
+                self.set_mute_for_all_delay_taps(sample_rate, self.enabled_actions.load(MUTE_OUT));
+            }
 
             // We'll start with silence, and then add the output from the active delay taps
             output[0][block_start..block_end].fill(0.0);
@@ -1876,6 +1886,31 @@ impl Del2 {
         }
     }
 
+    /// Set mute for all delay taps by changing their amplitude envelope.
+    fn set_mute_for_all_delay_taps(&mut self, sample_rate: f32, mute: bool) {
+        for delay_tap in self.delay_taps.iter_mut() {
+            match delay_tap {
+                Some(DelayTap {
+                    amp_envelope,
+                    tap_index,
+                    ..
+                }) => {
+                    // *releasing = true; // we don't want the tap to stop existing after the release is done
+                    if mute {
+                        amp_envelope.style =
+                            SmoothingStyle::Exponential(self.params.global.release_ms.value());
+                        amp_envelope.set_target(sample_rate, 0.0);
+                    } else {
+                        amp_envelope.style =
+                            SmoothingStyle::Exponential(self.params.global.attack_ms.value());
+                        amp_envelope.set_target(sample_rate, 1.0);
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+
     /// Mute a delay tap by changing its amplitude envelope.
     fn start_mute_for_delay_tap(
         &mut self,
@@ -1890,13 +1925,12 @@ impl Del2 {
                     delay_tap_id: candidate_delay_tap_id,
                     channel: candidate_channel,
                     note: candidate_note,
-                    releasing,
                     amp_envelope,
                     ..
                 }) if delay_tap_id == Some(*candidate_delay_tap_id)
                     || (channel == *candidate_channel && note == *candidate_note) =>
                 {
-                    // *releasing = true; // we don't want the note to stop existing after the release is done
+                    // *releasing = true; // we don't want the tap to stop existing after the release is done
                     amp_envelope.style =
                         SmoothingStyle::Exponential(self.params.global.release_ms.value());
                     amp_envelope.set_target(sample_rate, 0.0);
