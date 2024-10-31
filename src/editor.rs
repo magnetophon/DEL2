@@ -410,8 +410,25 @@ impl DelayGraph {
         Self {
             delay_data: delay_data.get(cx),
         }
-        .build(cx, |_cx| {
-            // put other widgets here
+        .build(cx, |cx| {
+            Label::new(
+                cx,
+                delay_data.clone().map(move |data| {
+                    let mut locked_delay_data = data.lock().unwrap();
+                    let delay_data = locked_delay_data.read();
+                    return delay_data.current_tap;
+                }),
+            )
+            .class("action-label");
+            Label::new(
+                cx,
+                delay_data.clone().map(move |data| {
+                    let mut locked_delay_data = data.lock().unwrap();
+                    let delay_data = locked_delay_data.read();
+                    return delay_data.current_time;
+                }),
+            )
+            .class("action-label");
         })
     }
 
