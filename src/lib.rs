@@ -1021,9 +1021,6 @@ impl Del2 {
 
         self.mute_in_delay_buffer
             .write_latest(&mute_buffer[..block_len], write_index);
-
-        self.delay_write_index =
-            (write_index + block_len as isize) % self.delay_buffer_size as isize;
     }
 
     fn read_into_delayed_audio(
