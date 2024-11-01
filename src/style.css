@@ -163,17 +163,17 @@ generic-ui .label {
 }
 
 .peak-meter-group {
-    height: 73px;
+    height: 78px;
     left: 0px;
     right: 9px;
-    top: 9px;
+    top: 3px;
     bottom: 0px;
 }
 
 dual-meter {
     /* width: 584px; */
     width: 1s;
-    height: 18px;
+    height: 21px;
     color: #e0ce91;
     left: 0px;
     bottom: 0px;
@@ -183,6 +183,7 @@ dual-meter .bar {
     height: 50%;
     border-width: 1px;
     border-color: #4e4e4e;
+    top: 14px;
 }
 
 dual-meter .ticks {

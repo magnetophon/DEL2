@@ -50,7 +50,6 @@ impl DualMeter {
         L2: Lens<Target = f32>,
     {
         Self.build(cx, |cx| {
-            // Shared cells for the peak holding logic
             let held_peak_value_db1 = Cell::new(f32::MIN);
             let last_held_peak_value1: Cell<Option<Instant>> = Cell::new(None);
 
