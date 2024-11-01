@@ -821,10 +821,6 @@ impl Plugin for Del2 {
                 }
             }
 
-            // We'll start with silence, and then add the output from the active delay taps
-            output[0][block_start..block_end].fill(0.0);
-            output[1][block_start..block_end].fill(0.0);
-
             self.set_mute_for_all_delay_taps(sample_rate);
 
             let block_len = block_end - block_start;
@@ -839,6 +835,12 @@ impl Plugin for Del2 {
             self.params.gain.smoothed.next_block(&mut gain, block_len);
 
             // not poly:
+            let mut dry_wet = [0.0; MAX_BLOCK_SIZE];
+            self.params
+                .global
+                .dry_wet
+                .smoothed
+                .next_block(&mut dry_wet, block_len);
             let mut output_gain = [0.0; MAX_BLOCK_SIZE];
             self.params
                 .global
@@ -851,8 +853,15 @@ impl Plugin for Del2 {
                 .global_drive
                 .smoothed
                 .next_block(&mut global_drive, block_len);
+
             let mut delay_tap_gain = [0.0; MAX_BLOCK_SIZE];
             let mut delay_tap_amp_envelope = [0.0; MAX_BLOCK_SIZE];
+
+            for sample_idx in block_start..block_end {
+                let dry = 1.0 - dry_wet[sample_idx];
+                output[0][sample_idx] *= dry;
+                output[1][sample_idx] *= dry;
+            }
 
             // TODO: Some form of band limiting
             // TODO: Filter
@@ -916,9 +925,9 @@ impl Plugin for Del2 {
                     }
                 }
 
-                for (_value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                    let post_filter_gain =
-                        output_gain[sample_idx] / (drive * global_drive[sample_idx]);
+                for sample_idx in block_start..block_end {
+                    let post_filter_gain = dry_wet[sample_idx] * output_gain[sample_idx]
+                        / (drive * global_drive[sample_idx]);
 
                     output[0][sample_idx] +=
                         delay_tap.delayed_audio_l[sample_idx] * post_filter_gain;
