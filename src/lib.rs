@@ -1570,6 +1570,8 @@ impl Del2 {
 
     /// Set mute for all delay taps by changing their amplitude envelope.
     fn set_mute_for_all_delay_taps(&mut self, sample_rate: f32) {
+        let is_playing_mute = self.is_playing_action(MUTE_OUT);
+
         for delay_tap in self.delay_taps.iter_mut() {
             match delay_tap {
                 Some(DelayTap {
@@ -1578,13 +1580,26 @@ impl Del2 {
                     tap_index,
                     ..
                 }) => {
-                    let new_mute_in = self.mute_in_delayed[*tap_index][0];
-                    let new_mute_out = self.enabled_actions.load(MUTE_OUT);
-                    let new_mute =
-                    // new_mute_in ||
-                        new_mute_out;
+                    let is_toggle = self.params.global.mute_is_toggle.value();
+                    let mute_in_delayed = self.mute_in_delayed[*tap_index][0];
+                    let mute_out = self.enabled_actions.load(MUTE_OUT);
+
+                    let new_mute = if is_toggle {
+                        mute_in_delayed || mute_out
+                    } else {
+                        // direct mode
+                        println!(
+                            "is_playing_mute,: {}, mute_out: {}",
+                            is_playing_mute, mute_out
+                        );
+                        if is_playing_mute != mute_out {
+                            !is_playing_mute
+                        } else {
+                            mute_in_delayed
+                        }
+                    };
+
                     if *is_muted != new_mute {
-                        // *releasing = true; // we don't want the tap to stop existing after the release is done
                         if new_mute {
                             amp_envelope.style =
                                 SmoothingStyle::Linear(self.params.global.release_ms.value());
