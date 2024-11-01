@@ -49,7 +49,7 @@ const MUTE_IN: usize = 0;
 const MUTE_OUT: usize = 1;
 const CLEAR_TAPS: usize = 2;
 const LOCK_TAPS: usize = 3;
-const MAX_HAAS_MS: f32 = 20.0;
+const MAX_HAAS_MS: f32 = 2.0;
 
 // Polyphonic modulation works by assigning integer IDs to parameters. Pattern matching on these in
 // `PolyModulation` and `MonoAutomation` events makes it possible to easily link these events to the
@@ -917,7 +917,6 @@ impl Plugin for Del2 {
                     .min(1.0);
                 let (offset_l, offset_r) = Del2::pan_to_haas_samples(pan, sample_rate);
 
-                // println!("tap: {}, pan: {}", tap_index, pan);
                 let delay_time = self.delay_data.delay_times[tap_index] as isize;
                 let write_index = self.delay_write_index;
                 // delay_time - 1 because we are processing 2 samples at once in process_audio
