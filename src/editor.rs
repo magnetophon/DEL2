@@ -243,7 +243,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     .class("column");
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
-                            Label::new(cx, "amount").class("slider-label");
+                            Label::new(cx, "note>pan").class("slider-label");
                             ParamSlider::new(cx, Data::params, |params| {
                                 &params.taps.panning_amount
                             })
