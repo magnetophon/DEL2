@@ -47,7 +47,7 @@ const LEARNING: u8 = 129;
 // should be 0..7 because of AtomicByteArray size
 const MUTE_IN: usize = 0;
 const MUTE_OUT: usize = 1;
-const RESET_TAPS: usize = 2;
+const CLEAR_TAPS: usize = 2;
 const LOCK_TAPS: usize = 3;
 const MAX_HAAS_MS: f32 = 5.0;
 
@@ -1038,7 +1038,7 @@ impl Del2 {
             CountingState::TimeOut => {
                 if is_delay_note && !is_learning && taps_unlocked {
                     // If in TimeOut state, reset and start new counting phase
-                    self.reset_taps(timing, true);
+                    self.clear_taps(timing, true);
                 }
             }
             CountingState::CountingInBuffer => {
@@ -1124,9 +1124,9 @@ impl Del2 {
                 }
                 // self.last_played_notes.note_off(note);
             }
-            if self.is_playing_action(RESET_TAPS) {
-                self.reset_taps(timing, false);
-                // self.last_played_notes.note_off(self.learned_notes.load(RESET_TAPS))
+            if self.is_playing_action(CLEAR_TAPS) {
+                self.clear_taps(timing, false);
+                // self.last_played_notes.note_off(self.learned_notes.load(CLEAR_TAPS))
             }
         }
     }
@@ -1144,7 +1144,7 @@ impl Del2 {
         self.last_played_notes.note_off(note);
     }
 
-    fn reset_taps(&mut self, timing: u32, restart: bool) {
+    fn clear_taps(&mut self, timing: u32, restart: bool) {
         self.enabled_actions.store(LOCK_TAPS, false);
         self.delay_data.current_tap = 0;
         self.start_release_for_all_delay_taps(self.sample_rate);

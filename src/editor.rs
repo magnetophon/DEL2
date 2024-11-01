@@ -13,7 +13,7 @@ use nih_plug_vizia::{
 
 use crate::{
     util, AtomicBoolArray, AtomicByteArray, Del2Params, LastPlayedNotes, SharedDelayData,
-    SharedDelayDataOutput, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, RESET_TAPS,
+    SharedDelayDataOutput, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE,
 };
 
 #[derive(Lens, Clone)]
@@ -168,7 +168,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     .class("column");
                     HStack::new(cx, |cx| {
                         HStack::new(cx, |cx| {
-                            Label::new(cx, "reset taps").class("action-name");
+                            Label::new(cx, "clear taps").class("action-name");
                             ActionTrigger::new(
                                 cx,
                                 Data::params,
@@ -177,7 +177,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 Data::learned_notes,
                                 Data::last_played_notes,
                                 Data::enabled_actions,
-                                RESET_TAPS,
+                                CLEAR_TAPS,
                             );
                         })
                         .class("row");
@@ -770,7 +770,7 @@ impl ActionTrigger {
             self.params.global.mute_is_toggle.value(),
             self.is_enabled(),
             self.is_playing(),
-            self.own_index == RESET_TAPS,
+            self.own_index == CLEAR_TAPS,
         ) {
             (true, _, _, _, _) => vg::Paint::color(border_color),
             (_, _, _, true, true) => vg::Paint::color(outline_color),
