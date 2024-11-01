@@ -7,11 +7,6 @@ use std::cell::Cell;
 use std::time::Duration;
 use std::time::Instant;
 
-/// The thickness of a tick inside of the dual meter's bar.
-const TICK_WIDTH: f32 = 1.0;
-/// The gap between individual ticks.
-const TICK_GAP: f32 = 1.0;
-
 /// The decibel value corresponding to the very left of the bar.
 const MIN_TICK: f32 = -90.0;
 /// The decibel value corresponding to the very right of the bar.
@@ -184,22 +179,17 @@ where
         let level_dbfs = self.level_dbfs.get(cx);
         let peak_dbfs = self.peak_dbfs.get(cx);
 
-        // These basics are taken directly from the default implementation of this function
+        // Basic setup
         let bounds = cx.bounds();
         if bounds.w == 0.0 || bounds.h == 0.0 {
             return;
         }
 
-        // TODO: It would be cool to allow the text color property to control the gradient here. For
-        //       now we'll only support basic background colors and borders.
-        let background_color = cx.background_color();
-        let border_color = cx.border_color();
-        let opacity = cx.opacity();
-        let mut background_color: vg::Color = background_color.into();
-        background_color.set_alphaf(background_color.a * opacity);
-        let mut border_color: vg::Color = border_color.into();
-        border_color.set_alphaf(border_color.a * opacity);
+        let background_color = cx.background_color().into();
+        let border_color = cx.border_color().into();
+        let font_color = cx.font_color().into();
         let border_width = cx.border_width();
+        let outline_width = cx.outline_width();
 
         let mut path = vg::Path::new();
         {
@@ -219,48 +209,31 @@ where
         let paint = vg::Paint::color(background_color);
         canvas.fill_path(&path, &paint);
 
-        // And now for the fun stuff. We'll try to not overlap the border, but we'll draw that last
-        // just in case.
-        let bar_bounds = bounds.shrink(border_width / 2.0);
-        let bar_ticks_start_x = bar_bounds.left().floor() as i32;
-        let bar_ticks_end_x = bar_bounds.right().ceil() as i32;
-
         // NOTE: We'll scale this with the nearest integer DPI ratio. That way it will still look
         //       good at 2x scaling, and it won't look blurry at 1.x times scaling.
         let dpi_scale = cx.logical_to_physical(1.0).floor().max(1.0);
-        let bar_tick_coordinates = (bar_ticks_start_x..bar_ticks_end_x)
-            .step_by(((TICK_WIDTH + TICK_GAP) * dpi_scale).round() as usize);
-        for tick_x in bar_tick_coordinates {
-            let tick_fraction =
-                (tick_x - bar_ticks_start_x) as f32 / (bar_ticks_end_x - bar_ticks_start_x) as f32;
-            let tick_db = (tick_fraction * (MAX_TICK - MIN_TICK)) + MIN_TICK;
-            if tick_db > level_dbfs {
-                break;
-            }
 
-            // femtovg draws paths centered on these coordinates, so in order to be pixel perfect we
-            // need to account for that. Otherwise the ticks will be 2px wide instead of 1px.
-            let mut path = vg::Path::new();
-            path.move_to(tick_x as f32 + (dpi_scale / 2.0), bar_bounds.top());
-            path.line_to(tick_x as f32 + (dpi_scale / 2.0), bar_bounds.bottom());
+        // Draw solid bar up to current level_dbfs
+        let bar_bounds = bounds.shrink(border_width / 2.0);
+        let db_to_x_coord = |db: f32| {
+            let tick_fraction = (db - MIN_TICK) / (MAX_TICK - MIN_TICK);
+            bar_bounds.left() + (bar_bounds.width() * tick_fraction).round()
+        };
 
-            let grayscale_color = 0.3 + ((1.0 - tick_fraction) * 0.5);
-            let mut paint = vg::Paint::color(vg::Color::rgbaf(
-                grayscale_color,
-                grayscale_color,
-                grayscale_color,
-                opacity,
-            ));
-            paint.set_line_width(TICK_WIDTH * dpi_scale);
-            canvas.stroke_path(&path, &paint);
+        let level_x = db_to_x_coord(level_dbfs);
+        if level_dbfs > MIN_TICK {
+            let mut filled_path = vg::Path::new();
+            filled_path.move_to(bar_bounds.left(), bar_bounds.top());
+            filled_path.line_to(level_x, bar_bounds.top());
+            filled_path.line_to(level_x, bar_bounds.bottom());
+            filled_path.line_to(bar_bounds.left(), bar_bounds.bottom());
+            filled_path.close();
+
+            let fill_paint = vg::Paint::color(border_color);
+            canvas.fill_path(&filled_path, &fill_paint);
         }
 
         // Draw the hold peak value if the hold time option has been set
-        let db_to_x_coord = |db: f32| {
-            let tick_fraction = (db - MIN_TICK) / (MAX_TICK - MIN_TICK);
-            bar_ticks_start_x as f32
-                + ((bar_ticks_end_x - bar_ticks_start_x) as f32 * tick_fraction).round()
-        };
         if (MIN_TICK..MAX_TICK).contains(&peak_dbfs) {
             // femtovg draws paths centered on these coordinates, so in order to be pixel perfect we
             // need to account for that. Otherwise the ticks will be 2px wide instead of 1px.
@@ -269,8 +242,8 @@ where
             path.move_to(peak_x + (dpi_scale / 2.0), bar_bounds.top());
             path.line_to(peak_x + (dpi_scale / 2.0), bar_bounds.bottom());
 
-            let mut paint = vg::Paint::color(vg::Color::rgbaf(0.3, 0.3, 0.3, opacity));
-            paint.set_line_width(TICK_WIDTH * dpi_scale);
+            let mut paint = vg::Paint::color(font_color);
+            paint.set_line_width(outline_width);
             canvas.stroke_path(&path, &paint);
         }
 

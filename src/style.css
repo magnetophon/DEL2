@@ -182,8 +182,10 @@ dual-meter {
 dual-meter .bar {
     height: 50%;
     border-width: 1px;
+    outline-width: 2px;
     border-color: #4e4e4e;
-    top: 14px;
+    color: #e0ce91;
+    top: 13px;
 }
 
 dual-meter .ticks {
