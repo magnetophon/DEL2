@@ -135,12 +135,6 @@ generic-ui {
     bottom: 6px;
 }
 
-/* generic-ui .column { */
-/* width: 269px; */
-/* height: auto; */
-/* left: 9px; */
-/* right: 0px; */
-/* } */
 .column {
     width: 269px;
     height: auto;
@@ -182,7 +176,7 @@ dual-meter {
 dual-meter .bar {
     height: 50%;
     border-width: 1px;
-    outline-width: 2px;
+    outline-width: 1.3px;
     border-color: #4e4e4e;
     color: #e0ce91;
     top: 13px;
@@ -195,16 +189,19 @@ dual-meter .ticks__tick {
     top: 0px;
     width: 1px;
     height: 30%;
-    /* color: #4e4e4e; */
 }
 dual-meter .ticks__label {
     top: 4px; /* In pixels in an attempt to get this to better align to the grid */
-    font-size: 11; /* 14.667px */
+    font-size: 13;
 }
 .peak-meter-label {
     left: 0px;
-    right: 6px;
+}
+
+.peak-meter-label-group {
+    right: 9px;
+    top: 6px;
     bottom: 24px;
-    font-size: 15;
-    width: 22px;
+    font-size: 16;
+    width: 29px;
 }

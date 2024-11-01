@@ -304,7 +304,11 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                 VStack::new(cx, |cx| {
                     //meters
                     HStack::new(cx, |cx| {
-                        Label::new(cx, "in").class("peak-meter-label");
+                        VStack::new(cx, |cx| {
+                            Label::new(cx, "in").class("peak-meter-label");
+                            Label::new(cx, "out").class("peak-meter-label");
+                        })
+                        .class("peak-meter-label-group");
                         DualMeter::new(
                             cx,
                             Data::input_meter.map(|input_meter| {
@@ -315,7 +319,8 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             }),
                             Some(Duration::from_millis(600)),
                         );
-                    });
+                    })
+                    .class("peak-meter-plus-label-group");
                 })
                 .class("peak-meter-group");
                 ResizeHandle::new(cx);
