@@ -1244,9 +1244,11 @@ impl Del2 {
                 // println!("no more events! self.samples_since_last_event: {}", self.samples_since_last_event);
             }
             CountingState::CountingInBuffer => {
-                println!("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB self.samples_since_last_event: {}, buffer_samples: {}, self.timing_last_event: {}", self.samples_since_last_event, buffer_samples, self.timing_last_event);
-                // self.samples_since_last_event += buffer_samples;
-                // self.samples_since_last_event += self.timing_last_event;
+                // TODO: is this correct?
+                // timing_last_event is sometimes bigger than buffer_samples, so this overflows:
+                // self.samples_since_last_event = buffer_samples as u32 - self.timing_last_event;
+                self.samples_since_last_event =
+                    (buffer_samples as u32).saturating_sub(self.timing_last_event);
                 self.counting_state = CountingState::CountingAcrossBuffer;
             }
             CountingState::CountingAcrossBuffer => {
