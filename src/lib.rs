@@ -1,48 +1,12 @@
 /*
 TODO:
 
-- for triggers:
-- all mutes with choice between latch and toggle
-    - momentary mode:
-in this mode, the taps are only heard until the key is released
-    the counter starts when the note for this trigger is pressed
+- smooth all dsp params (at the end of the interpolation?)
 
-    - smooth all dsp params (at the end of the interpolation?)
-
-
-
-Proper DSP structure:
-- always use a big buffer size,
 - make mutes sample-accurate
 
-  Steps:
-  - process_midi_events
-    save a tuple of the timing of the tap start and end, and its state, separate for each tap, relative to the start of the nih buffer
-    save the same tuples for the mute trigger state changes, separate for each tap, relative to the start of the tap
-    save the timing of the envelope state changes (mutes), separate for each tap, relative to the start of the tap
-  - fill up to NUM_TAPS big buffers of DSP_BLOCK_SIZE, beginning at the start of each tap
-    - save the length of each input block, so we can split up the smoothing block at the output and do the post gain in smaller blocks, for minimum latency
-  - for each tap:
-        - do drive pre-gain on DSP buffers
-          - has to be done here cause we want the gains after the delayline (so they react immediately) but before the filters
-          - we save the smooted values as one big block
-        - split up the buffers at mute events and do envelopes
-          - after the delayline but before the filters
-          - has to be done in split buffers so the envelopes are sample accurate.
-        - recombine buffers into DSP_BLOCK_SIZE
-        - do oversampling, DSP and downsampling
-        - split up the DSP blocks and smoother blocks into the sizes we saved earlier
-        - do drive post gain
-  - mix taps into nih process buffers
-  - do output gain
-
-
-  - optional: live-mode / daw-mode switch
-    - compensate for host latency by adjusting the delay read index (optional; when latency reporting is off?)
-      take the actual buffer size into account?
-    - make a switch to turn on and off latency compensation:
-      - when it's off, the delays are at the correct time, but the gains are late
-      - when it's on, the gains are also at the correct time, but the whole DAW is late!
+- optional: live-mode / daw-mode switch
+  - compensate for host latency by adjusting the delay read index
  */
 
 // #![allow(non_snake_case)]
@@ -108,17 +72,12 @@ struct Del2 {
     delay_buffer: [BMRingBuf<f32>; 2],
     mute_in_delay_buffer: BMRingBuf<bool>,
     mute_in_delayed: [[bool; DSP_BLOCK_SIZE]; NUM_TAPS],
-    // delay read buffers
-    // TODO: which vecs should be arrays?
-    temp_l: Vec<f32>,
-    temp_r: Vec<f32>,
 
     delay_data: SharedDelayData,
     delay_data_input: SharedDelayDataInput,
     delay_data_output: Arc<Mutex<SharedDelayDataOutput>>,
     // N counters to know where in the fade in we are: 0 is the start
     amp_envelopes: [Smoother<f32>; NUM_TAPS],
-    envelope_block: [[f32; DSP_BLOCK_SIZE]; NUM_TAPS],
     sample_rate: f32,
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
@@ -470,15 +429,11 @@ impl Default for Del2 {
             ],
             mute_in_delay_buffer: BMRingBuf::<bool>::from_len(TOTAL_DELAY_SAMPLES),
             mute_in_delayed: [[false; DSP_BLOCK_SIZE]; NUM_TAPS],
-            temp_l: vec![0.0; MAX_BLOCK_SIZE],
-            temp_r: vec![0.0; MAX_BLOCK_SIZE],
 
             delay_data: initial_delay_data,
             delay_data_input,
             delay_data_output: Arc::new(Mutex::new(delay_data_output)),
             amp_envelopes,
-            envelope_block: [[0.0; DSP_BLOCK_SIZE]; NUM_TAPS],
-            //TODO: make Option<u8>
             sample_rate: 1.0,
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
@@ -597,11 +552,6 @@ impl Plugin for Del2 {
         // have dropped by 12 dB
         self.peak_meter_decay_weight =
             0.25f64.powf((self.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip()) as f32;
-        // Resize temporary buffers for left and right channels to maximum buffer size
-        // Either we resize here, or in the audio thread
-        // If we don't, we are slower.
-        self.resize_temp_buffers(buffer_config.max_buffer_size);
-
         // Calculate and set the delay buffer size
         self.set_delay_buffer_size(buffer_config);
 
@@ -709,9 +659,7 @@ impl Plugin for Del2 {
                                     delay_tap.tap_index = tap_index;
                                     delay_tap.is_muted = false;
                                     delay_tap.delay_tap_id = voice_id.unwrap_or_else(|| {
-                                        // compute_fallback_delay_tap_id(note, channel)
-                                        compute_fallback_delay_tap_id_d(note, channel, delay_time)
-                                        // compute_fallback_delay_tap_id_i(note, channel, tap_index)
+                                        compute_fallback_delay_tap_id(note, channel, delay_time)
                                     })
                                 }
                             }
@@ -959,7 +907,7 @@ impl Plugin for Del2 {
                         delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
                     ]);
                     let processed = self.ladders[tap_index].tick_newton(frame);
-                    let mut frame_out = *processed.as_array();
+                    let frame_out = *processed.as_array();
                     delay_tap.delayed_audio_l[i] = frame_out[0];
                     delay_tap.delayed_audio_r[i] = frame_out[1];
                     if i + 1 < block_len {
@@ -968,7 +916,7 @@ impl Plugin for Del2 {
                     }
                 }
 
-                for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
+                for (_value_idx, sample_idx) in (block_start..block_end).enumerate() {
                     let post_filter_gain =
                         output_gain[sample_idx] / (drive * global_drive[sample_idx]);
 
@@ -1025,7 +973,6 @@ impl Del2 {
             // assert!(block_len <= MAX_BLOCK_SIZE);
             // Either we resize here, or in the initialization fn
             // If we don't, we are slower.
-            // self.resize_temp_buffers(block_len.try_into().unwrap());
             let mut block_channels = block.into_iter();
 
             let out_l = block_channels.next().expect("Left output channel missing");
@@ -1059,19 +1006,6 @@ impl Del2 {
 
         self.mute_in_delay_buffer
             .write_latest(&mute_buffer[..block_len], write_index);
-    }
-
-    fn read_into_delayed_audio(
-        &mut self,
-        delayed_audio_l: &mut [f32],
-        delayed_audio_r: &mut [f32],
-        delay_time: isize,
-    ) {
-        // delay_time - 1 because we are processing 2 samples at once in process_audio
-        let read_index = self.delay_write_index - (delay_time - 1).max(0);
-
-        self.delay_buffer[0].read_into(delayed_audio_l, read_index);
-        self.delay_buffer[1].read_into(delayed_audio_r, read_index);
     }
 
     fn store_note_on_in_delay_data(&mut self, timing: u32, note: u8, velocity: f32) {
@@ -1218,15 +1152,6 @@ impl Del2 {
         }
     }
 
-    fn update_mute_times(
-        times: &mut BMRingBuf<(u32, bool)>,
-        write_index: &mut isize,
-        state: (u32, bool),
-    ) {
-        times.write_latest(&[state], *write_index);
-        *write_index = (*write_index + 1) % DSP_BLOCK_SIZE as isize;
-    }
-
     fn prepare_for_delay(&mut self, buffer_samples: usize) {
         self.no_more_events(buffer_samples as u32);
 
@@ -1307,47 +1232,6 @@ impl Del2 {
         a * (b / a).powf(x)
     }
 
-    fn process_audio_blocks(&mut self, buffer: &mut Buffer) {
-        for (_, block) in buffer.iter_blocks(buffer.samples()) {
-            let block_len = block.samples();
-            // TODO: assert needed?
-            // assert!(block_len <= MAX_BLOCK_SIZE);
-            // Either we resize here, or in the initialization fn
-            // If we don't, we are slower.
-            self.resize_temp_buffers(block_len.try_into().unwrap());
-            let mut block_channels = block.into_iter();
-
-            let out_l = block_channels.next().expect("Left output channel missing");
-            let out_r = block_channels.next().expect("Right output channel missing");
-
-            let write_index = self.delay_write_index;
-            self.delay_buffer[0].write_latest(out_l, write_index);
-            self.delay_buffer[1].write_latest(out_r, write_index);
-            self.delay_write_index =
-                (write_index + block_len as isize) % self.delay_buffer_size as isize;
-
-            // TODO: no dry signal yet
-            out_l.fill(0.0);
-            out_r.fill(0.0);
-
-            for tap in 0..NUM_TAPS {
-                if self.amp_envelopes[tap].is_smoothing() || (tap < self.delay_data.current_tap) {
-                    self.read_tap_into_temp(tap);
-                    self.process_audio(block_len, tap, out_l, out_r);
-                }
-            }
-        }
-    }
-
-    fn read_tap_into_temp(&mut self, tap: usize) {
-        let delay_time = self.delay_data.delay_times[tap] as isize;
-        // delay_time - 1 because we are processing 2 samples at once in process_audio
-        let read_index = self.delay_write_index - (delay_time - 1).max(0);
-
-        self.delay_buffer[0].read_into(&mut self.temp_l, read_index);
-        self.delay_buffer[1].read_into(&mut self.temp_r, read_index);
-    }
-
     fn pan_to_haas_samples(pan: f32, sample_rate: f32) -> (i32, i32) {
         let delay_samples = (pan.abs() * (MAX_HAAS_MS / 1000.0) * sample_rate) as i32;
         if pan < 0.0 {
@@ -1357,90 +1241,9 @@ impl Del2 {
         }
     }
 
-    fn process_audio(
-        &mut self,
-        block_len: usize,
-        tap: usize,
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
-        // TODO: in this configuration, the filter does not work fully correctly.
-        // You can't process a sample without having processed the sample that came before it, otherwise the filter states won't be correct.
-        // The correct sollution, is to process 2 stereo taps at a time.
-        // For that we need to feed two different parameter values to the filter, one for each tap.
-        // No idea how...
-        // Loop through each sample, processing two channels at a time
-        for i in (0..block_len).step_by(2) {
-            let output_gain1 = self.params.global.output_gain.smoothed.next();
-            let output_gain2 = self.params.global.output_gain.smoothed.next();
-            let drive = self.filter_params[tap].clone().drive;
-
-            let pre_filter_gain1 = self.params.global.global_drive.smoothed.next();
-            let pre_filter_gain2 = self.params.global.global_drive.smoothed.next();
-
-            // Calculate post-filter gains, including the fade effect
-            let post_filter_gain1 = output_gain1 / (drive * pre_filter_gain1);
-            let post_filter_gain2 = output_gain2 / (drive * pre_filter_gain2);
-
-            let mut frame = self.make_stereo_frame(i);
-
-            // Apply global drive before filtering for each channel
-            frame.as_mut_array()[0] *= pre_filter_gain1;
-            frame.as_mut_array()[1] *= pre_filter_gain1;
-            frame.as_mut_array()[2] *= pre_filter_gain2;
-            frame.as_mut_array()[3] *= pre_filter_gain2;
-
-            // Process the frame through the filter
-            let processed = self.ladders[tap].tick_newton(frame);
-            let mut frame_out = *processed.as_array();
-
-            // Apply post-filter gains
-            frame_out[0] *= post_filter_gain1;
-            frame_out[1] *= post_filter_gain1;
-            frame_out[2] *= post_filter_gain2;
-            frame_out[3] *= post_filter_gain2;
-
-            Del2::accumulate_processed_results(i, block_len, out_l, out_r, frame_out);
-        }
-    }
-
-    fn make_stereo_frame(&self, index: usize) -> f32x4 {
-        f32x4::from_array([
-            self.temp_l[index],
-            self.temp_r[index],
-            self.temp_l.get(index + 1).copied().unwrap_or(0.0),
-            self.temp_r.get(index + 1).copied().unwrap_or(0.0),
-        ])
-    }
-
-    fn accumulate_processed_results(
-        i: usize,
-        block_len: usize,
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-        frame_out: [f32; 4],
-    ) {
-        out_l[i] += frame_out[0];
-        out_r[i] += frame_out[1];
-        if i + 1 < block_len {
-            out_l[i + 1] += frame_out[2];
-            out_r[i + 1] += frame_out[3];
-        }
-    }
     // TODO: when the fade time is long, there are bugs with taps not appearing, or fading out while fading in, etc.
     // more testing is needed
     // for fn initialize():
-
-    // Either we resize in the audio thread, or in the initialization fn
-    // If we don't, we are slower.
-    fn resize_temp_buffers(&mut self, max_buffer_size: u32) {
-        let max_size = max_buffer_size as usize;
-        self.temp_l.resize(max_size, 0.0);
-        self.temp_r.resize(max_size, 0.0);
-        // for tap in 0..NUM_TAPS {
-        //     self.envelope_block[tap].resize(max_size, 0.0);
-        // }
-    }
 
     fn calculate_buffer_size(&self, buffer_size: u32) -> u32 {
         ((TOTAL_DELAY_SAMPLES as f64 / buffer_size as f64).ceil() as u32 * buffer_size)
@@ -1634,7 +1437,6 @@ impl Del2 {
 
     /// Set mute for all delay taps by changing their amplitude envelope.
     fn set_mute_for_all_delay_taps(&mut self, sample_rate: f32) {
-        let is_playing_mute_in = self.is_playing_action(MUTE_IN);
         let is_playing_mute_out = self.is_playing_action(MUTE_OUT);
 
         for delay_tap in self.delay_taps.iter_mut() {
@@ -1670,80 +1472,6 @@ impl Del2 {
                             amp_envelope.set_target(sample_rate, 1.0);
                         }
                         *is_muted = new_mute;
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-
-    /// Mute a delay tap by changing its amplitude envelope.
-    fn start_mute_for_delay_tap(
-        &mut self,
-        sample_rate: f32,
-        delay_tap_id: Option<i32>,
-        channel: u8,
-        note: u8,
-    ) {
-        for delay_tap in self.delay_taps.iter_mut() {
-            match delay_tap {
-                Some(DelayTap {
-                    delay_tap_id: candidate_delay_tap_id,
-                    channel: candidate_channel,
-                    note: candidate_note,
-                    amp_envelope,
-                    ..
-                }) if delay_tap_id == Some(*candidate_delay_tap_id)
-                    || (channel == *candidate_channel && note == *candidate_note) =>
-                {
-                    // *releasing = true; // we don't want the tap to stop existing after the release is done
-                    amp_envelope.style =
-                        SmoothingStyle::Linear(self.params.global.release_ms.value());
-                    amp_envelope.set_target(sample_rate, 0.0);
-
-                    // If this targeted a single delay tap ID, we're done here. Otherwise there may be
-                    // multiple overlapping delay_taps as we enabled support for that in the
-                    // `PolyModulationConfig`.
-                    if delay_tap_id.is_some() {
-                        return;
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-
-    /// Start the release process for one or more delay tap by changing their amplitude envelope. If
-    /// `delay_tap_id` is not provided, then this will terminate all matching delay_taps.
-    fn start_release_for_delay_taps(
-        &mut self,
-        sample_rate: f32,
-        delay_tap_id: Option<i32>,
-        channel: u8,
-        note: u8,
-    ) {
-        for delay_tap in self.delay_taps.iter_mut() {
-            match delay_tap {
-                Some(DelayTap {
-                    delay_tap_id: candidate_delay_tap_id,
-                    channel: candidate_channel,
-                    note: candidate_note,
-                    releasing,
-                    amp_envelope,
-                    ..
-                }) if delay_tap_id == Some(*candidate_delay_tap_id)
-                    || (channel == *candidate_channel && note == *candidate_note) =>
-                {
-                    *releasing = true;
-                    amp_envelope.style =
-                        SmoothingStyle::Linear(self.params.global.release_ms.value());
-                    amp_envelope.set_target(sample_rate, 0.0);
-
-                    // If this targeted a single delay tap ID, we're done here. Otherwise there may be
-                    // multiple overlapping delay_taps as we enabled support for that in the
-                    // `PolyModulationConfig`.
-                    if delay_tap_id.is_some() {
-                        return;
                     }
                 }
                 _ => (),
@@ -1791,21 +1519,9 @@ impl Del2 {
     }
 }
 
-const fn compute_fallback_delay_tap_id(note: u8, channel: u8) -> i32 {
-    note as i32 | ((channel as i32) << 16)
-}
 /// Compute a delay tap ID in case the host doesn't provide them. Polyphonic modulation will not work in
 /// this case, but playing notes will.
-const fn compute_fallback_delay_tap_id_i(note: u8, channel: u8, tap_index: usize) -> i32 {
-    // Ensure tap_index is within the valid range (0-7)
-    if tap_index > 7 {
-        panic!("tap_index must be between 0 and 7");
-    }
-
-    // Combine tap_index, note, and channel into a single 32-bit integer
-    (note as i32) | ((channel as i32) << 16) | ((tap_index as i32) << 29)
-}
-const fn compute_fallback_delay_tap_id_d(note: u8, channel: u8, delay_time: u32) -> i32 {
+const fn compute_fallback_delay_tap_id(note: u8, channel: u8, delay_time: u32) -> i32 {
     // Ensure inputs are within their valid ranges
     assert!(note <= 127, "note must be between 0 and 127");
     assert!(channel <= 15, "channel must be between 0 and 15");
