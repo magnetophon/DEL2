@@ -170,7 +170,7 @@ struct GlobalParams {
 }
 
 impl GlobalParams {
-    pub fn new(enabled_actions: Arc<AtomicBoolArray>) -> Self {
+    pub fn new(enabled_actions: Arc<AtomicBoolArray>, learned_notes: Arc<AtomicByteArray>) -> Self {
         GlobalParams {
             dry_wet: FloatParam::new("mix", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_unit("%")
@@ -209,7 +209,10 @@ impl GlobalParams {
                 }))
                 .with_callback(Arc::new(move |value| {
                     if !value {
-                        enabled_actions.store(MUTE_IN, true);
+                        let mute_in_note = learned_notes.load(MUTE_IN);
+                        if mute_in_note != LEARNING && mute_in_note != NO_LEARNED_NOTE {
+                            enabled_actions.store(MUTE_IN, true);
+                        }
                         enabled_actions.store(MUTE_OUT, false);
                     }
                 })),
@@ -407,6 +410,7 @@ impl Default for Del2 {
 
         let filter_params = array_init(|_| Arc::new(FilterParams::new()));
         let should_update_filter = Arc::new(AtomicBool::new(false));
+        let learned_notes = Arc::new(AtomicByteArray::new());
         let enabled_actions = Arc::new(AtomicBoolArray::new());
         let ladders: [LadderFilter; NUM_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
@@ -416,6 +420,7 @@ impl Default for Del2 {
             params: Arc::new(Del2Params::new(
                 should_update_filter.clone(),
                 enabled_actions.clone(),
+                learned_notes.clone(),
             )),
 
             delay_taps: [0; NUM_TAPS as usize].map(|_| None),
@@ -441,7 +446,7 @@ impl Default for Del2 {
             delay_write_index: 0,
             is_learning: Arc::new(AtomicBool::new(false)),
             learning_index: Arc::new(AtomicUsize::new(0)),
-            learned_notes: Arc::new(AtomicByteArray::new()),
+            learned_notes,
             last_played_notes: Arc::new(LastPlayedNotes::new()),
             samples_since_last_event: 0,
             timing_last_event: 0,
@@ -455,11 +460,15 @@ impl Default for Del2 {
 }
 
 impl Del2Params {
-    fn new(should_update_filter: Arc<AtomicBool>, enabled_actions: Arc<AtomicBoolArray>) -> Self {
+    fn new(
+        should_update_filter: Arc<AtomicBool>,
+        enabled_actions: Arc<AtomicBoolArray>,
+        learned_notes: Arc<AtomicByteArray>,
+    ) -> Self {
         Self {
             editor_state: editor::default_state(),
             taps: TapsParams::new(should_update_filter.clone()),
-            global: GlobalParams::new(enabled_actions.clone()),
+            global: GlobalParams::new(enabled_actions.clone(), learned_notes.clone()),
             gain: FloatParam::new(
                 "Gain",
                 util::db_to_gain(0.0),
