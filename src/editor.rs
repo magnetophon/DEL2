@@ -16,6 +16,9 @@ use crate::{
     SharedDelayDataOutput, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE,
 };
 
+mod dual_meter;
+use crate::editor::dual_meter::DualMeter;
+
 #[derive(Lens, Clone)]
 pub(crate) struct Data {
     pub params: Arc<Del2Params>,
@@ -302,7 +305,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     //meters
                     HStack::new(cx, |cx| {
                         Label::new(cx, "in").class("peak-meter-label");
-                        PeakMeter::new(
+                        DualMeter::new(
                             cx,
                             Data::input_meter.map(|input_meter| {
                                 util::gain_to_db(input_meter.load(Ordering::Relaxed))
@@ -312,7 +315,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     });
                     HStack::new(cx, |cx| {
                         Label::new(cx, "out").class("peak-meter-label");
-                        PeakMeter::new(
+                        DualMeter::new(
                             cx,
                             Data::output_meter.map(|output_meter| {
                                 util::gain_to_db(output_meter.load(Ordering::Relaxed))

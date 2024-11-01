@@ -170,7 +170,7 @@ generic-ui .label {
     bottom: 0px;
 }
 
-peak-meter {
+dual-meter {
     /* width: 584px; */
     width: 1s;
     height: 18px;
@@ -179,22 +179,22 @@ peak-meter {
     bottom: 0px;
 }
 
-peak-meter .bar {
+dual-meter .bar {
     height: 50%;
     border-width: 1px;
     border-color: #4e4e4e;
 }
 
-peak-meter .ticks {
+dual-meter .ticks {
     height: 50%;
 }
-peak-meter .ticks__tick {
+dual-meter .ticks__tick {
     top: 0px;
     width: 1px;
     height: 30%;
     /* color: #4e4e4e; */
 }
-peak-meter .ticks__label {
+dual-meter .ticks__label {
     top: 4px; /* In pixels in an attempt to get this to better align to the grid */
     font-size: 11; /* 14.667px */
 }
