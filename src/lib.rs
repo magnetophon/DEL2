@@ -208,7 +208,7 @@ impl GlobalParams {
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
             mute_is_toggle: BoolParam::new("mute mode", true)
                 .with_value_to_string(Arc::new(|value| {
-                    String::from(if value { "toggle" } else { "instant" })
+                    String::from(if value { "toggle" } else { "direct" })
                 }))
                 .with_callback(Arc::new(move |value| {
                     if !value {
