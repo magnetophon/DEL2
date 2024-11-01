@@ -858,22 +858,53 @@ impl Plugin for Del2 {
 
             self.prepare_for_delay(block_end - block_start);
 
+            if self
+                .should_update_filter
+                .compare_exchange(
+                    true,
+                    false,
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                )
+                .is_ok()
+            {
+                for tap in 0..self.delay_data.current_tap {
+                    self.update_filter(tap);
+                }
+            }
+
             // We'll start with silence, and then add the output from the active delay taps
             output[0][block_start..block_end].fill(0.0);
             output[1][block_start..block_end].fill(0.0);
 
             self.set_mute_for_all_delay_taps(sample_rate);
 
+            let block_len = block_end - block_start;
+
             // These are the smoothed global parameter values. These are used for delay taps that do not
             // have polyphonic modulation applied to them. With a plugin as simple as this it would
             // be possible to avoid this completely by simply always copying the smoother into the
             // delay tap's struct, but that may not be realistic when the plugin has hundreds of
             // parameters. The `delay_tap_*` arrays are scratch arrays that an individual delay tap can use.
-            let block_len = block_end - block_start;
+            // for poly modulation
             let mut gain = [0.0; MAX_BLOCK_SIZE];
+            self.params.gain.smoothed.next_block(&mut gain, block_len);
+
+            // not poly:
+            let mut output_gain = [0.0; MAX_BLOCK_SIZE];
+            self.params
+                .global
+                .output_gain
+                .smoothed
+                .next_block(&mut output_gain, block_len);
+            let mut global_drive = [0.0; MAX_BLOCK_SIZE];
+            self.params
+                .global
+                .global_drive
+                .smoothed
+                .next_block(&mut global_drive, block_len);
             let mut delay_tap_gain = [0.0; MAX_BLOCK_SIZE];
             let mut delay_tap_amp_envelope = [0.0; MAX_BLOCK_SIZE];
-            self.params.gain.smoothed.next_block(&mut gain, block_len);
 
             // TODO: Some form of band limiting
             // TODO: Filter
@@ -886,11 +917,11 @@ impl Plugin for Del2 {
                 self.delay_buffer[0].read_into(&mut delay_tap.delayed_audio_l, read_index);
                 self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index);
 
+                let drive = self.filter_params[tap_index].clone().drive;
                 self.mute_in_delay_buffer.read_into(
                     &mut self.mute_in_delayed[tap_index],
                     write_index - (delay_time - 1).max(0),
                 );
-
                 // Depending on whether the delay tap has polyphonic modulation applied to it,
                 // either the global parameter values are used, or the delay tap's smoother is used
                 // to generate unique modulated values for that delay tap
@@ -910,11 +941,41 @@ impl Plugin for Del2 {
                     .next_block(&mut delay_tap_amp_envelope, block_len);
 
                 for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                    let amp =
-                        delay_tap.velocity * gain[value_idx] * delay_tap_amp_envelope[value_idx];
+                    let pre_filter_gain = global_drive[value_idx]
+                        * gain[value_idx]
+                        * delay_tap_amp_envelope[value_idx];
 
-                    output[0][sample_idx] += delay_tap.delayed_audio_l[sample_idx] * amp;
-                    output[1][sample_idx] += delay_tap.delayed_audio_r[sample_idx] * amp;
+                    delay_tap.delayed_audio_l[sample_idx] =
+                        delay_tap.delayed_audio_l[sample_idx] * pre_filter_gain;
+                    delay_tap.delayed_audio_r[sample_idx] =
+                        delay_tap.delayed_audio_r[sample_idx] * pre_filter_gain;
+                }
+
+                for i in (0..block_len).step_by(2) {
+                    let frame = f32x4::from_array([
+                        delay_tap.delayed_audio_l[i],
+                        delay_tap.delayed_audio_r[i],
+                        delay_tap.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
+                        delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
+                    ]);
+                    let processed = self.ladders[tap_index].tick_newton(frame);
+                    let mut frame_out = *processed.as_array();
+                    delay_tap.delayed_audio_l[i] = frame_out[0];
+                    delay_tap.delayed_audio_r[i] = frame_out[1];
+                    if i + 1 < block_len {
+                        delay_tap.delayed_audio_l[i + 1] = frame_out[2];
+                        delay_tap.delayed_audio_r[i + 1] = frame_out[3];
+                    }
+                }
+
+                for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
+                    let post_filter_gain =
+                        output_gain[sample_idx] / (drive * global_drive[sample_idx]);
+
+                    output[0][sample_idx] +=
+                        delay_tap.delayed_audio_l[sample_idx] * post_filter_gain;
+                    output[1][sample_idx] +=
+                        delay_tap.delayed_audio_r[sample_idx] * post_filter_gain;
                 }
             }
 
@@ -1201,16 +1262,7 @@ impl Del2 {
             self.samples_since_last_event = 0;
         };
     }
-    fn compare_exchange(atomic_bool: &AtomicBool) -> bool {
-        atomic_bool
-            .compare_exchange(
-                true,
-                false,
-                std::sync::atomic::Ordering::SeqCst,
-                std::sync::atomic::Ordering::SeqCst,
-            )
-            .is_ok()
-    }
+
     fn update_filter(&mut self, tap: usize) {
         let velocity = self.delay_data.velocities[tap];
         let velocity_params = &self.params.taps;
