@@ -925,9 +925,9 @@ impl Plugin for Del2 {
                     }
                 }
 
-                for sample_idx in block_start..block_end {
-                    let post_filter_gain = dry_wet[sample_idx] * output_gain[sample_idx]
-                        / (drive * global_drive[sample_idx]);
+                for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
+                    let post_filter_gain = dry_wet[value_idx] * output_gain[value_idx]
+                        / (drive * global_drive[value_idx]);
 
                     output[0][sample_idx] +=
                         delay_tap.delayed_audio_l[sample_idx] * post_filter_gain;
