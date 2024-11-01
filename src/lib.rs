@@ -268,6 +268,10 @@ impl GlobalParams {
 /// Contains the high and low tap parameters.
 #[derive(Params)]
 pub struct TapsParams {
+    #[id = "panning_center"]
+    pub panning_center: FloatParam,
+    #[id = "panning_amount"]
+    pub panning_amount: FloatParam,
     #[id = "note_to_cutoff_amount"]
     pub note_to_cutoff_amount: FloatParam,
     #[id = "velocity_to_cutoff_amount"]
@@ -282,6 +286,27 @@ pub struct TapsParams {
 impl TapsParams {
     pub fn new(should_update_filter: Arc<AtomicBool>) -> Self {
         TapsParams {
+            panning_center: FloatParam::new(
+                "panning center",
+                -1.0,
+                FloatRange::Linear {
+                    min: -1.0,
+                    max: 127.0,
+                },
+            )
+            .with_value_to_string(Del2::v2s_f32_note())
+            .with_string_to_value(Del2::s2v_f32_note()),
+            panning_amount: FloatParam::new(
+                "panning_amount",
+                0.0,
+                FloatRange::Linear {
+                    min: -1.0,
+                    max: 1.0,
+                },
+            )
+            .with_unit(" %")
+            .with_value_to_string(formatters::v2s_f32_percentage(0))
+            .with_string_to_value(formatters::s2v_f32_percentage()),
             note_to_cutoff_amount: FloatParam::new(
                 "note -> cutoff",
                 0.0,
@@ -1352,7 +1377,58 @@ impl Del2 {
             string.parse::<f32>().ok()
         })
     }
+    fn v2s_f32_note() -> Arc<dyn Fn(f32) -> String + Send + Sync> {
+        Arc::new(move |value| {
+            let note_nr = value.round() as u8; // Convert the floating-point value to the nearest u8
+            if value < 0.0 {
+                "first note of pattern".to_string()
+            } else {
+                let note_name = util::NOTES[(note_nr % 12) as usize];
+                let octave = (note_nr / 12) as i8 - 1; // Correct the octave calculation
+                format!("{}{}", note_name, octave) // Ensure correct value formatting
+            }
+        })
+    }
+    fn s2v_f32_note() -> Arc<dyn Fn(&str) -> Option<f32> + Send + Sync> {
+        Arc::new(move |string| {
+            let trimmed_string = string.trim().to_lowercase();
 
+            // Check if the string contains specific keywords
+            let keywords = ["first", "note", "pattern"];
+            if keywords
+                .iter()
+                .any(|&keyword| trimmed_string.contains(keyword))
+            {
+                return Some(-1.0);
+            }
+            let len = trimmed_string.len();
+            if len < 2 {
+                // if it's short, return to default: "first note of pattern"
+                return Some(-1.0);
+            }
+
+            // The note part could be one or two characters, based on whether it includes a sharp or flat (e.g., "C", "C#", "D")
+            let is_sharp_or_flat =
+                trimmed_string.get(1..2) == Some("#") || trimmed_string.get(1..2) == Some("b");
+            let note_length = if is_sharp_or_flat { 2 } else { 1 };
+
+            // Extract note and octave
+            let note_name = &trimmed_string[..note_length];
+            let octave_part = &trimmed_string[note_length..];
+
+            // Parse the octave
+            if let Some(octave) = octave_part.parse::<i32>().ok() {
+                if let Some(note_index) = util::NOTES
+                    .iter()
+                    .position(|&n| n.eq_ignore_ascii_case(note_name))
+                {
+                    return Some((note_index as i32 + (octave + 1) * 12) as f32);
+                }
+            }
+
+            None
+        })
+    }
     /// Get the index of a delay tap by its delay tap ID, if the delay tap exists. This does not immediately
     /// return a reference to the delay tap to avoid lifetime issues.
     fn get_delay_tap_idx(&mut self, voice_id: i32) -> Option<usize> {

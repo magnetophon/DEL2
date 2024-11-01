@@ -36,7 +36,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1212, 606))
+    ViziaState::new(|| (1212, 697))
 }
 
 pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -220,6 +220,34 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 Data::enabled_actions,
                                 LOCK_TAPS,
                             );
+                        })
+                        .class("row");
+                    })
+                    .class("column");
+                })
+                .class("param-group");
+
+                Label::new(cx, "panning").class("group-title");
+
+                HStack::new(cx, |cx| {
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "center").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| {
+                                &params.taps.panning_center
+                            })
+                            .class("widget");
+                        })
+                        .class("row");
+                    })
+                    .class("column");
+                    HStack::new(cx, |cx| {
+                        HStack::new(cx, |cx| {
+                            Label::new(cx, "amount").class("slider-label");
+                            ParamSlider::new(cx, Data::params, |params| {
+                                &params.taps.panning_amount
+                            })
+                            .class("widget");
                         })
                         .class("row");
                     })
