@@ -884,6 +884,9 @@ impl Plugin for Del2 {
             // write the audio buffer and mute in state into the delay
             self.write_into_mute_in_delay(block_end - block_start);
 
+            if (block_end - block_start) != 1024 {
+                println!("block_end: {}, block_start: {}", block_end, block_start);
+            }
             self.prepare_for_delay(block_end - block_start);
 
             // We'll start with silence, and then add the output from the active delay taps
@@ -1083,10 +1086,15 @@ impl Del2 {
                     && should_record_tap
                 {
                     self.samples_since_last_event += timing;
+                    println!(
+                        "counting across buffer timing: {}, self.samples_since_last_event: {}",
+                        timing, self.samples_since_last_event
+                    );
                     self.timing_last_event = timing;
                     self.counting_state = CountingState::CountingInBuffer;
                 } else {
                     should_record_tap = false; // Debounce or max taps reached, ignore tap
+                    println!("DEEEEEEEEEEEEEEEEEEEEEBOUNCE  timing: {}, self.samples_since_last_event: {}", timing, self.samples_since_last_event);
                 }
             }
         }
@@ -1104,6 +1112,10 @@ impl Del2 {
         // Check for timeout condition and reset if necessary
         if self.samples_since_last_event > self.delay_data.max_tap_samples {
             self.counting_state = CountingState::TimeOut;
+            println!(
+                "TIMEOOOOOOOOOOOOOOOOOOOOOOOOOUT! self.samples_since_last_event: {}",
+                self.samples_since_last_event
+            );
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
         } else if should_record_tap
@@ -1194,6 +1206,10 @@ impl Del2 {
             self.timing_last_event = timing;
         } else {
             self.counting_state = CountingState::TimeOut;
+            println!(
+                "REEEEEESET! self.samples_since_last_event: {}",
+                self.samples_since_last_event
+            );
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
         }
@@ -1224,9 +1240,13 @@ impl Del2 {
 
     fn no_more_events(&mut self, buffer_samples: u32) {
         match self.counting_state {
-            CountingState::TimeOut => {}
+            CountingState::TimeOut => {
+                // println!("no more events! self.samples_since_last_event: {}", self.samples_since_last_event);
+            }
             CountingState::CountingInBuffer => {
-                self.samples_since_last_event = buffer_samples as u32 - self.timing_last_event;
+                println!("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB self.samples_since_last_event: {}, buffer_samples: {}, self.timing_last_event: {}", self.samples_since_last_event, buffer_samples, self.timing_last_event);
+                // self.samples_since_last_event += buffer_samples;
+                // self.samples_since_last_event += self.timing_last_event;
                 self.counting_state = CountingState::CountingAcrossBuffer;
             }
             CountingState::CountingAcrossBuffer => {
@@ -1236,6 +1256,7 @@ impl Del2 {
 
         if self.samples_since_last_event > self.delay_data.max_tap_samples {
             self.counting_state = CountingState::TimeOut;
+            println!("TIMEOUT in no more events: self.samples_since_last_event: {}, self.delay_data.max_tap_samples: {}", self.samples_since_last_event, self.delay_data.max_tap_samples);
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
         };
