@@ -1142,12 +1142,12 @@ impl Del2 {
 
     fn reset_taps(&mut self, timing: u32, restart: bool) {
         self.enabled_actions.store(LOCK_TAPS, false);
-        if self.params.global.mute_is_toggle.value() {
-            self.enabled_actions.store(MUTE_IN, false);
-        }
         self.delay_data.current_tap = 0;
         self.start_release_for_all_delay_taps(self.sample_rate);
         if restart {
+            if self.params.global.mute_is_toggle.value() {
+                self.enabled_actions.store(MUTE_IN, false);
+            }
             self.counting_state = CountingState::CountingInBuffer;
             self.timing_last_event = timing;
         } else {
