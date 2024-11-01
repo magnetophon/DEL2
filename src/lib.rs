@@ -49,7 +49,7 @@ const MUTE_IN: usize = 0;
 const MUTE_OUT: usize = 1;
 const CLEAR_TAPS: usize = 2;
 const LOCK_TAPS: usize = 3;
-const MAX_HAAS_MS: f32 = 5.0;
+const MAX_HAAS_MS: f32 = 20.0;
 
 // Polyphonic modulation works by assigning integer IDs to parameters. Pattern matching on these in
 // `PolyModulation` and `MonoAutomation` events makes it possible to easily link these events to the
@@ -95,6 +95,7 @@ struct Del2 {
     counting_state: CountingState,
     should_update_filter: Arc<AtomicBool>,
     enabled_actions: Arc<AtomicBoolArray>,
+    first_note: u8,
 }
 
 // for use in graph
@@ -480,6 +481,7 @@ impl Default for Del2 {
             counting_state: CountingState::TimeOut,
             should_update_filter,
             enabled_actions,
+            first_note: 69, // A440
         }
     }
 }
@@ -891,6 +893,13 @@ impl Plugin for Del2 {
             let mut delay_tap_gain = [0.0; MAX_BLOCK_SIZE];
             let mut delay_tap_amp_envelope = [0.0; MAX_BLOCK_SIZE];
 
+            let panning_center = if self.params.taps.panning_center.value() < 0.0 {
+                self.first_note as f32
+            } else {
+                self.params.taps.panning_center.value()
+            };
+            let panning_amount = self.params.taps.panning_amount.value();
+
             for sample_idx in block_start..block_end {
                 let dry = 1.0 - dry_wet[sample_idx];
                 output[0][sample_idx] *= dry;
@@ -901,12 +910,21 @@ impl Plugin for Del2 {
             // TODO: Filter
             for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
                 let tap_index = delay_tap.tap_index;
+                let note = self.delay_data.notes[tap_index];
+
+                let pan = ((note as f32 - panning_center) / 12.0 * panning_amount)
+                    .max(-1.0)
+                    .min(1.0);
+                let (offset_l, offset_r) = Del2::pan_to_haas_samples(pan, sample_rate);
+
+                // println!("tap: {}, pan: {}", tap_index, pan);
                 let delay_time = self.delay_data.delay_times[tap_index] as isize;
                 let write_index = self.delay_write_index;
                 // delay_time - 1 because we are processing 2 samples at once in process_audio
-                let read_index = write_index - (delay_time - 1).max(0);
-                self.delay_buffer[0].read_into(&mut delay_tap.delayed_audio_l, read_index);
-                self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index);
+                let read_index_l = write_index - (delay_time - 1 + offset_l);
+                let read_index_r = write_index - (delay_time - 1 + offset_r);
+                self.delay_buffer[0].read_into(&mut delay_tap.delayed_audio_l, read_index_l);
+                self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index_r);
 
                 let drive = self.filter_params[tap_index].clone().drive;
                 self.mute_in_delay_buffer.read_into(
@@ -1073,6 +1091,7 @@ impl Del2 {
                 if is_delay_note && !is_learning && taps_unlocked {
                     // If in TimeOut state, reset and start new counting phase
                     self.clear_taps(timing, true);
+                    self.first_note = note;
                 }
             }
             CountingState::CountingInBuffer => {
@@ -1275,12 +1294,15 @@ impl Del2 {
         a * (b / a).powf(x)
     }
 
-    fn pan_to_haas_samples(pan: f32, sample_rate: f32) -> (i32, i32) {
-        let delay_samples = (pan.abs() * (MAX_HAAS_MS / 1000.0) * sample_rate) as i32;
-        if pan < 0.0 {
-            (0, delay_samples) // Pan left: delay right
+    // Takes a pan value and gives a delay offset, in samples
+    // instead of adding delay, it subtracts delay from the other channel,
+    // so we stay under the maximum delay value
+    fn pan_to_haas_samples(pan: f32, sample_rate: f32) -> (isize, isize) {
+        let delay_samples = (pan.abs() * (MAX_HAAS_MS / 1000.0) * sample_rate) as isize;
+        if pan > 0.0 {
+            (0, -delay_samples) // Pan right: delay left
         } else {
-            (delay_samples, 0) // Pan right: delay left
+            (-delay_samples, 0) // Pan left: delay right
         }
     }
 
