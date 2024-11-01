@@ -257,7 +257,7 @@ impl GlobalParams {
 
             attack_ms: FloatParam::new(
                 "Attack",
-                10.0,
+                13.0,
                 FloatRange::Skewed {
                     min: 0.0,
                     max: 5_000.0,
@@ -268,7 +268,7 @@ impl GlobalParams {
             .with_string_to_value(Del2::s2v_f32_ms_then_s()),
             release_ms: FloatParam::new(
                 "Release",
-                20.0,
+                420.0,
                 FloatRange::Skewed {
                     min: 5.0,
                     max: 20_000.0,
@@ -279,7 +279,7 @@ impl GlobalParams {
             .with_string_to_value(Del2::s2v_f32_ms_then_s()),
             min_tap_milliseconds: FloatParam::new(
                 "min tap",
-                10.0,
+                13.0,
                 FloatRange::Skewed {
                     min: 1.0,
                     max: 1000.0,
@@ -290,14 +290,14 @@ impl GlobalParams {
             .with_unit(" ms"),
             max_tap_seconds: FloatParam::new(
                 "max tap",
-                3.0,
+                3.03,
                 FloatRange::Skewed {
                     min: 0.5,
                     max: MAX_TAP_SECONDS as f32,
                     factor: FloatRange::skew_factor(-0.8),
                 },
             )
-            .with_step_size(0.1)
+            .with_step_size(0.01)
             .with_unit(" s"),
         }
     }
