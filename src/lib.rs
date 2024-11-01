@@ -103,6 +103,7 @@ struct Del2 {
 pub struct SharedDelayData {
     delay_times: [u32; NUM_TAPS],
     velocities: [f32; NUM_TAPS],
+    pans: [f32; NUM_TAPS],
     notes: [u8; NUM_TAPS],
     current_tap: usize,
     current_time: u32,
@@ -113,6 +114,7 @@ impl Default for SharedDelayData {
         Self {
             delay_times: [0; NUM_TAPS],
             velocities: [0.0; NUM_TAPS],
+            pans: [0.0; NUM_TAPS],
             notes: [0; NUM_TAPS],
             current_tap: 0,
             current_time: 0,
@@ -915,6 +917,8 @@ impl Plugin for Del2 {
                 let pan = ((note as f32 - panning_center) / 12.0 * panning_amount)
                     .max(-1.0)
                     .min(1.0);
+                self.delay_data.pans[tap_index] = pan;
+
                 let (offset_l, offset_r) = Del2::pan_to_haas_samples(pan, sample_rate);
 
                 let delay_time = self.delay_data.delay_times[tap_index] as isize;

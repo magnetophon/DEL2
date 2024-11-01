@@ -417,7 +417,7 @@ impl View for DelayGraph {
             time_scaling_factor,
             border_width,
         );
-        self.draw_tap_notes_as_diamonds(
+        self.draw_tap_notes_and_pans(
             canvas,
             &delay_data,
             bounds,
@@ -425,6 +425,7 @@ impl View for DelayGraph {
             outline_width,
             time_scaling_factor,
             border_width,
+            border_color,
             true,
         );
         self.draw_bounding_outline(canvas, bounds, border_color, border_width);
@@ -575,7 +576,7 @@ impl DelayGraph {
         canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
     }
 
-    fn draw_tap_notes_as_diamonds(
+    fn draw_tap_notes_and_pans(
         &self,
         canvas: &mut Canvas,
         delay_data: &SharedDelayData,
@@ -584,11 +585,13 @@ impl DelayGraph {
         line_width: f32,
         scaling_factor: f32,
         border_width: f32,
+        border_color: vg::Color,
         zoomed: bool,
     ) {
-        let mut path = vg::Path::new();
+        let mut diamond_path = vg::Path::new();
+        let mut pan_path = vg::Path::new();
 
-        // Determine the min and max note values if zoomed
+        // Determine min and max note values if zoomed
         let (min_note_value, max_note_value) = if zoomed {
             let used_notes = &delay_data.notes[0..delay_data.current_tap];
             let min = used_notes.iter().copied().min().unwrap_or(0);
@@ -622,15 +625,31 @@ impl DelayGraph {
 
             let diamond_half_size = line_width;
 
-            // Form a diamond shape, fully scaled
-            path.move_to(diamond_center_x + diamond_half_size, diamond_center_y);
-            path.line_to(diamond_center_x, diamond_center_y + diamond_half_size);
-            path.line_to(diamond_center_x - diamond_half_size, diamond_center_y);
-            path.line_to(diamond_center_x, diamond_center_y - diamond_half_size);
-            path.close();
+            // Create diamond shape
+            diamond_path.move_to(diamond_center_x + diamond_half_size, diamond_center_y);
+            diamond_path.line_to(diamond_center_x, diamond_center_y + diamond_half_size);
+            diamond_path.line_to(diamond_center_x - diamond_half_size, diamond_center_y);
+            diamond_path.line_to(diamond_center_x, diamond_center_y - diamond_half_size);
+            diamond_path.close();
+
+            // Determine pan line
+            let pan_value = delay_data.pans[i];
+            let line_length = 50.0; // Half the total width since +/-100px total width
+            let pan_offset = pan_value * line_length;
+
+            pan_path.move_to(diamond_center_x, diamond_center_y);
+            pan_path.line_to(diamond_center_x + pan_offset, diamond_center_y);
         }
 
-        canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
+        canvas.stroke_path(
+            &pan_path,
+            &vg::Paint::color(border_color).with_line_width(line_width),
+        );
+
+        canvas.stroke_path(
+            &diamond_path,
+            &vg::Paint::color(color).with_line_width(line_width),
+        );
     }
     // TODO: .overflow(Overflow::Visible);
 
