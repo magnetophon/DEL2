@@ -416,19 +416,14 @@ impl DelayGraph {
                 delay_data.clone().map(move |data| {
                     let mut locked_delay_data = data.lock().unwrap();
                     let delay_data = locked_delay_data.read();
-                    return delay_data.current_tap;
+                    match delay_data.current_tap {
+                        0 => "".to_string(),
+                        1 => "1 tap".to_string(),
+                        tap_nr => format!("{tap_nr} taps"),
+                    }
                 }),
             )
-            .class("action-label");
-            Label::new(
-                cx,
-                delay_data.clone().map(move |data| {
-                    let mut locked_delay_data = data.lock().unwrap();
-                    let delay_data = locked_delay_data.read();
-                    return delay_data.current_time;
-                }),
-            )
-            .class("action-label");
+            .class("tap-nr-label");
         })
     }
 

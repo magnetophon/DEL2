@@ -85,7 +85,6 @@ param-slider .value-entry {
     bottom: 1s;
 }
 
-
 delay-graph {
     top: 9px;
     right: 9px;
@@ -94,6 +93,13 @@ delay-graph {
     border-color: #4e4e4e;
     outline-color: #5879af;
     selection-color: #fabdf0;
+}
+
+.tap-nr-label {
+    left: 1s;
+    right: 9px;
+    top: 1s;
+    bottom: 9px;
 }
 
 action-trigger {
