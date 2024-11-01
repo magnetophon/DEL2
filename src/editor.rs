@@ -36,7 +36,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1212, 697))
+    ViziaState::new(|| (1394, 697))
 }
 
 pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -764,8 +764,8 @@ impl ActionTrigger {
             "click to learn".to_string()
         } else {
             let note_name = util::NOTES[(note_nr % 12) as usize];
-            let octave = (note_nr / 12) - 1;
-            format!("{note_name}{octave}")
+            let octave = (note_nr / 12) as i8 - 1; // Calculate the octave, ensuring i8 for potential negative values
+            format!("{}{}", note_name, octave) // Format the note correctly with the octave
         }
     }
 
