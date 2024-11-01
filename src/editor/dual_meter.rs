@@ -27,7 +27,7 @@ const TEXT_TICKS: [i32; 6] = [-80, -60, -40, -20, 0, 12];
 pub struct DualMeter;
 
 /// The bar bit for the dual meter, manually drawn using vertical lines.
-struct DualMeterBar<L, P>
+struct PeakMeterBar<L, P>
 where
     L: Lens<Target = f32>,
     P: Lens<Target = f32>,
@@ -39,21 +39,29 @@ where
 impl DualMeter {
     /// Creates a new [`DualMeter`] for the given value in decibel, optionally holding the peak
     /// value for a certain amount of time.
-    pub fn new<L>(cx: &mut Context, level_dbfs: L, hold_time: Option<Duration>) -> Handle<Self>
+    pub fn new<L1, L2>(
+        cx: &mut Context,
+        level_dbfs_1: L1,
+        level_dbfs_2: L2,
+        hold_time: Option<Duration>,
+    ) -> Handle<Self>
     where
-        L: Lens<Target = f32>,
+        L1: Lens<Target = f32>,
+        L2: Lens<Target = f32>,
     {
         Self.build(cx, |cx| {
-            // Now for something that may be illegal under some jurisdictions. If a hold time is
-            // given, then we'll build a new lens that always gives the held peak level for the
-            // current moment in time by mutating some values captured into the mapping closure.
-            let held_peak_value_db = Cell::new(f32::MIN);
-            let last_held_peak_value: Cell<Option<Instant>> = Cell::new(None);
-            let peak_dbfs = level_dbfs.map(move |level| -> f32 {
+            // Shared cells for the peak holding logic
+            let held_peak_value_db1 = Cell::new(f32::MIN);
+            let last_held_peak_value1: Cell<Option<Instant>> = Cell::new(None);
+
+            let held_peak_value_db2 = Cell::new(f32::MIN);
+            let last_held_peak_value2: Cell<Option<Instant>> = Cell::new(None);
+
+            let peak_dbfs_1 = level_dbfs_1.map(move |level| -> f32 {
                 match hold_time {
                     Some(hold_time) => {
-                        let mut peak_level = held_peak_value_db.get();
-                        let peak_time = last_held_peak_value.get();
+                        let mut peak_level = held_peak_value_db1.get();
+                        let peak_time = last_held_peak_value1.get();
 
                         let now = Instant::now();
                         if *level >= peak_level
@@ -61,8 +69,8 @@ impl DualMeter {
                             || now > peak_time.unwrap() + hold_time
                         {
                             peak_level = *level;
-                            held_peak_value_db.set(peak_level);
-                            last_held_peak_value.set(Some(now));
+                            held_peak_value_db1.set(peak_level);
+                            last_held_peak_value1.set(Some(now));
                         }
 
                         peak_level
@@ -71,9 +79,38 @@ impl DualMeter {
                 }
             });
 
-            DualMeterBar {
-                level_dbfs,
-                peak_dbfs,
+            let peak_dbfs_2 = level_dbfs_2.map(move |level| -> f32 {
+                match hold_time {
+                    Some(hold_time) => {
+                        let mut peak_level = held_peak_value_db2.get();
+                        let peak_time = last_held_peak_value2.get();
+
+                        let now = Instant::now();
+                        if *level >= peak_level
+                            || peak_time.is_none()
+                            || now > peak_time.unwrap() + hold_time
+                        {
+                            peak_level = *level;
+                            held_peak_value_db2.set(peak_level);
+                            last_held_peak_value2.set(Some(now));
+                        }
+
+                        peak_level
+                    }
+                    None => util::MINUS_INFINITY_DB,
+                }
+            });
+
+            PeakMeterBar {
+                level_dbfs: level_dbfs_1,
+                peak_dbfs: peak_dbfs_1,
+            }
+            .build(cx, |_| {})
+            .class("bar");
+
+            PeakMeterBar {
+                level_dbfs: level_dbfs_2,
+                peak_dbfs: peak_dbfs_2,
             }
             .build(cx, |_| {})
             .class("bar");
@@ -139,7 +176,7 @@ impl View for DualMeter {
     }
 }
 
-impl<L, P> View for DualMeterBar<L, P>
+impl<L, P> View for PeakMeterBar<L, P>
 where
     L: Lens<Target = f32>,
     P: Lens<Target = f32>,

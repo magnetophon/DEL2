@@ -310,13 +310,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                             Data::input_meter.map(|input_meter| {
                                 util::gain_to_db(input_meter.load(Ordering::Relaxed))
                             }),
-                            Some(Duration::from_millis(600)),
-                        );
-                    });
-                    HStack::new(cx, |cx| {
-                        Label::new(cx, "out").class("peak-meter-label");
-                        DualMeter::new(
-                            cx,
                             Data::output_meter.map(|output_meter| {
                                 util::gain_to_db(output_meter.load(Ordering::Relaxed))
                             }),
