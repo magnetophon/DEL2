@@ -695,15 +695,19 @@ impl Plugin for Del2 {
                                     let amp_envelope = Smoother::new(SmoothingStyle::Linear(
                                         self.params.global.attack_ms.value(),
                                     ));
-                                    // This starts with the attack portion of the amplitude envelope
-                                    amp_envelope.reset(0.0);
-                                    amp_envelope.set_target(sample_rate, 1.0);
+
+                                    // don't start the envelope when in instant mode
+                                    if self.params.global.mute_is_toggle.value() {
+                                        // This starts with the attack portion of the amplitude envelope
+                                        amp_envelope.reset(0.0);
+                                        amp_envelope.set_target(sample_rate, 1.0);
+                                    }
                                     let delay_tap =
                                         self.start_delay_tap(context, timing, channel, note);
                                     delay_tap.velocity = velocity;
                                     delay_tap.amp_envelope = amp_envelope;
                                     delay_tap.tap_index = tap_index;
-                                    delay_tap.is_muted = true;
+                                    delay_tap.is_muted = false;
                                     delay_tap.delay_tap_id = voice_id.unwrap_or_else(|| {
                                         // compute_fallback_delay_tap_id(note, channel)
                                         compute_fallback_delay_tap_id_d(note, channel, delay_time)
@@ -971,7 +975,11 @@ impl Del2 {
             self.delay_buffer[0].write_latest(out_l, write_index);
             self.delay_buffer[1].write_latest(out_r, write_index);
 
-            let mute_in_value = self.enabled_actions.load(MUTE_IN);
+            let mute_in_value = if self.params.global.mute_is_toggle.value() {
+                self.enabled_actions.load(MUTE_IN)
+            } else {
+                !self.is_playing_action(MUTE_IN) || self.enabled_actions.load(MUTE_OUT)
+            };
             let mute_buffer = [mute_in_value; DSP_BLOCK_SIZE];
 
             self.mute_in_delay_buffer
@@ -1134,7 +1142,9 @@ impl Del2 {
 
     fn reset_taps(&mut self, timing: u32, restart: bool) {
         self.enabled_actions.store(LOCK_TAPS, false);
-        self.enabled_actions.store(MUTE_IN, false);
+        if self.params.global.mute_is_toggle.value() {
+            self.enabled_actions.store(MUTE_IN, false);
+        }
         self.delay_data.current_tap = 0;
         self.start_release_for_all_delay_taps(self.sample_rate);
         if restart {
@@ -1498,14 +1508,16 @@ impl Del2 {
             amp_envelope: Smoother::none(),
 
             delay_tap_gain: None,
-            is_muted: true,
+            is_muted: false,
             tap_index: NUM_TAPS, // start with tap_index out of bounds, to make sure it gets set.
             delayed_audio_l: [0.0; DSP_BLOCK_SIZE],
             delayed_audio_r: [0.0; DSP_BLOCK_SIZE],
         };
         self.next_internal_delay_tap_id = self.next_internal_delay_tap_id.wrapping_add(1);
 
-        self.enabled_actions.store(MUTE_OUT, false);
+        if self.params.global.mute_is_toggle.value() {
+            self.enabled_actions.store(MUTE_OUT, false);
+        }
 
         // Can't use `.iter_mut().find()` here because nonlexical lifetimes don't apply to return
         // values
@@ -1570,7 +1582,8 @@ impl Del2 {
 
     /// Set mute for all delay taps by changing their amplitude envelope.
     fn set_mute_for_all_delay_taps(&mut self, sample_rate: f32) {
-        let is_playing_mute = self.is_playing_action(MUTE_OUT);
+        let is_playing_mute_in = self.is_playing_action(MUTE_IN);
+        let is_playing_mute_out = self.is_playing_action(MUTE_OUT);
 
         for delay_tap in self.delay_taps.iter_mut() {
             match delay_tap {
@@ -1587,13 +1600,8 @@ impl Del2 {
                     let new_mute = if is_toggle {
                         mute_in_delayed || mute_out
                     } else {
-                        // direct mode
-                        println!(
-                            "is_playing_mute,: {}, mute_out: {}",
-                            is_playing_mute, mute_out
-                        );
-                        if is_playing_mute != mute_out {
-                            !is_playing_mute
+                        if is_playing_mute_out != mute_out {
+                            !is_playing_mute_out
                         } else {
                             mute_in_delayed
                         }
