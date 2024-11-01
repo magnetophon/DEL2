@@ -692,7 +692,7 @@ impl Plugin for Del2 {
                                     // let mute_out = self.enabled_actions.load(MUTE_OUT);
                                     // let is_muted = mute_in || mute_out;
                                     let delay_time = self.delay_data.delay_times[tap_index];
-                                    let amp_envelope = Smoother::new(SmoothingStyle::Exponential(
+                                    let amp_envelope = Smoother::new(SmoothingStyle::Linear(
                                         self.params.global.attack_ms.value(),
                                     ));
                                     // This starts with the attack portion of the amplitude envelope
@@ -1591,7 +1591,7 @@ impl Del2 {
                             amp_envelope.set_target(sample_rate, 0.0);
                         } else {
                             amp_envelope.style =
-                                SmoothingStyle::Exponential(self.params.global.attack_ms.value());
+                                SmoothingStyle::Linear(self.params.global.attack_ms.value());
                             amp_envelope.set_target(sample_rate, 1.0);
                         }
                         *is_muted = new_mute;
