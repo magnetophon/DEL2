@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Bart Brouns <bart@magnetophon.nl>"]
 license = "AGPL-3.0-only"
 homepage = "https://magnetophon.nl/DEL2"
-description = "A rhythm delay with space."
+description = "The delay that you play."
 
 [workspace]
 members = ["xtask"]
