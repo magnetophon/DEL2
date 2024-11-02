@@ -49,7 +49,7 @@ const MUTE_IN: usize = 0;
 const MUTE_OUT: usize = 1;
 const CLEAR_TAPS: usize = 2;
 const LOCK_TAPS: usize = 3;
-const MAX_HAAS_MS: f32 = 2.0;
+const MAX_HAAS_MS: f32 = 5.0;
 
 // Polyphonic modulation works by assigning integer IDs to parameters. Pattern matching on these in
 // `PolyModulation` and `MonoAutomation` events makes it possible to easily link these events to the
@@ -1271,8 +1271,10 @@ impl Del2 {
                 velocity,
             );
             let note_cutoff = util::midi_note_to_freq(self.delay_data.notes[tap]);
-            let cutoff = note_cutoff * self.params.taps.note_to_cutoff_amount.value()
-                + velocity_cutoff * self.params.taps.velocity_to_cutoff_amount.value();
+            let cutoff = (note_cutoff * self.params.taps.note_to_cutoff_amount.value()
+                + velocity_cutoff * self.params.taps.velocity_to_cutoff_amount.value())
+            .max(10.0)
+            .min(20_000.0);
             let drive_db = Del2::lerp(
                 util::gain_to_db(low_params.drive.value()),
                 util::gain_to_db(high_params.drive.value()),
