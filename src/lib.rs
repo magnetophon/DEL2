@@ -37,7 +37,6 @@ const VELOCITY_LOW_NAME_PREFIX: &str = "low velocity";
 const VELOCITY_HIGH_NAME_PREFIX: &str = "high velocity";
 // this seems to be the number JUCE is using
 const MAX_BLOCK_SIZE: usize = 32768;
-const DSP_BLOCK_SIZE: usize = 1024;
 const PEAK_METER_DECAY_MS: f64 = 150.0;
 const MAX_LEARNED_NOTES: usize = 8;
 // abuse the difference in range between u8 and midi notes for special meaning
@@ -70,8 +69,10 @@ struct Del2 {
 
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
+    delayed_audio_l: [Vec<f32>; NUM_TAPS],
+    delayed_audio_r: [Vec<f32>; NUM_TAPS],
     mute_in_delay_buffer: BMRingBuf<bool>,
-    mute_in_delayed: [[bool; DSP_BLOCK_SIZE]; NUM_TAPS],
+    mute_in_delayed: [[bool; MAX_BLOCK_SIZE]; NUM_TAPS],
 
     delay_data: SharedDelayData,
     delay_data_input: SharedDelayDataInput,
@@ -460,8 +461,11 @@ impl Default for Del2 {
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
+            delayed_audio_l: array_init(|_| vec![0.0; MAX_BLOCK_SIZE]),
+            delayed_audio_r: array_init(|_| vec![0.0; MAX_BLOCK_SIZE]),
+
             mute_in_delay_buffer: BMRingBuf::<bool>::from_len(TOTAL_DELAY_SAMPLES),
-            mute_in_delayed: [[false; DSP_BLOCK_SIZE]; NUM_TAPS],
+            mute_in_delayed: [[false; MAX_BLOCK_SIZE]; NUM_TAPS],
 
             delay_data: initial_delay_data,
             delay_data_input,
@@ -619,35 +623,20 @@ impl Plugin for Del2 {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // self.update_min_max_tap_samples();
-        // self.process_midi_events(context);
-        // self.prepare_for_delay(buffer.samples());
-        // if Del2::compare_exchange(&self.should_update_filter) {
-        // for tap in 0..self.delay_data.current_tap {
-        // self.update_filter(tap);
-        // }
-        // }
         self.update_peak_meter(buffer, &self.input_meter);
-        // self.process_audio_blocks(buffer);
-
-        /*
-
-
-
-        */
-
-        // write the audio buffer into the delay
-        self.write_into_delay(buffer);
 
         self.update_min_max_tap_samples();
 
         let num_samples = buffer.samples();
         let sample_rate = context.transport().sample_rate;
-        let output = buffer.as_slice();
 
         let mut next_event = context.next_event();
         let mut block_start: usize = 0;
         let mut block_end: usize = MAX_BLOCK_SIZE.min(num_samples);
+
+        self.resize_delayed_audio_buffers(block_end);
+        // write the audio buffer into the delay
+        self.write_into_delay(buffer);
 
         while block_start < num_samples {
             let old_nr_taps = self.delay_data.current_tap;
@@ -692,6 +681,7 @@ impl Plugin for Del2 {
                                     }
                                     let delay_tap =
                                         self.start_delay_tap(context, timing, channel, note);
+
                                     delay_tap.velocity = velocity;
                                     delay_tap.amp_envelope = amp_envelope;
                                     delay_tap.tap_index = tap_index;
@@ -839,9 +829,6 @@ impl Plugin for Del2 {
                 }
             }
 
-            // write the audio buffer and mute in state into the delay
-            self.write_into_mute_in_delay(block_end - block_start);
-
             self.prepare_for_delay(block_end - block_start);
 
             if self
@@ -902,6 +889,7 @@ impl Plugin for Del2 {
             };
             let panning_amount = self.params.taps.panning_amount.value();
 
+            let output = buffer.as_slice();
             for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                 let dry = 1.0 - dry_wet[value_idx];
                 output[0][sample_idx] *= dry;
@@ -924,8 +912,8 @@ impl Plugin for Del2 {
                 // delay_time - 1 because we are processing 2 samples at once in process_audio
                 let read_index_l = write_index - (delay_time - 1 + offset_l);
                 let read_index_r = write_index - (delay_time - 1 + offset_r);
-                self.delay_buffer[0].read_into(&mut delay_tap.delayed_audio_l, read_index_l);
-                self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index_r);
+                self.delay_buffer[0].read_into(&mut self.delayed_audio_l[tap_index], read_index_l);
+                self.delay_buffer[1].read_into(&mut self.delayed_audio_r[tap_index], read_index_r);
 
                 let drive = self.filter_params[tap_index].clone().drive;
                 self.mute_in_delay_buffer.read_into(
@@ -955,24 +943,30 @@ impl Plugin for Del2 {
                         * gain[value_idx]
                         * delay_tap_amp_envelope[value_idx];
 
-                    delay_tap.delayed_audio_l[sample_idx] *= pre_filter_gain;
-                    delay_tap.delayed_audio_r[sample_idx] *= pre_filter_gain;
+                    self.delayed_audio_l[tap_index][sample_idx] *= pre_filter_gain;
+                    self.delayed_audio_r[tap_index][sample_idx] *= pre_filter_gain;
                 }
 
                 for i in (0..block_len).step_by(2) {
                     let frame = f32x4::from_array([
-                        delay_tap.delayed_audio_l[i],
-                        delay_tap.delayed_audio_r[i],
-                        delay_tap.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
-                        delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
+                        self.delayed_audio_l[tap_index][i],
+                        self.delayed_audio_r[tap_index][i],
+                        self.delayed_audio_l[tap_index]
+                            .get(i + 1)
+                            .copied()
+                            .unwrap_or(0.0),
+                        self.delayed_audio_r[tap_index]
+                            .get(i + 1)
+                            .copied()
+                            .unwrap_or(0.0),
                     ]);
                     let processed = self.ladders[tap_index].tick_newton(frame);
                     let frame_out = *processed.as_array();
-                    delay_tap.delayed_audio_l[i] = frame_out[0];
-                    delay_tap.delayed_audio_r[i] = frame_out[1];
+                    self.delayed_audio_l[tap_index][i] = frame_out[0];
+                    self.delayed_audio_r[tap_index][i] = frame_out[1];
                     if i + 1 < block_len {
-                        delay_tap.delayed_audio_l[i + 1] = frame_out[2];
-                        delay_tap.delayed_audio_r[i + 1] = frame_out[3];
+                        self.delayed_audio_l[tap_index][i + 1] = frame_out[2];
+                        self.delayed_audio_r[tap_index][i + 1] = frame_out[3];
                     }
                 }
 
@@ -981,9 +975,9 @@ impl Plugin for Del2 {
                         / (drive * global_drive[value_idx]);
 
                     output[0][sample_idx] +=
-                        delay_tap.delayed_audio_l[sample_idx] * post_filter_gain;
+                        self.delayed_audio_l[tap_index][sample_idx] * post_filter_gain;
                     output[1][sample_idx] +=
-                        delay_tap.delayed_audio_r[sample_idx] * post_filter_gain;
+                        self.delayed_audio_r[tap_index][sample_idx] * post_filter_gain;
                 }
             }
 
@@ -1018,6 +1012,15 @@ impl Plugin for Del2 {
 }
 
 impl Del2 {
+    // Either we resize in the audio thread, or in the initialization fn
+    // If we don't, we are slower.
+    fn resize_delayed_audio_buffers(&mut self, max_size: usize) {
+        for i in 0..NUM_TAPS {
+            self.delayed_audio_l[i].resize(max_size, 0.0);
+            self.delayed_audio_r[i].resize(max_size, 0.0);
+        }
+    }
+
     fn update_min_max_tap_samples(&mut self) {
         let sample_rate = self.sample_rate;
         self.delay_data.max_tap_samples =
@@ -1031,8 +1034,6 @@ impl Del2 {
             let block_len = block.samples();
             // TODO: assert needed?
             // assert!(block_len <= MAX_BLOCK_SIZE);
-            // Either we resize here, or in the initialization fn
-            // If we don't, we are slower.
             let mut block_channels = block.into_iter();
 
             let out_l = block_channels.next().expect("Left output channel missing");
@@ -1048,7 +1049,7 @@ impl Del2 {
             } else {
                 !self.is_playing_action(MUTE_IN) || self.enabled_actions.load(MUTE_OUT)
             };
-            let mute_buffer = [mute_in_value; DSP_BLOCK_SIZE];
+            let mute_buffer = [mute_in_value; MAX_BLOCK_SIZE];
 
             self.mute_in_delay_buffer
                 .write_latest(&mute_buffer[..block_len], write_index);
@@ -1056,16 +1057,6 @@ impl Del2 {
             self.delay_write_index =
                 (write_index + block_len as isize) % self.delay_buffer_size as isize;
         }
-    }
-
-    fn write_into_mute_in_delay(&mut self, block_len: usize) {
-        let write_index = self.delay_write_index;
-
-        let mute_in_value = self.enabled_actions.load(MUTE_IN);
-        let mute_buffer = [mute_in_value; DSP_BLOCK_SIZE];
-
-        self.mute_in_delay_buffer
-            .write_latest(&mute_buffer[..block_len], write_index);
     }
 
     fn store_note_on_in_delay_data(&mut self, timing: u32, note: u8, velocity: f32) {
@@ -1481,8 +1472,6 @@ impl Del2 {
             delay_tap_gain: None,
             is_muted: false,
             tap_index: NUM_TAPS, // start with tap_index out of bounds, to make sure it gets set.
-            delayed_audio_l: [0.0; DSP_BLOCK_SIZE],
-            delayed_audio_r: [0.0; DSP_BLOCK_SIZE],
         };
         self.next_internal_delay_tap_id = self.next_internal_delay_tap_id.wrapping_add(1);
 
@@ -1548,6 +1537,7 @@ impl Del2 {
 
         for delay_tap in self.delay_taps.iter_mut().flatten() {
             let is_toggle = self.params.global.mute_is_toggle.value();
+            // println!("delay_tap.tap_index: {}", delay_tap.tap_index);
             let mute_in_delayed = self.mute_in_delayed[delay_tap.tap_index][0];
             let mute_out = self.enabled_actions.load(MUTE_OUT);
 

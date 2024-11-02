@@ -1,4 +1,3 @@
-use crate::DSP_BLOCK_SIZE;
 use nih_plug::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -30,8 +29,4 @@ pub struct DelayTap {
     pub is_muted: bool,
     /// Which of the NUM_TAPS taps is this.
     pub tap_index: usize,
-    /// The delayed audio of this tap.
-    /// Used to apply the envelopes and filters, and other DSP to.
-    pub delayed_audio_l: [f32; DSP_BLOCK_SIZE],
-    pub delayed_audio_r: [f32; DSP_BLOCK_SIZE],
 }
