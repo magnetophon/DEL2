@@ -60,7 +60,7 @@ struct Del2 {
     params: Arc<Del2Params>,
 
     /// The effect's delay taps. Inactive delay taps will be set to `None` values.
-    delay_taps: [Option<DelayTap>; NUM_TAPS as usize],
+    delay_taps: [Option<DelayTap>; NUM_TAPS],
     /// The next internal delay tap ID, used only to figure out the oldest delay tap for "voice stealing".
     /// This is incremented by one each time a delay tap is created.
     next_internal_delay_tap_id: u64,
@@ -451,7 +451,7 @@ impl Default for Del2 {
                 learned_notes.clone(),
             )),
 
-            delay_taps: [0; NUM_TAPS as usize].map(|_| None),
+            delay_taps: [0; NUM_TAPS].map(|_| None),
             next_internal_delay_tap_id: 0,
 
             filter_params,
@@ -902,8 +902,8 @@ impl Plugin for Del2 {
             };
             let panning_amount = self.params.taps.panning_amount.value();
 
-            for sample_idx in block_start..block_end {
-                let dry = 1.0 - dry_wet[sample_idx];
+            for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
+                let dry = 1.0 - dry_wet[value_idx];
                 output[0][sample_idx] *= dry;
                 output[1][sample_idx] *= dry;
             }
@@ -914,9 +914,7 @@ impl Plugin for Del2 {
                 let tap_index = delay_tap.tap_index;
                 let note = self.delay_data.notes[tap_index];
 
-                let pan = ((note as f32 - panning_center) / 12.0 * panning_amount)
-                    .max(-1.0)
-                    .min(1.0);
+                let pan = ((note as f32 - panning_center) / 12.0 * panning_amount).clamp(-1.0, 1.0);
                 self.delay_data.pans[tap_index] = pan;
 
                 let (offset_l, offset_r) = Del2::pan_to_haas_samples(pan, sample_rate);
@@ -957,10 +955,8 @@ impl Plugin for Del2 {
                         * gain[value_idx]
                         * delay_tap_amp_envelope[value_idx];
 
-                    delay_tap.delayed_audio_l[sample_idx] =
-                        delay_tap.delayed_audio_l[sample_idx] * pre_filter_gain;
-                    delay_tap.delayed_audio_r[sample_idx] =
-                        delay_tap.delayed_audio_r[sample_idx] * pre_filter_gain;
+                    delay_tap.delayed_audio_l[sample_idx] *= pre_filter_gain;
+                    delay_tap.delayed_audio_r[sample_idx] *= pre_filter_gain;
                 }
 
                 for i in (0..block_len).step_by(2) {
@@ -1023,7 +1019,7 @@ impl Plugin for Del2 {
 
 impl Del2 {
     fn update_min_max_tap_samples(&mut self) {
-        let sample_rate = self.sample_rate as f32;
+        let sample_rate = self.sample_rate;
         self.delay_data.max_tap_samples =
             (sample_rate * self.params.global.max_tap_seconds.value()) as u32;
         self.min_tap_samples =
@@ -1238,7 +1234,7 @@ impl Del2 {
                 // timing_last_event is sometimes bigger than buffer_samples, so this overflows:
                 // self.samples_since_last_event = buffer_samples as u32 - self.timing_last_event;
                 self.samples_since_last_event =
-                    (buffer_samples as u32).saturating_sub(self.timing_last_event);
+                    buffer_samples.saturating_sub(self.timing_last_event);
                 self.counting_state = CountingState::CountingAcrossBuffer;
             }
             CountingState::CountingAcrossBuffer => {
@@ -1273,8 +1269,7 @@ impl Del2 {
             let note_cutoff = util::midi_note_to_freq(self.delay_data.notes[tap]);
             let cutoff = (note_cutoff * self.params.taps.note_to_cutoff_amount.value()
                 + velocity_cutoff * self.params.taps.velocity_to_cutoff_amount.value())
-            .max(10.0)
-            .min(20_000.0);
+            .clamp(10.0, 20_000.0);
             let drive_db = Del2::lerp(
                 util::gain_to_db(low_params.drive.value()),
                 util::gain_to_db(high_params.drive.value()),
@@ -1444,7 +1439,7 @@ impl Del2 {
             let octave_part = &trimmed_string[note_length..];
 
             // Parse the octave
-            if let Some(octave) = octave_part.parse::<i32>().ok() {
+            if let Ok(octave) = octave_part.parse::<i32>() {
                 if let Some(note_index) = util::NOTES
                     .iter()
                     .position(|&n| n.eq_ignore_ascii_case(note_name))
@@ -1504,7 +1499,7 @@ impl Del2 {
         {
             Some(free_delay_tap_idx) => {
                 self.delay_taps[free_delay_tap_idx] = Some(new_delay_tap);
-                return self.delay_taps[free_delay_tap_idx].as_mut().unwrap();
+                self.delay_taps[free_delay_tap_idx].as_mut().unwrap()
             }
             None => {
                 // If there is no free delay tap, find and steal the oldest one
@@ -1532,27 +1527,18 @@ impl Del2 {
                 }
 
                 *oldest_delay_tap = Some(new_delay_tap);
-                return oldest_delay_tap.as_mut().unwrap();
+                oldest_delay_tap.as_mut().unwrap()
             }
         }
     }
 
     /// Start the release process for all delay taps by changing their amplitude envelope.
     fn start_release_for_all_delay_taps(&mut self, sample_rate: f32) {
-        for delay_tap in self.delay_taps.iter_mut() {
-            match delay_tap {
-                Some(DelayTap {
-                    releasing,
-                    amp_envelope,
-                    ..
-                }) => {
-                    *releasing = true;
-                    amp_envelope.style =
-                        SmoothingStyle::Linear(self.params.global.release_ms.value());
-                    amp_envelope.set_target(sample_rate, 0.0);
-                }
-                _ => (),
-            }
+        for delay_tap in self.delay_taps.iter_mut().flatten() {
+            delay_tap.releasing = true;
+            delay_tap.amp_envelope.style =
+                SmoothingStyle::Linear(self.params.global.release_ms.value());
+            delay_tap.amp_envelope.set_target(sample_rate, 0.0);
         }
     }
 
@@ -1560,42 +1546,30 @@ impl Del2 {
     fn set_mute_for_all_delay_taps(&mut self, sample_rate: f32) {
         let is_playing_mute_out = self.is_playing_action(MUTE_OUT);
 
-        for delay_tap in self.delay_taps.iter_mut() {
-            match delay_tap {
-                Some(DelayTap {
-                    is_muted,
-                    amp_envelope,
-                    tap_index,
-                    ..
-                }) => {
-                    let is_toggle = self.params.global.mute_is_toggle.value();
-                    let mute_in_delayed = self.mute_in_delayed[*tap_index][0];
-                    let mute_out = self.enabled_actions.load(MUTE_OUT);
+        for delay_tap in self.delay_taps.iter_mut().flatten() {
+            let is_toggle = self.params.global.mute_is_toggle.value();
+            let mute_in_delayed = self.mute_in_delayed[delay_tap.tap_index][0];
+            let mute_out = self.enabled_actions.load(MUTE_OUT);
 
-                    let new_mute = if is_toggle {
-                        mute_in_delayed || mute_out
-                    } else {
-                        if is_playing_mute_out != mute_out {
-                            !is_playing_mute_out
-                        } else {
-                            mute_in_delayed
-                        }
-                    };
+            let new_mute = if is_toggle {
+                mute_in_delayed || mute_out
+            } else if is_playing_mute_out != mute_out {
+                !is_playing_mute_out
+            } else {
+                mute_in_delayed
+            };
 
-                    if *is_muted != new_mute {
-                        if new_mute {
-                            amp_envelope.style =
-                                SmoothingStyle::Linear(self.params.global.release_ms.value());
-                            amp_envelope.set_target(sample_rate, 0.0);
-                        } else {
-                            amp_envelope.style =
-                                SmoothingStyle::Linear(self.params.global.attack_ms.value());
-                            amp_envelope.set_target(sample_rate, 1.0);
-                        }
-                        *is_muted = new_mute;
-                    }
+            if delay_tap.is_muted != new_mute {
+                if new_mute {
+                    delay_tap.amp_envelope.style =
+                        SmoothingStyle::Linear(self.params.global.release_ms.value());
+                    delay_tap.amp_envelope.set_target(sample_rate, 0.0);
+                } else {
+                    delay_tap.amp_envelope.style =
+                        SmoothingStyle::Linear(self.params.global.attack_ms.value());
+                    delay_tap.amp_envelope.set_target(sample_rate, 1.0);
                 }
-                _ => (),
+                delay_tap.is_muted = new_mute;
             }
         }
     }
@@ -1705,7 +1679,7 @@ impl MyLadderMode {
         let start_index = start.index().unwrap_or(0);
         let end_index = end.index().unwrap_or(Self::sequence().len() - 1);
 
-        let t = t.max(0.0).min(1.0);
+        let t = t.clamp(0.0, 1.0);
 
         let interpolated_index =
             (start_index as f32 + t * (end_index as f32 - start_index as f32)).round() as usize;
@@ -1941,30 +1915,21 @@ impl LastPlayedNotes {
     /// Handles the 'note off' event.
     fn note_off(&self, note: u8) {
         let mut current_state = self.state.load(Ordering::SeqCst);
-        loop {
-            // Check if the note exists among the recorded notes.
-            if let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
-                // Calculate new state after disabling the note at the found index.
-                let new_state = current_state & !(1 << index);
-                if self
-                    .state
-                    .compare_exchange_weak(
-                        current_state,
-                        new_state,
-                        Ordering::SeqCst,
-                        Ordering::SeqCst,
-                    )
-                    .is_ok()
-                {
-                    self.sequence.store(index, 0); // Reset sequence
-                    self.active_notes.store(index, false); // Mark as inactive
-                    break;
-                } else {
-                    // Reload state as previous compare_exchange was not successful.
-                    current_state = self.state.load(Ordering::SeqCst);
-                }
-            } else {
+
+        while let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
+            // Calculate new state after disabling the note at the found index.
+            let new_state = current_state & !(1 << index);
+            if self
+                .state
+                .compare_exchange_weak(current_state, new_state, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                self.sequence.store(index, 0); // Reset sequence
+                self.active_notes.store(index, false); // Mark as inactive
                 break;
+            } else {
+                // Reload state as previous compare_exchange was not successful.
+                current_state = self.state.load(Ordering::SeqCst);
             }
         }
     }

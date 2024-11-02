@@ -387,13 +387,13 @@ impl View for DelayGraph {
 
         // Compute the time scaling factor
         let time_scaling_factor =
-            self.compute_time_scaling_factor(&delay_data, bounds.w, border_width, outline_width);
+            self.compute_time_scaling_factor(delay_data, bounds.w, border_width, outline_width);
 
         // Draw components
         self.draw_background(canvas, bounds, background_color, border_width);
         self.draw_delay_times_as_lines(
             canvas,
-            &delay_data,
+            delay_data,
             bounds,
             border_color,
             border_width,
@@ -401,7 +401,7 @@ impl View for DelayGraph {
         );
         self.draw_time_line(
             canvas,
-            &delay_data,
+            delay_data,
             bounds,
             selection_color,
             outline_width,
@@ -410,7 +410,7 @@ impl View for DelayGraph {
         );
         self.draw_tap_velocities(
             canvas,
-            &delay_data,
+            delay_data,
             bounds,
             outline_color,
             outline_width,
@@ -419,7 +419,7 @@ impl View for DelayGraph {
         );
         self.draw_tap_notes_and_pans(
             canvas,
-            &delay_data,
+            delay_data,
             bounds,
             selection_color,
             outline_width,
@@ -443,7 +443,7 @@ impl DelayGraph {
         .build(cx, |cx| {
             Label::new(
                 cx,
-                delay_data.clone().map(move |data| {
+                delay_data.map(move |data| {
                     let mut locked_delay_data = data.lock().unwrap();
                     let delay_data = locked_delay_data.read();
                     match delay_data.current_tap {
@@ -740,7 +740,7 @@ impl ActionTrigger {
         .build(cx, move |cx| {
             Label::new(
                 cx,
-                learned_notes.clone().map(move |notes| {
+                learned_notes.map(move |notes| {
                     let note_nr = notes.load(own_index);
                     ActionTrigger::get_note_name(note_nr)
                 }),
