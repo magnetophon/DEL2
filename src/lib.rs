@@ -918,7 +918,7 @@ impl Plugin for Del2 {
                 let drive = self.filter_params[tap_index].clone().drive;
                 self.mute_in_delay_buffer.read_into(
                     &mut self.mute_in_delayed[tap_index],
-                    write_index - (delay_time - 1).max(0),
+                    write_index - (delay_time - 1),
                 );
                 // Depending on whether the delay tap has polyphonic modulation applied to it,
                 // either the global parameter values are used, or the delay tap's smoother is used
