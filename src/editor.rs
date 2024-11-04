@@ -428,7 +428,7 @@ impl View for DelayGraph {
             time_scaling_factor,
             border_width,
             border_color,
-            // background_color,
+            background_color,
             true,
         );
         self.draw_bounding_outline(canvas, bounds, border_color, border_width);
@@ -579,7 +579,7 @@ impl DelayGraph {
         scaling_factor: f32,
         border_width: f32,
         border_color: vg::Color,
-        // background_color: vg::Color,
+        background_color: vg::Color,
         zoomed: bool,
     ) {
         let mut diamond_path = vg::Path::new();
@@ -685,14 +685,10 @@ impl DelayGraph {
             cover_line_path.move_to(cover_x, bounds.y);
             cover_line_path.line_to(cover_x, bounds.y + bounds.h);
 
-            // for some reason it doesn't draw with the background color
-            // so we hardcode it.
-            // a coverup for a coverup 😭
             canvas.stroke_path(
                 &cover_line_path,
                 // &vg::Paint::color(Color::red().into()).with_line_width(line_width),
-                &vg::Paint::color(vg::Color::rgb(41, 41, 41)).with_line_width(line_width),
-                // &vg::Paint::color(background_color).with_line_width(line_width),
+                &vg::Paint::color(background_color).with_line_width(line_width),
             );
         }
     }

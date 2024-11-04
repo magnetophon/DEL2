@@ -93,6 +93,7 @@ delay-graph {
     border-color: #4e4e4e;
     outline-color: #5879af;
     selection-color: #fabdf0;
+    background-color: #292929;
 }
 
 .tap-nr-label {
