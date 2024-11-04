@@ -3,9 +3,8 @@
 
 A delay that you play like an instrument.
 
-<p align=”center”>
-    <img src="images/DEL2.png" alt="screenshot">
-</p>
+https://github.com/user-attachments/assets/cd501d5a-0c7d-404d-b970-8f6272594568
+
 
 ## Current features
 
