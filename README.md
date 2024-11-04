@@ -32,6 +32,7 @@ A delay that you play like an instrument.
   - a reverb
   - a HRTF panner
   - a pitch shifter that shifts the difference between the initial timing tap note and the current tap note
+  - a Karplus-Strong per tap, at the pitch of the note
 - Compressor and ducker on the output
 - Optional individual settings per tap
 - Optional auxiliary outputs per tap
