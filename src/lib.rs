@@ -1537,7 +1537,6 @@ impl Del2 {
 
         for delay_tap in self.delay_taps.iter_mut().flatten() {
             let is_toggle = self.params.global.mute_is_toggle.value();
-            // println!("delay_tap.tap_index: {}", delay_tap.tap_index);
             let mute_in_delayed = self.mute_in_delayed[delay_tap.tap_index][0];
             let mute_out = self.enabled_actions.load(MUTE_OUT);
 
