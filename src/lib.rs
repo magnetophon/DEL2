@@ -947,7 +947,7 @@ impl Plugin for Del2 {
                     self.delayed_audio_r[tap_index][sample_idx] *= pre_filter_gain;
                 }
 
-                for i in (0..block_len).step_by(2) {
+                for i in (block_start..block_end).step_by(2) {
                     let frame = f32x4::from_array([
                         self.delayed_audio_l[tap_index][i],
                         self.delayed_audio_r[tap_index][i],
@@ -964,7 +964,7 @@ impl Plugin for Del2 {
                     let frame_out = *processed.as_array();
                     self.delayed_audio_l[tap_index][i] = frame_out[0];
                     self.delayed_audio_r[tap_index][i] = frame_out[1];
-                    if i + 1 < block_len {
+                    if i + 1 < block_end {
                         self.delayed_audio_l[tap_index][i + 1] = frame_out[2];
                         self.delayed_audio_r[tap_index][i + 1] = frame_out[3];
                     }
