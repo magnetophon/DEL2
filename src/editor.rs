@@ -327,7 +327,9 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
             VStack::new(cx, |cx| {
                 ZStack::new(cx, |cx| {
                     Label::new(cx, "DEL2").class("plugin-name");
-                    DelayGraph::new(cx, Data::delay_data);
+                    DelayGraph::new(cx, Data::delay_data)
+                    // .overflow(Overflow::Hidden)
+                        ;
                 });
                 VStack::new(cx, |cx| {
                     //meters
@@ -390,7 +392,7 @@ impl View for DelayGraph {
             self.compute_time_scaling_factor(delay_data, bounds.w, border_width, outline_width);
 
         // Draw components
-        self.draw_background(canvas, bounds, background_color, border_width);
+        self.draw_background(canvas, bounds, background_color);
         self.draw_delay_times_as_lines(
             canvas,
             delay_data,
@@ -426,6 +428,7 @@ impl View for DelayGraph {
             time_scaling_factor,
             border_width,
             border_color,
+            // background_color,
             true,
         );
         self.draw_bounding_outline(canvas, bounds, border_color, border_width);
@@ -501,20 +504,10 @@ impl DelayGraph {
         canvas.stroke_path(&path, &vg::Paint::color(border_color).with_line_width(0.7));
     }
 
-    fn draw_background(
-        &self,
-        canvas: &mut Canvas,
-        bounds: BoundingBox,
-        color: vg::Color,
-        border_width: f32,
-    ) {
+    fn draw_background(&self, canvas: &mut Canvas, bounds: BoundingBox, color: vg::Color) {
         let mut path = vg::Path::new();
-        path.rect(
-            bounds.x + border_width * 0.5,
-            bounds.y,
-            bounds.w - border_width,
-            bounds.h - border_width * 0.5,
-        );
+        // Use the original bounds directly
+        path.rect(bounds.x, bounds.y, bounds.w, bounds.h);
         path.close();
 
         let paint = vg::Paint::color(color);
@@ -586,6 +579,7 @@ impl DelayGraph {
         scaling_factor: f32,
         border_width: f32,
         border_color: vg::Color,
+        // background_color: vg::Color,
         zoomed: bool,
     ) {
         let mut diamond_path = vg::Path::new();
@@ -593,7 +587,10 @@ impl DelayGraph {
 
         // Determine min and max note values if zoomed
         let (min_note_value, max_note_value) = if zoomed {
-            let used_notes = &delay_data.notes[0..delay_data.current_tap];
+            let mut used_notes = Vec::from(&delay_data.notes[0..delay_data.current_tap]);
+            if delay_data.first_note != NO_LEARNED_NOTE {
+                used_notes.push(delay_data.first_note);
+            }
             let min = used_notes.iter().copied().min().unwrap_or(0);
             let max = used_notes.iter().copied().max().unwrap_or(127);
             (min as f32, max as f32)
@@ -603,21 +600,51 @@ impl DelayGraph {
 
         let diamond_size = line_width * 2.0; // Width and height of a diamond
 
-        // Calculate available height with margins as 3 times the outline width
+        // Calculate available height with margins
         let margin = 3.0 * line_width;
         let available_height = bounds.h - 2.0 * (margin + diamond_size + border_width);
 
+        // Draw half a diamond for the first note at time 0
+        let first_note = delay_data.first_note;
+        if first_note != NO_LEARNED_NOTE {
+            let normalized_first_note = if max_note_value != min_note_value {
+                (first_note as f32 - min_note_value) / (max_note_value - min_note_value)
+            } else {
+                first_note as f32 / 127.0
+            };
+
+            let first_note_height =
+                margin + diamond_size + (1.0 - normalized_first_note) * available_height;
+            let first_diamond_center_x = bounds.x;
+            let first_diamond_center_y = bounds.y + first_note_height;
+            let diamond_half_size = line_width;
+
+            // Drawing only the right half of the diamond
+            diamond_path.move_to(
+                first_diamond_center_x,
+                first_diamond_center_y + diamond_half_size,
+            );
+            diamond_path.line_to(
+                first_diamond_center_x + diamond_half_size,
+                first_diamond_center_y,
+            );
+            diamond_path.line_to(
+                first_diamond_center_x,
+                first_diamond_center_y - diamond_half_size,
+            );
+            diamond_path.close();
+        }
+
+        // Continue with the rest of the drawing process as usual
         for i in 0..delay_data.current_tap {
             let x_offset = delay_data.delay_times[i] as f32 * scaling_factor + border_width * 0.5;
 
-            // Adjust note height to scale within bounds considering margins
             let normalized_note = if max_note_value != min_note_value {
                 (delay_data.notes[i] as f32 - min_note_value) / (max_note_value - min_note_value)
             } else {
                 delay_data.notes[i] as f32 / 127.0
             };
 
-            // Scale the normalized note to fit within available height
             let note_height = margin + diamond_size + (1.0 - normalized_note) * available_height;
 
             let diamond_center_x = bounds.x + x_offset;
@@ -625,16 +652,14 @@ impl DelayGraph {
 
             let diamond_half_size = line_width;
 
-            // Create diamond shape
             diamond_path.move_to(diamond_center_x + diamond_half_size, diamond_center_y);
             diamond_path.line_to(diamond_center_x, diamond_center_y + diamond_half_size);
             diamond_path.line_to(diamond_center_x - diamond_half_size, diamond_center_y);
             diamond_path.line_to(diamond_center_x, diamond_center_y - diamond_half_size);
             diamond_path.close();
 
-            // Determine pan line
             let pan_value = delay_data.pans[i];
-            let line_length = 50.0; // Half the total width since +/-100px total width
+            let line_length = 50.0;
             let pan_offset = pan_value * line_length;
 
             pan_path.move_to(diamond_center_x, diamond_center_y);
@@ -650,8 +675,27 @@ impl DelayGraph {
             &diamond_path,
             &vg::Paint::color(color).with_line_width(line_width),
         );
+
+        // FIXME:
+        // cover up, probably needed due to https://github.com/vizia/vizia/issues/401
+        if first_note != NO_LEARNED_NOTE {
+            // Draw a line over the left half in the background color
+            let mut cover_line_path = vg::Path::new();
+            let cover_x = bounds.x - line_width * 0.5 + border_width * 0.5;
+            cover_line_path.move_to(cover_x, bounds.y);
+            cover_line_path.line_to(cover_x, bounds.y + bounds.h);
+
+            // for some reason it doesn't draw with the background color
+            // so we hardcode it.
+            // a coverup for a coverup 😭
+            canvas.stroke_path(
+                &cover_line_path,
+                // &vg::Paint::color(Color::red().into()).with_line_width(line_width),
+                &vg::Paint::color(vg::Color::rgb(41, 41, 41)).with_line_width(line_width),
+                // &vg::Paint::color(background_color).with_line_width(line_width),
+            );
+        }
     }
-    // TODO: .overflow(Overflow::Visible);
 
     fn draw_bounding_outline(
         &self,
@@ -660,12 +704,14 @@ impl DelayGraph {
         color: vg::Color,
         border_width: f32,
     ) {
+        let half_border = border_width / 2.0;
+
         let mut path = vg::Path::new();
         path.rect(
-            bounds.x + border_width * 0.5,
-            bounds.y,
+            bounds.x + half_border,
+            bounds.y + half_border,
             bounds.w - border_width,
-            bounds.h - border_width * 0.5,
+            bounds.h - border_width,
         );
         path.close();
 

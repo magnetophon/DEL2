@@ -96,7 +96,6 @@ struct Del2 {
     counting_state: CountingState,
     should_update_filter: Arc<AtomicBool>,
     enabled_actions: Arc<AtomicBoolArray>,
-    first_note: u8,
 }
 
 // for use in graph
@@ -109,6 +108,7 @@ pub struct SharedDelayData {
     current_tap: usize,
     current_time: u32,
     max_tap_samples: u32,
+    first_note: u8,
 }
 impl Default for SharedDelayData {
     fn default() -> Self {
@@ -120,6 +120,7 @@ impl Default for SharedDelayData {
             current_tap: 0,
             current_time: 0,
             max_tap_samples: 0,
+            first_note: NO_LEARNED_NOTE,
         }
     }
 }
@@ -487,7 +488,6 @@ impl Default for Del2 {
             counting_state: CountingState::TimeOut,
             should_update_filter,
             enabled_actions,
-            first_note: 69, // A440
         }
     }
 }
@@ -883,7 +883,7 @@ impl Plugin for Del2 {
             let mut delay_tap_amp_envelope = [0.0; MAX_BLOCK_SIZE];
 
             let panning_center = if self.params.taps.panning_center.value() < 0.0 {
-                self.first_note as f32
+                self.delay_data.first_note as f32
             } else {
                 self.params.taps.panning_center.value()
             };
@@ -1079,7 +1079,7 @@ impl Del2 {
                 if is_delay_note && !is_learning && taps_unlocked {
                     // If in TimeOut state, reset and start new counting phase
                     self.clear_taps(timing, true);
-                    self.first_note = note;
+                    self.delay_data.first_note = note;
                 }
             }
             CountingState::CountingInBuffer => {
@@ -1199,6 +1199,7 @@ impl Del2 {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
+            self.delay_data.first_note = NO_LEARNED_NOTE;
         }
     }
 
@@ -1235,6 +1236,9 @@ impl Del2 {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
+            if self.delay_data.current_tap == 0 {
+                self.delay_data.first_note = NO_LEARNED_NOTE;
+            }
         };
     }
 
