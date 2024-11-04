@@ -10,6 +10,10 @@ A delay that you play like an instrument.
 ## Current features
 
 - Tap a rhythm into it using midi
+- Each delay tap has a separate moog style filter
+  - The filter parameters are pair of settings, and each tap's settings is an interpolation between these two, depending on the velocity
+  - You can also link the cutoff frequency to the note
+- A haas panner that you can link to the note 
 - 4 triggers, controlled by a learnable midi note:
   - mute input
   - mute output
@@ -19,14 +23,9 @@ A delay that you play like an instrument.
   - In toggle-mode, the trigger note for mute toggles the respective mute
   - In direct-mode, the trigger note switches it on when you press it, and off when you let it go
     The note also (retroactively) turns the other mute off when you press it.
-- Each delay tap has a separate jucy & crunchy filter
-  - The filter parameters are pair of settings, and each tap's settings is an interpolation between these two, depending on the velocity
-  - You can also link the cutoff frequency to the note
-- A haas panner that you can link to the note 
 
 ## Planned features
 
-- Tap the rhythm using your computer keyboard or side-channel audio
 - Expand the DSP per tap to:
   - two non-linear filters
   - a reverb
@@ -37,6 +36,7 @@ A delay that you play like an instrument.
 - Optional individual settings per tap
 - Optional auxiliary outputs per tap
 - BPM sync, scale and quantization
+- Tap the rhythm using your computer keyboard or side-channel audio
 - A third mode for the mutes:
   - In instrument-mode, the first note you play will be silent, and start recording a new pattern, as always.
     The next eight notes will be like playing an sampler, that plays the sample you started recording at the beginning of the pattern.
