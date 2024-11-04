@@ -896,8 +896,6 @@ impl Plugin for Del2 {
                 output[1][sample_idx] *= dry;
             }
 
-            // TODO: Some form of band limiting
-            // TODO: Filter
             for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
                 let tap_index = delay_tap.tap_index;
                 let note = self.delay_data.notes[tap_index];
@@ -1297,10 +1295,7 @@ impl Del2 {
         }
     }
 
-    // TODO: when the fade time is long, there are bugs with taps not appearing, or fading out while fading in, etc.
-    // more testing is needed
     // for fn initialize():
-
     fn calculate_buffer_size(&self, buffer_size: u32) -> u32 {
         ((TOTAL_DELAY_SAMPLES as f64 / buffer_size as f64).ceil() as u32 * buffer_size)
             .next_power_of_two()

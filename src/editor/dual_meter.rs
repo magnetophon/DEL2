@@ -17,8 +17,6 @@ const TEXT_TICKS: [i32; 6] = [-80, -60, -40, -20, 0, 12];
 
 /// A simple horizontal dual meter.
 ///
-/// TODO: There are currently no styling options at all
-/// TODO: Vertical dual meter, this is just a proof of concept to fit the gain GUI example.
 pub struct DualMeter;
 
 /// The bar bit for the dual meter, manually drawn using vertical lines.

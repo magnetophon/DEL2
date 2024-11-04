@@ -157,7 +157,7 @@ generic-ui .label {
 }
 
 .peak-meter-group {
-    height: 78px;
+    height: 85px;
     left: 0px;
     right: 9px;
     top: 3px;
@@ -167,7 +167,7 @@ generic-ui .label {
 dual-meter {
     /* width: 584px; */
     width: 1s;
-    height: 21px;
+    height: 25px;
     color: #e0ce91;
     left: 0px;
     bottom: 0px;
@@ -200,8 +200,8 @@ dual-meter .ticks__label {
 
 .peak-meter-label-group {
     right: 9px;
-    top: 6px;
-    bottom: 24px;
+    top: 2px;
+    bottom: 22px;
     font-size: 16;
     width: 29px;
 }
