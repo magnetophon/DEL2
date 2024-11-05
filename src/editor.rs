@@ -326,10 +326,10 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
             .class("parameters");
             VStack::new(cx, |cx| {
                 ZStack::new(cx, |cx| {
-                    Label::new(cx, "DEL2").class("plugin-name");
                     DelayGraph::new(cx, Data::delay_data)
                     // .overflow(Overflow::Hidden)
                         ;
+                    Label::new(cx, "DEL2").class("plugin-name");
                 });
                 VStack::new(cx, |cx| {
                     //meters
