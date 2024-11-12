@@ -3,6 +3,12 @@ TODO:
 
 - smooth all dsp params (at the end of the interpolation?)
 
+- evaluate filters:
+https://github.com/AquaEBM/svf
+https://github.com/neodsp/simper-filter
+ also simper, with simd
+// https://github.com/SamiPerttu/fundsp/blob/801ad0a0c97838f9744d0dbe506512215f780b7d/src/svf.rs#L2
+
 - make mutes sample-accurate
 
 - optional: live-mode / daw-mode switch
