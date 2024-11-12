@@ -53,8 +53,6 @@
     xorg.libX11 # libX11-xcb.so
     xorg.xcbutilwm # libxcb-icccm.so
 
-    faust
-    python3
   ];
 
   # https://devenv.sh/scripts/
