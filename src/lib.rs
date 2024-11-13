@@ -16,6 +16,10 @@ https://github.com/neodsp/simper-filter
  */
 
 // #![allow(non_snake_case)]
+#![deny(clippy::all)]
+#![warn(clippy::pedantic)]
+// #![warn(clippy::cargo)]
+#![warn(clippy::nursery)]
 #![feature(portable_simd)]
 #![feature(get_mut_unchecked)]
 use array_init::array_init;
@@ -1189,7 +1193,7 @@ impl Del2 {
         }
     }
 
-    fn store_note_off_in_delay_data(&mut self, note: u8) {
+    fn store_note_off_in_delay_data(&self, note: u8) {
         // if we are in direct mode
         if !self.params.global.mute_is_toggle.value() {
             // mute the in and out
@@ -1755,13 +1759,11 @@ impl AtomicBoolArray {
         }
     }
 
-    #[inline(always)]
     fn load(&self, index: usize) -> bool {
         assert!(index < 8, "Index out of bounds");
         let mask = 1 << index;
         self.data.load(Ordering::SeqCst) & mask != 0
     }
-    #[inline(always)]
     fn store(&self, index: usize, value: bool) {
         assert!(index < 8, "Index out of bounds");
         let mask = 1 << index;
@@ -1776,16 +1778,13 @@ impl AtomicBoolArray {
             .expect("Atomic update failed");
     }
 
-    #[inline(always)]
     fn load_u8(&self) -> u8 {
         self.data.load(Ordering::SeqCst)
     }
-    #[inline(always)]
     fn store_u8(&self, new_value: u8) {
         self.data.store(new_value, Ordering::SeqCst);
     }
 
-    #[inline(always)]
     fn toggle(&self, index: usize) {
         assert!(index < 8, "Index out of bounds");
         let mask = 1 << index;
@@ -1804,32 +1803,28 @@ impl AtomicByteArray {
         }
     }
 
-    #[inline(always)]
     fn load(&self, index: usize) -> u8 {
         assert!(index < 8, "Index out of bounds");
         let value = self.data.load(Ordering::SeqCst);
         ((value >> (index * 8)) & 0xFF) as u8
     }
 
-    #[inline(always)]
     fn store(&self, index: usize, byte: u8) {
         assert!(index < 8, "Index out of bounds");
         let mask = !(0xFFu64 << (index * 8));
-        let new_value = (self.data.load(Ordering::SeqCst) & mask) | ((byte as u64) << (index * 8));
+        let new_value =
+            (self.data.load(Ordering::SeqCst) & mask) | ((u64::from(byte)) << (index * 8));
         self.data.store(new_value, Ordering::SeqCst);
     }
-    #[inline(always)]
     fn load_u64(&self) -> u64 {
         self.data.load(Ordering::SeqCst)
     }
-    #[inline(always)]
     fn store_u64(&self, new_value: u64) {
         self.data.store(new_value, Ordering::SeqCst);
     }
-    #[inline(always)]
     fn contains(&self, byte: u8) -> bool {
         let value = self.data.load(Ordering::SeqCst);
-        let byte_u64 = byte as u64;
+        let byte_u64 = u64::from(byte);
 
         for i in 0..8 {
             let shifted_byte = (value >> (i * 8)) & 0xFF;
@@ -1844,7 +1839,7 @@ impl AtomicByteArray {
 // Create a newtype for your Arc<AtomicByteArray>
 struct ArcAtomicByteArray(Arc<AtomicByteArray>);
 
-impl<'a> PersistentField<'a, u64> for ArcAtomicByteArray {
+impl PersistentField<'_, u64> for ArcAtomicByteArray {
     fn set(&self, new_value: u64) {
         self.0.store_u64(new_value);
     }
@@ -1860,7 +1855,7 @@ impl<'a> PersistentField<'a, u64> for ArcAtomicByteArray {
 
 struct ArcAtomicBoolArray(Arc<AtomicBoolArray>);
 
-impl<'a> PersistentField<'a, u8> for ArcAtomicBoolArray {
+impl PersistentField<'_, u8> for ArcAtomicBoolArray {
     fn set(&self, new_value: u8) {
         self.0.store_u8(new_value);
     }
@@ -1993,11 +1988,9 @@ impl LastPlayedNotes {
     /// Checks if a note is currently being played.
     fn is_playing(&self, note: u8) -> bool {
         // Find the index of the note and check if its spot in state is occupied.
-        if let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
-            self.active_notes.load(index)
-        } else {
-            false
-        }
+        (0..8)
+            .find(|&i| self.notes.load(i) == note)
+            .map_or(false, |index| self.active_notes.load(index))
     }
 
     /// Print the notes for testing purposes.
@@ -2009,7 +2002,7 @@ impl LastPlayedNotes {
             let note = self.notes.load(i);
             if self.is_playing(note) {
                 // Print active notes
-                print!("{:>WIDTH$}", note);
+                print!("{note:>WIDTH$}");
             } else {
                 // Print placeholder for inactive notes
                 print!("{:>WIDTH$}", "_");
