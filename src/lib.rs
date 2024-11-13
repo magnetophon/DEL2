@@ -19,7 +19,7 @@ https://github.com/neodsp/simper-filter
 // #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
 // #![warn(clippy::cargo)]
-// #![warn(clippy::nursery)]
+#![warn(clippy::nursery)]
 #![feature(portable_simd)]
 #![feature(get_mut_unchecked)]
 use array_init::array_init;
