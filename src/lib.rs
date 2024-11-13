@@ -616,8 +616,9 @@ impl Plugin for Del2 {
 
         // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
         // have dropped by 12 dB
-        self.peak_meter_decay_weight =
-            0.25f64.powf((self.sample_rate as f64 * PEAK_METER_DECAY_MS / 1000.0).recip()) as f32;
+        self.peak_meter_decay_weight = 0.25f64
+            .powf((f64::from(self.sample_rate) * PEAK_METER_DECAY_MS / 1000.0).recip())
+            as f32;
         // Calculate and set the delay buffer size
         self.set_delay_buffer_size(buffer_config);
 
@@ -709,7 +710,7 @@ impl Plugin for Del2 {
                                     delay_tap.is_muted = false;
                                     delay_tap.delay_tap_id = voice_id.unwrap_or_else(|| {
                                         compute_fallback_delay_tap_id(note, channel, delay_time)
-                                    })
+                                    });
                                 }
                             }
                             NoteEvent::NoteOff {
@@ -904,7 +905,7 @@ impl Plugin for Del2 {
             let mut delay_tap_amp_envelope = [0.0; MAX_BLOCK_SIZE];
 
             let panning_center = if self.params.taps.panning_center.value() < 0.0 {
-                self.delay_data.first_note as f32
+                f32::from(self.delay_data.first_note)
             } else {
                 self.params.taps.panning_center.value()
             };
@@ -921,7 +922,8 @@ impl Plugin for Del2 {
                 let tap_index = delay_tap.tap_index;
                 let note = self.delay_data.notes[tap_index];
 
-                let pan = ((note as f32 - panning_center) / 12.0 * panning_amount).clamp(-1.0, 1.0);
+                let pan =
+                    ((f32::from(note) - panning_center) / 12.0 * panning_amount).clamp(-1.0, 1.0);
                 self.delay_data.pans[tap_index] = pan;
 
                 let (offset_l, offset_r) = Del2::pan_to_haas_samples(pan, sample_rate);
@@ -1002,7 +1004,7 @@ impl Plugin for Del2 {
 
             // Terminate delay taps whose release period has fully ended. This could be done as part of
             // the previous loop but this is simpler.
-            for delay_tap in self.delay_taps.iter_mut() {
+            for delay_tap in &mut self.delay_taps {
                 match delay_tap {
                     Some(v) if v.releasing && v.amp_envelope.previous_value() == 0.0 => {
                         // This event is very important, as it allows the host to manage its own modulation
@@ -1322,7 +1324,7 @@ impl Del2 {
 
     // for fn initialize():
     fn calculate_buffer_size(&self, buffer_size: u32) -> u32 {
-        ((TOTAL_DELAY_SAMPLES as f64 / buffer_size as f64).ceil() as u32 * buffer_size)
+        ((TOTAL_DELAY_SAMPLES as f64 / f64::from(buffer_size)).ceil() as u32 * buffer_size)
             .next_power_of_two()
     }
 
@@ -1387,13 +1389,13 @@ impl Del2 {
                 let digits_after_decimal = (total_digits - value.trunc().to_string().len())
                     .max(0)
                     .min(total_digits - 1); // Ensure it's between 0 and 2
-                format!("{:.1$} ms", value, digits_after_decimal)
+                format!("{value:.digits_after_decimal$} ms")
             } else {
                 let seconds = value / 1000.0;
                 // Same logic for seconds
                 let digits_after_decimal =
                     (total_digits - seconds.trunc().to_string().len()).max(0);
-                format!("{:.1$} s", seconds, digits_after_decimal)
+                format!("{seconds:.digits_after_decimal$} s")
             }
         })
     }
@@ -1418,7 +1420,7 @@ impl Del2 {
             } else {
                 let note_name = util::NOTES[(note_nr % 12) as usize];
                 let octave = (note_nr / 12) as i8 - 1; // Correct the octave calculation
-                format!("{}{}", note_name, octave) // Ensure correct value formatting
+                format!("{note_name}{octave}") // Ensure correct value formatting
             }
         })
     }
@@ -1470,7 +1472,7 @@ impl Del2 {
         )
     }
 
-    /// Start a new delay tap with the given delay tap ID. If all delay_taps are currently in use, the oldest
+    /// Start a new delay tap with the given delay tap ID. If all `delay_taps` are currently in use, the oldest
     /// delay tap will be stolen. Returns a reference to the new delay tap.
     fn start_delay_tap(
         &mut self,
@@ -1501,43 +1503,40 @@ impl Del2 {
 
         // Can't use `.iter_mut().find()` here because nonlexical lifetimes don't apply to return
         // values
-        match self
+        if let Some(free_delay_tap_idx) = self
             .delay_taps
             .iter()
-            .position(|delay_tap| delay_tap.is_none())
+            .position(std::option::Option::is_none)
         {
-            Some(free_delay_tap_idx) => {
-                self.delay_taps[free_delay_tap_idx] = Some(new_delay_tap);
-                self.delay_taps[free_delay_tap_idx].as_mut().unwrap()
-            }
-            None => {
-                // If there is no free delay tap, find and steal the oldest one
-                // SAFETY: We can skip a lot of checked unwraps here since we already know all delay_taps are in
-                //         use
-                let oldest_delay_tap = unsafe {
-                    self.delay_taps
-                        .iter_mut()
-                        .min_by_key(|delay_tap| {
-                            delay_tap.as_ref().unwrap_unchecked().internal_delay_tap_id
-                        })
-                        .unwrap_unchecked()
-                };
+            self.delay_taps[free_delay_tap_idx] = Some(new_delay_tap);
+            self.delay_taps[free_delay_tap_idx].as_mut().unwrap()
+        } else {
+            // If there is no free delay tap, find and steal the oldest one
+            // SAFETY: We can skip a lot of checked unwraps here since we already know all delay_taps are in
+            //         use
+            let oldest_delay_tap = unsafe {
+                self.delay_taps
+                    .iter_mut()
+                    .min_by_key(|delay_tap| {
+                        delay_tap.as_ref().unwrap_unchecked().internal_delay_tap_id
+                    })
+                    .unwrap_unchecked()
+            };
 
-                // The stolen delay tap needs to be terminated so the host can reuse its modulation
-                // resources
-                {
-                    let oldest_delay_tap = oldest_delay_tap.as_ref().unwrap();
-                    context.send_event(NoteEvent::VoiceTerminated {
-                        timing: sample_offset,
-                        voice_id: Some(oldest_delay_tap.delay_tap_id),
-                        channel: oldest_delay_tap.channel,
-                        note: oldest_delay_tap.note,
-                    });
-                }
-
-                *oldest_delay_tap = Some(new_delay_tap);
-                oldest_delay_tap.as_mut().unwrap()
+            // The stolen delay tap needs to be terminated so the host can reuse its modulation
+            // resources
+            {
+                let oldest_delay_tap = oldest_delay_tap.as_ref().unwrap();
+                context.send_event(NoteEvent::VoiceTerminated {
+                    timing: sample_offset,
+                    voice_id: Some(oldest_delay_tap.delay_tap_id),
+                    channel: oldest_delay_tap.channel,
+                    note: oldest_delay_tap.note,
+                });
             }
+
+            *oldest_delay_tap = Some(new_delay_tap);
+            oldest_delay_tap.as_mut().unwrap()
         }
     }
 
@@ -1585,7 +1584,7 @@ impl Del2 {
 
     /// Immediately terminate one or more delay tap, removing it from the pool and informing the host
     /// that the delay tap has ended. If `delay_tap_id` is not provided, then this will terminate all
-    /// matching delay_taps.
+    /// matching `delay_taps`.
     fn choke_delay_taps(
         &mut self,
         context: &mut impl ProcessContext<Self>,
@@ -1594,7 +1593,7 @@ impl Del2 {
         channel: u8,
         note: u8,
     ) {
-        for delay_tap in self.delay_taps.iter_mut() {
+        for delay_tap in &mut self.delay_taps {
             match delay_tap {
                 Some(DelayTap {
                     delay_tap_id: candidate_delay_tap_id,

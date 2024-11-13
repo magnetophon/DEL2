@@ -7,7 +7,7 @@ use nih_plug::prelude::{AtomicF32, Editor};
 use nih_plug_vizia::{
     assets, create_vizia_editor,
     vizia::{prelude::*, vg},
-    widgets::*,
+    widgets::{GenericUi, ParamSlider, ParamSliderExt, ParamSliderStyle, ResizeHandle},
     ViziaState, ViziaTheming,
 };
 
@@ -450,7 +450,7 @@ impl DelayGraph {
                     let mut locked_delay_data = data.lock().unwrap();
                     let delay_data = locked_delay_data.read();
                     match delay_data.current_tap {
-                        0 => "".to_string(),
+                        0 => String::new(),
                         1 => "1 tap".to_string(),
                         tap_nr => format!("{tap_nr} taps"),
                     }
@@ -593,7 +593,7 @@ impl DelayGraph {
             }
             let min = used_notes.iter().copied().min().unwrap_or(0);
             let max = used_notes.iter().copied().max().unwrap_or(127);
-            (min as f32, max as f32)
+            (f32::from(min), f32::from(max))
         } else {
             (0.0, 127.0)
         };
@@ -608,9 +608,9 @@ impl DelayGraph {
         let first_note = delay_data.first_note;
         if first_note != NO_LEARNED_NOTE {
             let normalized_first_note = if max_note_value != min_note_value {
-                (first_note as f32 - min_note_value) / (max_note_value - min_note_value)
+                (f32::from(first_note) - min_note_value) / (max_note_value - min_note_value)
             } else {
-                first_note as f32 / 127.0
+                f32::from(first_note) / 127.0
             };
 
             let first_note_height =
@@ -640,9 +640,10 @@ impl DelayGraph {
             let x_offset = delay_data.delay_times[i] as f32 * scaling_factor + border_width * 0.5;
 
             let normalized_note = if max_note_value != min_note_value {
-                (delay_data.notes[i] as f32 - min_note_value) / (max_note_value - min_note_value)
+                (f32::from(delay_data.notes[i]) - min_note_value)
+                    / (max_note_value - min_note_value)
             } else {
-                delay_data.notes[i] as f32 / 127.0
+                f32::from(delay_data.notes[i]) / 127.0
             };
 
             let note_height = margin + diamond_size + (1.0 - normalized_note) * available_height;
@@ -826,7 +827,7 @@ impl ActionTrigger {
         } else {
             let note_name = util::NOTES[(note_nr % 12) as usize];
             let octave = (note_nr / 12) as i8 - 1; // Calculate the octave, ensuring i8 for potential negative values
-            format!("{}{}", note_name, octave) // Format the note correctly with the octave
+            format!("{note_name}{octave}") // Format the note correctly with the octave
         }
     }
 
