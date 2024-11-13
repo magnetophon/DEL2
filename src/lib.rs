@@ -24,7 +24,6 @@ use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
-use serde::{Deserialize, Serialize};
 use std::simd::f32x4;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -158,6 +157,8 @@ struct Del2Params {
 
     #[persist = "learned-notes"]
     pub learned_notes: ArcAtomicByteArray,
+    #[persist = "enabled-actions"]
+    pub enabled_actions: ArcAtomicBoolArray,
     /// A voice's gain. This can be polyphonically modulated.
     #[id = "gain"]
     gain: FloatParam,
@@ -457,7 +458,7 @@ impl Default for Del2 {
 
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
 
-        let mut instance = Self {
+        let instance = Self {
             params: Arc::new(Del2Params::new(
                 should_update_filter.clone(),
                 enabled_actions.clone(),
@@ -520,6 +521,7 @@ impl Del2Params {
             taps: TapsParams::new(should_update_filter.clone()),
             global: GlobalParams::new(enabled_actions.clone(), learned_notes.clone()),
             learned_notes: ArcAtomicByteArray(learned_notes.clone()),
+            enabled_actions: ArcAtomicBoolArray(enabled_actions.clone()),
             gain: FloatParam::new(
                 "Gain",
                 util::db_to_gain(0.0),
@@ -1773,6 +1775,16 @@ impl AtomicBoolArray {
             })
             .expect("Atomic update failed");
     }
+
+    #[inline(always)]
+    fn load_u8(&self) -> u8 {
+        self.data.load(Ordering::SeqCst)
+    }
+    #[inline(always)]
+    fn store_u8(&self, new_value: u8) {
+        self.data.store(new_value, Ordering::SeqCst);
+    }
+
     #[inline(always)]
     fn toggle(&self, index: usize) {
         assert!(index < 8, "Index out of bounds");
@@ -1832,12 +1844,6 @@ impl AtomicByteArray {
 // Create a newtype for your Arc<AtomicByteArray>
 struct ArcAtomicByteArray(Arc<AtomicByteArray>);
 
-impl ArcAtomicByteArray {
-    fn new() -> Self {
-        Self(Arc::new(AtomicByteArray::new()))
-    }
-}
-
 impl<'a> PersistentField<'a, u64> for ArcAtomicByteArray {
     fn set(&self, new_value: u64) {
         self.0.store_u64(new_value);
@@ -1848,6 +1854,22 @@ impl<'a> PersistentField<'a, u64> for ArcAtomicByteArray {
         F: Fn(&u64) -> R,
     {
         let value = self.0.load_u64();
+        f(&value)
+    }
+}
+
+struct ArcAtomicBoolArray(Arc<AtomicBoolArray>);
+
+impl<'a> PersistentField<'a, u8> for ArcAtomicBoolArray {
+    fn set(&self, new_value: u8) {
+        self.0.store_u8(new_value);
+    }
+
+    fn map<F, R>(&self, f: F) -> R
+    where
+        F: Fn(&u8) -> R,
+    {
+        let value = self.0.load_u8();
         f(&value)
     }
 }

@@ -10,7 +10,6 @@ dependencies = [
  "bit_mask_ring_buf",
  "nih_plug",
  "nih_plug_vizia",
- "serde",
  "synfx-dsp",
  "triple_buffer",
 ]
