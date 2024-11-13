@@ -20,9 +20,11 @@ https://github.com/neodsp/simper-filter
 #![feature(get_mut_unchecked)]
 use array_init::array_init;
 use bit_mask_ring_buf::BMRingBuf;
+use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
+use serde::{Deserialize, Serialize};
 use std::simd::f32x4;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -154,6 +156,8 @@ struct Del2Params {
     #[nested(group = "taps")]
     pub taps: TapsParams,
 
+    #[persist = "learned-notes"]
+    pub learned_notes: ArcAtomicByteArray,
     /// A voice's gain. This can be polyphonically modulated.
     #[id = "gain"]
     gain: FloatParam,
@@ -452,7 +456,8 @@ impl Default for Del2 {
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
 
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
-        Self {
+
+        let mut instance = Self {
             params: Arc::new(Del2Params::new(
                 should_update_filter.clone(),
                 enabled_actions.clone(),
@@ -494,7 +499,13 @@ impl Default for Del2 {
             counting_state: CountingState::TimeOut,
             should_update_filter,
             enabled_actions,
+        };
+
+        for i in 0..MAX_LEARNED_NOTES {
+            instance.learned_notes.store(i, NO_LEARNED_NOTE);
         }
+
+        instance
     }
 }
 
@@ -508,6 +519,7 @@ impl Del2Params {
             editor_state: editor::default_state(),
             taps: TapsParams::new(should_update_filter.clone()),
             global: GlobalParams::new(enabled_actions.clone(), learned_notes.clone()),
+            learned_notes: ArcAtomicByteArray(learned_notes.clone()),
             gain: FloatParam::new(
                 "Gain",
                 util::db_to_gain(0.0),
@@ -606,10 +618,6 @@ impl Plugin for Del2 {
         // Initialize filter parameters for each tap
         self.initialize_filter_parameters();
 
-        for i in 0..MAX_LEARNED_NOTES {
-            self.learned_notes.store(i, NO_LEARNED_NOTE);
-        }
-
         true
     }
 
@@ -619,6 +627,7 @@ impl Plugin for Del2 {
             self.amp_envelopes[tap].reset(0.0);
         }
         self.delay_taps.fill(None);
+
         // Reset buffers and envelopes here. This can be called from the audio thread and may not
         // allocate. You can remove this function if you do not need it.
     }
@@ -1771,7 +1780,7 @@ impl AtomicBoolArray {
         self.data.fetch_xor(mask, Ordering::SeqCst);
     }
 }
-
+// #[derive(Serialize, Deserialize)]
 struct AtomicByteArray {
     data: AtomicU64,
 }
@@ -1798,6 +1807,14 @@ impl AtomicByteArray {
         self.data.store(new_value, Ordering::SeqCst);
     }
     #[inline(always)]
+    fn load_u64(&self) -> u64 {
+        self.data.load(Ordering::SeqCst)
+    }
+    #[inline(always)]
+    fn store_u64(&self, new_value: u64) {
+        self.data.store(new_value, Ordering::SeqCst);
+    }
+    #[inline(always)]
     fn contains(&self, byte: u8) -> bool {
         let value = self.data.load(Ordering::SeqCst);
         let byte_u64 = byte as u64;
@@ -1809,6 +1826,29 @@ impl AtomicByteArray {
             }
         }
         false
+    }
+}
+
+// Create a newtype for your Arc<AtomicByteArray>
+struct ArcAtomicByteArray(Arc<AtomicByteArray>);
+
+impl ArcAtomicByteArray {
+    fn new() -> Self {
+        Self(Arc::new(AtomicByteArray::new()))
+    }
+}
+
+impl<'a> PersistentField<'a, u64> for ArcAtomicByteArray {
+    fn set(&self, new_value: u64) {
+        self.0.store_u64(new_value);
+    }
+
+    fn map<F, R>(&self, f: F) -> R
+    where
+        F: Fn(&u64) -> R,
+    {
+        let value = self.0.load_u64();
+        f(&value)
     }
 }
 
