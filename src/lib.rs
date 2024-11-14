@@ -86,6 +86,14 @@ struct Del2 {
     mute_in_delay_buffer: BMRingBuf<bool>,
     mute_in_delayed: [[bool; MAX_BLOCK_SIZE]; NUM_TAPS],
 
+    // for the smoothers
+    gain: Vec<f32>,
+    dry_wet: Vec<f32>,
+    output_gain: Vec<f32>,
+    global_drive: Vec<f32>,
+    delay_tap_gain: Vec<f32>,
+    delay_tap_amp_envelope: Vec<f32>,
+
     delay_data: SharedDelayData,
     delay_data_input: SharedDelayDataInput,
     delay_data_output: Arc<Mutex<SharedDelayDataOutput>>,
@@ -156,14 +164,14 @@ pub struct Del2Params {
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
     #[nested(group = "global")]
-    pub global: GlobalParams,
+    global: GlobalParams,
     #[nested(group = "taps")]
     pub taps: TapsParams,
 
     #[persist = "learned-notes"]
-    pub learned_notes: ArcAtomicByteArray,
+    learned_notes: ArcAtomicByteArray,
     #[persist = "enabled-actions"]
-    pub enabled_actions: ArcAtomicBoolArray,
+    enabled_actions: ArcAtomicBoolArray,
     /// A voice's gain. This can be polyphonically modulated.
     #[id = "gain"]
     gain: FloatParam,
@@ -484,6 +492,13 @@ impl Default for Del2 {
 
             mute_in_delay_buffer: BMRingBuf::<bool>::from_len(TOTAL_DELAY_SAMPLES),
             mute_in_delayed: [[false; MAX_BLOCK_SIZE]; NUM_TAPS],
+
+            gain: vec![0.0; MAX_BLOCK_SIZE],
+            dry_wet: vec![0.0; MAX_BLOCK_SIZE],
+            output_gain: vec![0.0; MAX_BLOCK_SIZE],
+            global_drive: vec![0.0; MAX_BLOCK_SIZE],
+            delay_tap_gain: vec![0.0; MAX_BLOCK_SIZE],
+            delay_tap_amp_envelope: vec![0.0; MAX_BLOCK_SIZE],
 
             delay_data: initial_delay_data,
             delay_data_input,
@@ -879,31 +894,27 @@ impl Plugin for Del2 {
             // delay tap's struct, but that may not be realistic when the plugin has hundreds of
             // parameters. The `delay_tap_*` arrays are scratch arrays that an individual delay tap can use.
             // for poly modulation
-            let mut gain = [0.0; MAX_BLOCK_SIZE];
-            self.params.gain.smoothed.next_block(&mut gain, block_len);
+            self.params
+                .gain
+                .smoothed
+                .next_block(&mut self.gain, block_len);
 
             // not poly:
-            let mut dry_wet = [0.0; MAX_BLOCK_SIZE];
             self.params
                 .global
                 .dry_wet
                 .smoothed
-                .next_block(&mut dry_wet, block_len);
-            let mut output_gain = [0.0; MAX_BLOCK_SIZE];
+                .next_block(&mut self.dry_wet, block_len);
             self.params
                 .global
                 .output_gain
                 .smoothed
-                .next_block(&mut output_gain, block_len);
-            let mut global_drive = [0.0; MAX_BLOCK_SIZE];
+                .next_block(&mut self.output_gain, block_len);
             self.params
                 .global
                 .global_drive
                 .smoothed
-                .next_block(&mut global_drive, block_len);
-
-            let mut delay_tap_gain = [0.0; MAX_BLOCK_SIZE];
-            let mut delay_tap_amp_envelope = [0.0; MAX_BLOCK_SIZE];
+                .next_block(&mut self.global_drive, block_len);
 
             let panning_center = if self.params.taps.panning_center.value() < 0.0 {
                 f32::from(self.delay_data.first_note)
@@ -914,7 +925,7 @@ impl Plugin for Del2 {
 
             let output = buffer.as_slice();
             for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                let dry = 1.0 - dry_wet[value_idx];
+                let dry = 1.0 - self.dry_wet[value_idx];
                 output[0][sample_idx] *= dry;
                 output[1][sample_idx] *= dry;
             }
@@ -947,10 +958,10 @@ impl Plugin for Del2 {
                 // to generate unique modulated values for that delay tap
                 let gain = match &delay_tap.delay_tap_gain {
                     Some((_, smoother)) => {
-                        smoother.next_block(&mut delay_tap_gain, block_len);
-                        &delay_tap_gain
+                        smoother.next_block(&mut self.delay_tap_gain, block_len);
+                        &self.delay_tap_gain
                     }
-                    None => &gain,
+                    None => &self.gain,
                 };
 
                 // This is an exponential smoother repurposed as an AR envelope with values between
@@ -958,12 +969,12 @@ impl Plugin for Del2 {
                 // again. When it reaches 0, we will terminate the delay tap.
                 delay_tap
                     .amp_envelope
-                    .next_block(&mut delay_tap_amp_envelope, block_len);
+                    .next_block(&mut self.delay_tap_amp_envelope, block_len);
 
                 for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                    let pre_filter_gain = global_drive[value_idx]
+                    let pre_filter_gain = self.global_drive[value_idx]
                         * gain[value_idx]
-                        * delay_tap_amp_envelope[value_idx];
+                        * self.delay_tap_amp_envelope[value_idx];
 
                     self.delayed_audio_l[tap_index][sample_idx] *= pre_filter_gain;
                     self.delayed_audio_r[tap_index][sample_idx] *= pre_filter_gain;
@@ -993,8 +1004,8 @@ impl Plugin for Del2 {
                 }
 
                 for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                    let post_filter_gain = dry_wet[value_idx] * output_gain[value_idx]
-                        / (drive * global_drive[value_idx]);
+                    let post_filter_gain = self.dry_wet[value_idx] * self.output_gain[value_idx]
+                        / (drive * self.global_drive[value_idx]);
 
                     output[0][sample_idx] +=
                         self.delayed_audio_l[tap_index][sample_idx] * post_filter_gain;
