@@ -1071,7 +1071,7 @@ impl Del2 {
             } else {
                 !self.is_playing_action(MUTE_IN) || self.enabled_actions.load(MUTE_OUT)
             };
-            for elem in self.mute_in_delay_temp_buffer.iter_mut() {
+            for elem in &mut self.mute_in_delay_temp_buffer {
                 *elem = mute_in_value;
             }
             self.mute_in_delay_buffer
