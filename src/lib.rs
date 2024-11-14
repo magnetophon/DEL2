@@ -152,7 +152,7 @@ impl Data for SharedDelayData {
 }
 /// All the parameters
 #[derive(Params)]
-struct Del2Params {
+pub struct Del2Params {
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
     #[nested(group = "global")]
@@ -1748,7 +1748,7 @@ impl Enum for MyLadderMode {
         })
     }
 }
-struct AtomicBoolArray {
+pub struct AtomicBoolArray {
     data: AtomicU8,
 }
 
@@ -1792,7 +1792,7 @@ impl AtomicBoolArray {
     }
 }
 // #[derive(Serialize, Deserialize)]
-struct AtomicByteArray {
+pub struct AtomicByteArray {
     data: AtomicU64,
 }
 
@@ -1870,7 +1870,7 @@ impl PersistentField<'_, u8> for ArcAtomicBoolArray {
 }
 
 // Represents the last played notes with capabilities for managing active notes.
-struct LastPlayedNotes {
+pub struct LastPlayedNotes {
     state: AtomicU8,
     notes: AtomicByteArray,
     sequence: AtomicByteArray,
