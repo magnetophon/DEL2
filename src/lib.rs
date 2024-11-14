@@ -192,7 +192,7 @@ struct GlobalParams {
 
 impl GlobalParams {
     pub fn new(enabled_actions: Arc<AtomicBoolArray>, learned_notes: Arc<AtomicByteArray>) -> Self {
-        GlobalParams {
+        Self {
             dry_wet: FloatParam::new("mix", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_unit("%")
                 .with_smoother(SmoothingStyle::Linear(15.0))
@@ -306,7 +306,7 @@ pub struct TapsParams {
 
 impl TapsParams {
     pub fn new(should_update_filter: Arc<AtomicBool>) -> Self {
-        TapsParams {
+        Self {
             panning_center: FloatParam::new(
                 "panning center",
                 -1.0,
@@ -354,7 +354,7 @@ impl TapsParams {
             )),
             velocity_high: Arc::new(FilterGuiParams::new(
                 VELOCITY_HIGH_NAME_PREFIX,
-                should_update_filter.clone(),
+                should_update_filter,
                 6_000.0,               // Default cutoff for velocity_high
                 0.4,                   // Default res for velocity_high
                 util::db_to_gain(6.0), // Default drive for velocity_high
@@ -388,7 +388,7 @@ impl FilterGuiParams {
         default_drive: f32,
         default_mode: MyLadderMode,
     ) -> Self {
-        FilterGuiParams {
+        Self {
             cutoff: FloatParam::new(
                 format!("{name_prefix} cutoff"),
                 default_cutoff, // Use the passed default value
@@ -435,7 +435,7 @@ impl FilterGuiParams {
 
             mode: EnumParam::new(format!("{name_prefix} mode"), default_mode) // Use the passed default value
                 .with_callback(Arc::new({
-                    let should_update_filter = should_update_filter.clone();
+                    let should_update_filter = should_update_filter;
                     move |_| should_update_filter.store(true, Ordering::Release)
                 })),
         }
@@ -523,10 +523,10 @@ impl Del2Params {
     ) -> Self {
         Self {
             editor_state: editor::default_state(),
-            taps: TapsParams::new(should_update_filter.clone()),
+            taps: TapsParams::new(should_update_filter),
             global: GlobalParams::new(enabled_actions.clone(), learned_notes.clone()),
-            learned_notes: ArcAtomicByteArray(learned_notes.clone()),
-            enabled_actions: ArcAtomicBoolArray(enabled_actions.clone()),
+            learned_notes: ArcAtomicByteArray(learned_notes),
+            enabled_actions: ArcAtomicBoolArray(enabled_actions),
             gain: FloatParam::new(
                 "Gain",
                 util::db_to_gain(0.0),
@@ -927,7 +927,7 @@ impl Plugin for Del2 {
                     ((f32::from(note) - panning_center) / 12.0 * panning_amount).clamp(-1.0, 1.0);
                 self.delay_data.pans[tap_index] = pan;
 
-                let (offset_l, offset_r) = Del2::pan_to_haas_samples(pan, sample_rate);
+                let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
 
                 let delay_time = self.delay_data.delay_times[tap_index] as isize;
                 let write_index = self.delay_write_index;
@@ -1277,17 +1277,20 @@ impl Del2 {
             let low_params = &velocity_params.velocity_low;
             let high_params = &velocity_params.velocity_high;
 
-            let res = Del2::lerp(low_params.res.value(), high_params.res.value(), velocity);
-            let velocity_cutoff = Del2::log_interpolate(
+            let res = Self::lerp(low_params.res.value(), high_params.res.value(), velocity);
+            let velocity_cutoff = Self::log_interpolate(
                 low_params.cutoff.value(),
                 high_params.cutoff.value(),
                 velocity,
             );
             let note_cutoff = util::midi_note_to_freq(self.delay_data.notes[tap]);
-            let cutoff = (note_cutoff * self.params.taps.note_to_cutoff_amount.value()
-                + velocity_cutoff * self.params.taps.velocity_to_cutoff_amount.value())
-            .clamp(10.0, 20_000.0);
-            let drive_db = Del2::lerp(
+            let cutoff = note_cutoff
+                .mul_add(
+                    self.params.taps.note_to_cutoff_amount.value(),
+                    velocity_cutoff * self.params.taps.velocity_to_cutoff_amount.value(),
+                )
+                .clamp(10.0, 20_000.0);
+            let drive_db = Self::lerp(
                 util::gain_to_db(low_params.drive.value()),
                 util::gain_to_db(high_params.drive.value()),
                 velocity,
@@ -1305,7 +1308,7 @@ impl Del2 {
     }
 
     fn lerp(a: f32, b: f32, x: f32) -> f32 {
-        a + (b - a) * x
+        (b - a).mul_add(x, a)
     }
     fn log_interpolate(a: f32, b: f32, x: f32) -> f32 {
         a * (b / a).powf(x)
@@ -1369,8 +1372,10 @@ impl Del2 {
                 let new_peak_meter = if amplitude > current_peak_meter {
                     amplitude
                 } else {
-                    current_peak_meter * self.peak_meter_decay_weight
-                        + amplitude * (1.0 - self.peak_meter_decay_weight)
+                    current_peak_meter.mul_add(
+                        self.peak_meter_decay_weight,
+                        amplitude * (1.0 - self.peak_meter_decay_weight),
+                    )
                 };
 
                 peak_meter.store(new_peak_meter, std::sync::atomic::Ordering::Relaxed);
@@ -1664,7 +1669,7 @@ pub struct MyLadderMode(LadderMode);
 
 impl MyLadderMode {
     // Define the order of modes for interpolation
-    fn sequence() -> &'static [LadderMode] {
+    const fn sequence() -> &'static [LadderMode] {
         &[
             LadderMode::LP6,
             LadderMode::LP12,
@@ -1684,20 +1689,21 @@ impl MyLadderMode {
         Self::sequence().iter().position(|&mode| mode == self.0)
     }
 
-    fn lerp(start: MyLadderMode, end: MyLadderMode, t: f32) -> LadderMode {
+    fn lerp(start: Self, end: Self, t: f32) -> LadderMode {
         let start_index = start.index().unwrap_or(0);
         let end_index = end.index().unwrap_or(Self::sequence().len() - 1);
 
         let t = t.clamp(0.0, 1.0);
 
-        let interpolated_index =
-            (start_index as f32 + t * (end_index as f32 - start_index as f32)).round() as usize;
+        let interpolated_index = t
+            .mul_add(end_index as f32 - start_index as f32, start_index as f32)
+            .round() as usize;
 
         Self::from_index(interpolated_index).0
     }
 
-    fn lp6() -> Self {
-        MyLadderMode(LadderMode::LP6)
+    const fn lp6() -> Self {
+        Self(LadderMode::LP6)
     }
 }
 
@@ -1732,7 +1738,7 @@ impl Enum for MyLadderMode {
     }
 
     fn from_index(index: usize) -> Self {
-        MyLadderMode(match index {
+        Self(match index {
             0 => LadderMode::LP6,
             1 => LadderMode::LP12,
             2 => LadderMode::LP18,
@@ -1753,7 +1759,7 @@ pub struct AtomicBoolArray {
 }
 
 impl AtomicBoolArray {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             data: AtomicU8::new(0),
         }
@@ -1797,7 +1803,7 @@ pub struct AtomicByteArray {
 }
 
 impl AtomicByteArray {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self {
             data: AtomicU64::new(0),
         }
@@ -1880,7 +1886,7 @@ pub struct LastPlayedNotes {
 
 impl LastPlayedNotes {
     /// Constructs a new instance of `LastPlayedNotes`.
-    fn new() -> Self {
+    const fn new() -> Self {
         // Initializes the state, notes, sequence, and current_sequence fields.
         Self {
             state: AtomicU8::new(0),

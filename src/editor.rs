@@ -20,7 +20,7 @@ mod dual_meter;
 use crate::editor::dual_meter::DualMeter;
 
 #[derive(Lens, Clone)]
-pub(crate) struct Data {
+pub struct Data {
     pub params: Arc<Del2Params>,
     pub delay_data: Arc<Mutex<SharedDelayDataOutput>>,
     pub input_meter: Arc<AtomicF32>,
@@ -473,8 +473,8 @@ impl DelayGraph {
             0
         };
         ((max_delay_time as f32 + delay_data.max_tap_samples as f32)
-            / (rect_width - border_width - outline_width * 0.5))
-            .recip()
+            / outline_width.mul_add(-0.5, rect_width - border_width))
+        .recip()
     }
 
     fn draw_delay_times_as_lines(
@@ -491,11 +491,11 @@ impl DelayGraph {
         for i in 0..delay_data.current_tap {
             // Combine delay time with time scaling factor for correct horizontal scaling
             let x_offset =
-                delay_data.delay_times[i] as f32 * time_scaling_factor + border_width * 0.5;
+                (delay_data.delay_times[i] as f32).mul_add(time_scaling_factor, border_width * 0.5);
 
             // Line from bottom to top border considering border thickness
-            let start_y = bounds.y + bounds.h - border_width * 0.5;
-            let end_y = bounds.y + border_width * 0.5;
+            let start_y = border_width.mul_add(-0.5, bounds.y + bounds.h);
+            let end_y = border_width.mul_add(0.5, bounds.y);
 
             path.move_to(bounds.x + x_offset, start_y);
             path.line_to(bounds.x + x_offset, end_y);
@@ -530,11 +530,12 @@ impl DelayGraph {
             0
         };
         if delay_data.current_time > max_delay_time {
-            let x_offset = delay_data.current_time as f32 * scaling_factor + border_width * 0.5;
+            let x_offset =
+                (delay_data.current_time as f32).mul_add(scaling_factor, border_width * 0.5);
             let mut path = vg::Path::new();
             path.move_to(
                 bounds.x + x_offset,
-                bounds.y + bounds.h - border_width * 0.5,
+                border_width.mul_add(-0.5, bounds.y + bounds.h),
             );
             path.line_to(bounds.x + x_offset, bounds.y);
             path.close();
@@ -555,13 +556,16 @@ impl DelayGraph {
     ) {
         let mut path = vg::Path::new();
         for i in 0..delay_data.current_tap {
-            let x_offset = delay_data.delay_times[i] as f32 * scaling_factor + border_width * 0.5;
-            let velocity_height = (bounds.h - border_width * 0.5)
-                - (delay_data.velocities[i] * (bounds.h - border_width * 0.5));
+            let x_offset =
+                (delay_data.delay_times[i] as f32).mul_add(scaling_factor, border_width * 0.5);
+            let velocity_height = delay_data.velocities[i].mul_add(
+                -border_width.mul_add(-0.5, bounds.h),
+                border_width.mul_add(-0.5, bounds.h),
+            );
 
             path.move_to(
                 bounds.x + x_offset,
-                bounds.y + bounds.h - border_width * 0.5,
+                border_width.mul_add(-0.5, bounds.y + bounds.h),
             );
             path.line_to(bounds.x + x_offset, bounds.y + velocity_height);
         }
@@ -602,7 +606,7 @@ impl DelayGraph {
 
         // Calculate available height with margins
         let margin = 3.0 * line_width;
-        let available_height = bounds.h - 2.0 * (margin + diamond_size + border_width);
+        let available_height = 2.0f32.mul_add(-(margin + diamond_size + border_width), bounds.h);
 
         // Draw half a diamond for the first note at time 0
         let first_note = delay_data.first_note;
@@ -614,7 +618,7 @@ impl DelayGraph {
             };
 
             let first_note_height =
-                margin + diamond_size + (1.0 - normalized_first_note) * available_height;
+                (1.0 - normalized_first_note).mul_add(available_height, margin + diamond_size);
             let first_diamond_center_x = bounds.x;
             let first_diamond_center_y = bounds.y + first_note_height;
             let diamond_half_size = line_width;
@@ -637,7 +641,8 @@ impl DelayGraph {
 
         // Continue with the rest of the drawing process as usual
         for i in 0..delay_data.current_tap {
-            let x_offset = delay_data.delay_times[i] as f32 * scaling_factor + border_width * 0.5;
+            let x_offset =
+                (delay_data.delay_times[i] as f32).mul_add(scaling_factor, border_width * 0.5);
 
             let normalized_note = if max_note_value != min_note_value {
                 (f32::from(delay_data.notes[i]) - min_note_value)
@@ -646,7 +651,8 @@ impl DelayGraph {
                 f32::from(delay_data.notes[i]) / 127.0
             };
 
-            let note_height = margin + diamond_size + (1.0 - normalized_note) * available_height;
+            let note_height =
+                (1.0 - normalized_note).mul_add(available_height, margin + diamond_size);
 
             let diamond_center_x = bounds.x + x_offset;
             let diamond_center_y = bounds.y + note_height;
@@ -682,7 +688,7 @@ impl DelayGraph {
         if first_note != NO_LEARNED_NOTE {
             // Draw a line over the left half in the background color
             let mut cover_line_path = vg::Path::new();
-            let cover_x = bounds.x - line_width * 0.5 + border_width * 0.5;
+            let cover_x = border_width.mul_add(0.5, line_width.mul_add(-0.5, bounds.x));
             cover_line_path.move_to(cover_x, bounds.y);
             cover_line_path.line_to(cover_x, bounds.y + bounds.h);
 
@@ -785,7 +791,7 @@ impl ActionTrigger {
                 cx,
                 learned_notes.map(move |notes| {
                     let note_nr = notes.load(own_index);
-                    ActionTrigger::get_note_name(note_nr)
+                    Self::get_note_name(note_nr)
                 }),
             )
             .class("action-label");
@@ -845,8 +851,8 @@ impl ActionTrigger {
         border_width: f32,
     ) {
         // Adjust bounds for borders
-        let x = bounds.x + border_width * 0.5;
-        let y = bounds.y + border_width * 0.5;
+        let x = border_width.mul_add(0.5, bounds.x);
+        let y = border_width.mul_add(0.5, bounds.y);
         let w = bounds.w - border_width;
         let h = bounds.h - border_width;
 
