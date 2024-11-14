@@ -33,6 +33,7 @@ use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
+use std::ops::Index;
 use std::simd::f32x4;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -703,7 +704,10 @@ impl Plugin for Del2 {
         self.write_into_delay(buffer);
 
         while block_start < num_samples {
-            let old_nr_taps = self.delay_data.current_tap;
+            let old_nr_taps = self
+                .params
+                .current_tap
+                .load(std::sync::atomic::Ordering::SeqCst);
 
             // First of all, handle all note events that happen at the start of the block, and cut
             // the block short if another event happens before the end of it. To handle polyphonic
@@ -727,12 +731,22 @@ impl Plugin for Del2 {
                                 velocity,
                             } => {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
-                                if self.delay_data.current_tap > old_nr_taps {
-                                    let tap_index = self.delay_data.current_tap - 1;
+                                if self
+                                    .params
+                                    .current_tap
+                                    .load(std::sync::atomic::Ordering::SeqCst)
+                                    > old_nr_taps
+                                {
+                                    let tap_index = self
+                                        .params
+                                        .current_tap
+                                        .load(std::sync::atomic::Ordering::SeqCst)
+                                        - 1;
                                     // let mute_in = self.mute_in_delayed[tap_index][0];
                                     // let mute_out = self.enabled_actions.load(MUTE_OUT);
                                     // let is_muted = mute_in || mute_out;
-                                    let delay_time = self.delay_data.delay_times[tap_index];
+                                    let delay_time = self.params.delay_times[tap_index]
+                                        .load(std::sync::atomic::Ordering::SeqCst);
                                     let amp_envelope = Smoother::new(SmoothingStyle::Linear(
                                         self.params.global.attack_ms.value(),
                                     ));
@@ -904,7 +918,11 @@ impl Plugin for Del2 {
                 )
                 .is_ok()
             {
-                for tap in 0..self.delay_data.current_tap {
+                for tap in 0..self
+                    .params
+                    .current_tap
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
                     self.update_filter(tap);
                 }
             }
@@ -942,7 +960,11 @@ impl Plugin for Del2 {
                 .next_block(&mut self.global_drive, block_len);
 
             let panning_center = if self.params.taps.panning_center.value() < 0.0 {
-                f32::from(self.delay_data.first_note)
+                f32::from(
+                    self.params
+                        .first_note
+                        .load(std::sync::atomic::Ordering::SeqCst),
+                )
             } else {
                 self.params.taps.panning_center.value()
             };
@@ -957,15 +979,17 @@ impl Plugin for Del2 {
 
             for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
                 let tap_index = delay_tap.tap_index;
-                let note = self.delay_data.notes[tap_index];
+                let note = self.params.notes[tap_index].load(std::sync::atomic::Ordering::SeqCst);
 
                 let pan =
                     ((f32::from(note) - panning_center) / 12.0 * panning_amount).clamp(-1.0, 1.0);
-                self.delay_data.pans[tap_index] = pan;
+                self.params.pans[tap_index].store(pan, Ordering::SeqCst);
 
                 let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
 
-                let delay_time = self.delay_data.delay_times[tap_index] as isize;
+                let delay_time = self.params.delay_times[tap_index]
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                    as isize;
                 let write_index = self.delay_write_index;
                 // delay_time - 1 because we are processing 2 samples at once in process_audio
                 let read_index_l = write_index - (delay_time - 1 + offset_l);
@@ -1072,8 +1096,10 @@ impl Plugin for Del2 {
 impl Del2 {
     fn update_min_max_tap_samples(&mut self) {
         let sample_rate = self.sample_rate;
-        self.delay_data.max_tap_samples =
-            (sample_rate * self.params.global.max_tap_seconds.value()) as u32;
+        self.params.max_tap_samples.store(
+            (sample_rate * self.params.global.max_tap_seconds.value()) as u32,
+            Ordering::SeqCst,
+        );
         self.min_tap_samples =
             (sample_rate * self.params.global.min_tap_milliseconds.value() * 0.001) as u32;
     }
@@ -1110,7 +1136,11 @@ impl Del2 {
     }
 
     fn store_note_on_in_delay_data(&mut self, timing: u32, note: u8, velocity: f32) {
-        let is_tap_slot_available = self.delay_data.current_tap < NUM_TAPS;
+        let is_tap_slot_available = self
+            .params
+            .current_tap
+            .load(std::sync::atomic::Ordering::SeqCst)
+            < NUM_TAPS;
         let is_delay_note = !self.learned_notes.contains(note);
         let is_learning = self.is_learning.load(Ordering::SeqCst);
 
@@ -1131,7 +1161,7 @@ impl Del2 {
                 if is_delay_note && !is_learning && taps_unlocked {
                     // If in TimeOut state, reset and start new counting phase
                     self.clear_taps(timing, true);
-                    self.delay_data.first_note = note;
+                    self.params.first_note.store(note, Ordering::SeqCst);
                 }
             }
             CountingState::CountingInBuffer => {
@@ -1163,12 +1193,20 @@ impl Del2 {
             self.last_played_notes.note_off(note);
         }
 
-        let current_tap = self.delay_data.current_tap;
+        let current_tap = self
+            .params
+            .current_tap
+            .load(std::sync::atomic::Ordering::SeqCst);
         let mute_in_note = self.learned_notes.load(MUTE_IN);
         let mute_out_note = self.learned_notes.load(MUTE_OUT);
 
         // Check for timeout condition and reset if necessary
-        if self.samples_since_last_event > self.delay_data.max_tap_samples {
+        if self.samples_since_last_event
+            > self
+                .params
+                .max_tap_samples
+                .load(std::sync::atomic::Ordering::SeqCst)
+        {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
@@ -1179,15 +1217,20 @@ impl Del2 {
         {
             // Update tap information with timing and velocity
             if current_tap > 0 {
-                self.delay_data.delay_times[current_tap] =
-                    self.samples_since_last_event + self.delay_data.delay_times[current_tap - 1];
+                self.params.delay_times[current_tap].store(
+                    self.samples_since_last_event
+                        + self.params.delay_times[current_tap - 1]
+                            .load(std::sync::atomic::Ordering::SeqCst),
+                    Ordering::SeqCst,
+                );
             } else {
-                self.delay_data.delay_times[current_tap] = self.samples_since_last_event;
+                self.params.delay_times[current_tap]
+                    .store(self.samples_since_last_event, Ordering::SeqCst);
             }
-            self.delay_data.velocities[current_tap] = velocity;
-            self.delay_data.notes[current_tap] = note;
+            self.params.velocities[current_tap].store(velocity, Ordering::SeqCst);
+            self.params.notes[current_tap].store(note, Ordering::SeqCst);
 
-            self.delay_data.current_tap += 1;
+            self.params.current_tap.fetch_add(1, Ordering::SeqCst);
 
             // Indicate filter update needed
             self.should_update_filter.store(true, Ordering::Release);
@@ -1239,7 +1282,7 @@ impl Del2 {
 
     fn clear_taps(&mut self, timing: u32, restart: bool) {
         self.enabled_actions.store(LOCK_TAPS, false);
-        self.delay_data.current_tap = 0;
+        self.params.current_tap.store(0, Ordering::SeqCst);
         self.start_release_for_all_delay_taps(self.sample_rate);
         if restart {
             if self.params.global.mute_is_toggle.value() {
@@ -1251,21 +1294,38 @@ impl Del2 {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
-            self.delay_data.first_note = NO_LEARNED_NOTE;
+            self.params
+                .first_note
+                .store(NO_LEARNED_NOTE, Ordering::SeqCst);
         }
     }
 
     fn prepare_for_delay(&mut self, buffer_samples: usize) {
         self.no_more_events(buffer_samples as u32);
 
-        if self.delay_data.current_tap > 0 {
-            self.delay_data.current_time = self.delay_data.delay_times
-                [self.delay_data.current_tap - 1]
-                + self.samples_since_last_event;
+        if self
+            .params
+            .current_tap
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > 0
+        {
+            self.params.current_time.store(
+                self.params.delay_times[self
+                    .params
+                    .current_tap
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                    - 1]
+                .load(std::sync::atomic::Ordering::SeqCst)
+                    + self.samples_since_last_event,
+                Ordering::SeqCst,
+            );
         } else {
-            self.delay_data.current_time = self.samples_since_last_event;
+            self.params
+                .current_time
+                .store(self.samples_since_last_event, Ordering::SeqCst);
         }
-        self.delay_data_input.write(self.delay_data.clone());
+        // FIXME: remove
+        // self.delay_data_input.write(self.params.clone());
     }
 
     fn no_more_events(&mut self, buffer_samples: u32) {
@@ -1284,18 +1344,30 @@ impl Del2 {
             }
         }
 
-        if self.samples_since_last_event > self.delay_data.max_tap_samples {
+        if self.samples_since_last_event
+            > self
+                .params
+                .max_tap_samples
+                .load(std::sync::atomic::Ordering::SeqCst)
+        {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
-            if self.delay_data.current_tap == 0 {
-                self.delay_data.first_note = NO_LEARNED_NOTE;
+            if self
+                .params
+                .current_tap
+                .load(std::sync::atomic::Ordering::SeqCst)
+                == 0
+            {
+                self.params
+                    .first_note
+                    .store(NO_LEARNED_NOTE, Ordering::SeqCst);
             }
         };
     }
 
     fn update_filter(&mut self, tap: usize) {
-        let velocity = self.delay_data.velocities[tap];
+        let velocity = self.params.velocities[tap].load(std::sync::atomic::Ordering::SeqCst);
         let velocity_params = &self.params.taps;
 
         unsafe {
@@ -1311,7 +1383,9 @@ impl Del2 {
                 high_params.cutoff.value(),
                 velocity,
             );
-            let note_cutoff = util::midi_note_to_freq(self.delay_data.notes[tap]);
+            let note_cutoff = util::midi_note_to_freq(
+                self.params.notes[tap].load(std::sync::atomic::Ordering::SeqCst),
+            );
             let cutoff = note_cutoff
                 .mul_add(
                     self.params.taps.note_to_cutoff_amount.value(),
@@ -1986,6 +2060,29 @@ impl PersistentField<'_, [f32; 8]> for AtomicF32Array {
     }
 }
 
+// Implement the Index trait to allow for array-style access
+impl Index<usize> for AtomicU8Array {
+    type Output = Arc<AtomicU8>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+impl Index<usize> for AtomicU32Array {
+    type Output = Arc<AtomicU32>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl Index<usize> for AtomicF32Array {
+    type Output = Arc<AtomicF32>;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
 // Represents the last played notes with capabilities for managing active notes.
 pub struct LastPlayedNotes {
     state: AtomicU8,
