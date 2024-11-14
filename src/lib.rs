@@ -21,6 +21,9 @@ https://github.com/neodsp/simper-filter
 // #![warn(clippy::cargo)]
 #![warn(clippy::nursery)]
 #![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
 #![feature(portable_simd)]
 #![feature(get_mut_unchecked)]
 use array_init::array_init;
@@ -44,7 +47,7 @@ use delay_tap::DelayTap;
 const MAX_TAP_SECONDS: usize = 10;
 const NUM_TAPS: usize = 8;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * NUM_TAPS;
-const MAX_SAMPLE_RATE: usize = 192000;
+const MAX_SAMPLE_RATE: usize = 192_000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
 const VELOCITY_LOW_NAME_PREFIX: &str = "low velocity";
 const VELOCITY_HIGH_NAME_PREFIX: &str = "high velocity";
@@ -74,7 +77,7 @@ struct Del2 {
     delay_taps: [Option<DelayTap>; NUM_TAPS],
     /// The next internal delay tap ID, used only to figure out the oldest delay tap for "voice stealing".
     /// This is incremented by one each time a delay tap is created.
-    next_internal_delay_tap_id: u64,
+    next_internal_id: u64,
 
     filter_params: [Arc<FilterParams>; NUM_TAPS],
     ladders: [LadderFilter; NUM_TAPS],
@@ -483,7 +486,7 @@ impl Default for Del2 {
             )),
 
             delay_taps: [0; NUM_TAPS].map(|_| None),
-            next_internal_delay_tap_id: 0,
+            next_internal_id: 0,
 
             filter_params,
             ladders,
@@ -683,7 +686,7 @@ impl Plugin for Del2 {
             // at the block's start. If we receive polyphonic modulation that matches a delay tap that
             // has an internal note ID that's great than or equal to this one, then we should start
             // the note's smoother at the new value instead of fading in from the global value.
-            let this_sample_internal_delay_tap_id_start = self.next_internal_delay_tap_id;
+            let this_sample_internal_id_start = self.next_internal_id;
             'events: loop {
                 match next_event {
                     // If the event happens now, then we'll keep processing events
@@ -722,8 +725,8 @@ impl Plugin for Del2 {
                                     delay_tap.amp_envelope = amp_envelope;
                                     delay_tap.tap_index = tap_index;
                                     delay_tap.is_muted = false;
-                                    delay_tap.delay_tap_id = voice_id.unwrap_or_else(|| {
-                                        compute_fallback_delay_tap_id(note, channel, delay_time)
+                                    delay_tap.id = voice_id.unwrap_or_else(|| {
+                                        compute_fallback_id(note, channel, delay_time)
                                     });
                                 }
                             }
@@ -766,9 +769,8 @@ impl Plugin for Del2 {
                                 // it has been terminated (because the host doesn't know that it
                                 // will be). Because of that, we won't print any assertion failures
                                 // when we can't find the delay tap index here.
-                                if let Some(delay_tap_idx) = self.get_delay_tap_idx(voice_id) {
-                                    let delay_tap =
-                                        self.delay_taps[delay_tap_idx].as_mut().unwrap();
+                                if let Some(idx) = self.get_idx(voice_id) {
+                                    let delay_tap = self.delay_taps[idx].as_mut().unwrap();
 
                                     match poly_modulation_id {
                                         GAIN_POLY_MOD_ID => {
@@ -793,8 +795,8 @@ impl Plugin for Del2 {
                                             // same sample as a delay tap's `NoteOn` event, then it
                                             // should immediately use the modulated value
                                             // instead of slowly fading in
-                                            if delay_tap.internal_delay_tap_id
-                                                >= this_sample_internal_delay_tap_id_start
+                                            if delay_tap.internal_id
+                                                >= this_sample_internal_id_start
                                             {
                                                 smoother.reset(target_plain_value);
                                             } else {
@@ -1021,7 +1023,7 @@ impl Plugin for Del2 {
                         // delay taps
                         context.send_event(NoteEvent::VoiceTerminated {
                             timing: block_end as u32,
-                            voice_id: Some(v.delay_tap_id),
+                            voice_id: Some(v.id),
                             channel: v.channel,
                             note: v.note,
                         });
@@ -1328,14 +1330,14 @@ impl Del2 {
     }
 
     // for fn initialize():
-    fn calculate_buffer_size(&self, buffer_size: u32) -> u32 {
+    fn calculate_buffer_size(buffer_size: u32) -> u32 {
         ((TOTAL_DELAY_SAMPLES as f64 / f64::from(buffer_size)).ceil() as u32 * buffer_size)
             .next_power_of_two()
     }
 
     fn set_delay_buffer_size(&mut self, buffer_config: &BufferConfig) {
-        let min_size = self.calculate_buffer_size(buffer_config.min_buffer_size.unwrap_or(1));
-        let max_size = self.calculate_buffer_size(buffer_config.max_buffer_size);
+        let min_size = Self::calculate_buffer_size(buffer_config.min_buffer_size.unwrap_or(1));
+        let max_size = Self::calculate_buffer_size(buffer_config.max_buffer_size);
 
         self.delay_buffer_size = u32::max(min_size, max_size);
 
@@ -1473,10 +1475,10 @@ impl Del2 {
     }
     /// Get the index of a delay tap by its delay tap ID, if the delay tap exists. This does not immediately
     /// return a reference to the delay tap to avoid lifetime issues.
-    fn get_delay_tap_idx(&mut self, voice_id: i32) -> Option<usize> {
-        self.delay_taps.iter_mut().position(
-            |delay_tap| matches!(delay_tap, Some(delay_tap) if delay_tap.delay_tap_id == voice_id),
-        )
+    fn get_idx(&mut self, voice_id: i32) -> Option<usize> {
+        self.delay_taps
+            .iter_mut()
+            .position(|delay_tap| matches!(delay_tap, Some(delay_tap) if delay_tap.id == voice_id))
     }
 
     /// Start a new delay tap with the given delay tap ID. If all `delay_taps` are currently in use, the oldest
@@ -1489,8 +1491,8 @@ impl Del2 {
         note: u8,
     ) -> &mut DelayTap {
         let new_delay_tap = DelayTap {
-            delay_tap_id: 0,
-            internal_delay_tap_id: self.next_internal_delay_tap_id,
+            id: 0,
+            internal_id: self.next_internal_id,
             channel,
             note,
             velocity: 1.0,
@@ -1502,7 +1504,7 @@ impl Del2 {
             is_muted: false,
             tap_index: NUM_TAPS, // start with tap_index out of bounds, to make sure it gets set.
         };
-        self.next_internal_delay_tap_id = self.next_internal_delay_tap_id.wrapping_add(1);
+        self.next_internal_id = self.next_internal_id.wrapping_add(1);
 
         if self.params.global.mute_is_toggle.value() {
             self.enabled_actions.store(MUTE_OUT, false);
@@ -1510,13 +1512,13 @@ impl Del2 {
 
         // Can't use `.iter_mut().find()` here because nonlexical lifetimes don't apply to return
         // values
-        if let Some(free_delay_tap_idx) = self
+        if let Some(free_idx) = self
             .delay_taps
             .iter()
             .position(std::option::Option::is_none)
         {
-            self.delay_taps[free_delay_tap_idx] = Some(new_delay_tap);
-            self.delay_taps[free_delay_tap_idx].as_mut().unwrap()
+            self.delay_taps[free_idx] = Some(new_delay_tap);
+            self.delay_taps[free_idx].as_mut().unwrap()
         } else {
             // If there is no free delay tap, find and steal the oldest one
             // SAFETY: We can skip a lot of checked unwraps here since we already know all delay_taps are in
@@ -1524,9 +1526,7 @@ impl Del2 {
             let oldest_delay_tap = unsafe {
                 self.delay_taps
                     .iter_mut()
-                    .min_by_key(|delay_tap| {
-                        delay_tap.as_ref().unwrap_unchecked().internal_delay_tap_id
-                    })
+                    .min_by_key(|delay_tap| delay_tap.as_ref().unwrap_unchecked().internal_id)
                     .unwrap_unchecked()
             };
 
@@ -1536,7 +1536,7 @@ impl Del2 {
                 let oldest_delay_tap = oldest_delay_tap.as_ref().unwrap();
                 context.send_event(NoteEvent::VoiceTerminated {
                     timing: sample_offset,
-                    voice_id: Some(oldest_delay_tap.delay_tap_id),
+                    voice_id: Some(oldest_delay_tap.id),
                     channel: oldest_delay_tap.channel,
                     note: oldest_delay_tap.note,
                 });
@@ -1590,36 +1590,36 @@ impl Del2 {
     }
 
     /// Immediately terminate one or more delay tap, removing it from the pool and informing the host
-    /// that the delay tap has ended. If `delay_tap_id` is not provided, then this will terminate all
+    /// that the delay tap has ended. If `id` is not provided, then this will terminate all
     /// matching `delay_taps`.
     fn choke_delay_taps(
         &mut self,
         context: &mut impl ProcessContext<Self>,
         sample_offset: u32,
-        delay_tap_id: Option<i32>,
+        id: Option<i32>,
         channel: u8,
         note: u8,
     ) {
         for delay_tap in &mut self.delay_taps {
             match delay_tap {
                 Some(DelayTap {
-                    delay_tap_id: candidate_delay_tap_id,
+                    id: candidate_id,
                     channel: candidate_channel,
                     note: candidate_note,
                     ..
-                }) if delay_tap_id == Some(*candidate_delay_tap_id)
+                }) if id == Some(*candidate_id)
                     || (channel == *candidate_channel && note == *candidate_note) =>
                 {
                     context.send_event(NoteEvent::VoiceTerminated {
                         timing: sample_offset,
                         // Notice how we always send the terminated delay tap ID here
-                        voice_id: Some(*candidate_delay_tap_id),
+                        voice_id: Some(*candidate_id),
                         channel,
                         note,
                     });
                     *delay_tap = None;
 
-                    if delay_tap_id.is_some() {
+                    if id.is_some() {
                         return;
                     }
                 }
@@ -1631,7 +1631,7 @@ impl Del2 {
 
 /// Compute a delay tap ID in case the host doesn't provide them. Polyphonic modulation will not work in
 /// this case, but playing notes will.
-const fn compute_fallback_delay_tap_id(note: u8, channel: u8, delay_time: u32) -> i32 {
+const fn compute_fallback_id(note: u8, channel: u8, delay_time: u32) -> i32 {
     // Ensure inputs are within their valid ranges
     assert!(note <= 127, "note must be between 0 and 127");
     assert!(channel <= 15, "channel must be between 0 and 15");
@@ -1644,7 +1644,7 @@ const fn compute_fallback_delay_tap_id(note: u8, channel: u8, delay_time: u32) -
     );
 
     // Combine note, channel, and delay_time into a 32-bit integer
-    (note as i32) | ((channel as i32) << 7) | ((delay_time as i32 & 0x1FFFFF) << 11)
+    (note as i32) | ((channel as i32) << 7) | ((delay_time as i32 & 0x1F_FFFF) << 11)
 }
 
 impl ClapPlugin for Del2 {
@@ -1908,7 +1908,7 @@ impl LastPlayedNotes {
 
     /// Handles the 'note on' event.
     fn note_on(&self, note: u8) {
-        let mut current_state = self.state.load(Ordering::SeqCst);
+        let current_state = self.state.load(Ordering::SeqCst);
 
         // Check if the note is already in the table and reactivate if so.
         if let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
@@ -1931,8 +1931,6 @@ impl LastPlayedNotes {
                     .is_ok()
                 {
                     break;
-                } else {
-                    current_state = self.state.load(Ordering::SeqCst);
                 }
             }
             return;
@@ -1960,9 +1958,6 @@ impl LastPlayedNotes {
                         .store(index, self.current_sequence.fetch_add(1, Ordering::SeqCst));
                     self.active_notes.store(index, true); // Mark as active
                     break;
-                } else {
-                    // Reload state as previous compare_exchange was not successful.
-                    current_state = self.state.load(Ordering::SeqCst);
                 }
             } else {
                 // Overwrite the oldest active note
@@ -1980,7 +1975,7 @@ impl LastPlayedNotes {
 
     /// Handles the 'note off' event.
     fn note_off(&self, note: u8) {
-        let mut current_state = self.state.load(Ordering::SeqCst);
+        let current_state = self.state.load(Ordering::SeqCst);
 
         while let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
             // Calculate new state after disabling the note at the found index.
@@ -1993,9 +1988,6 @@ impl LastPlayedNotes {
                 self.sequence.store(index, 0); // Reset sequence
                 self.active_notes.store(index, false); // Mark as inactive
                 break;
-            } else {
-                // Reload state as previous compare_exchange was not successful.
-                current_state = self.state.load(Ordering::SeqCst);
             }
         }
     }

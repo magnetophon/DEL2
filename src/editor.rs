@@ -389,11 +389,11 @@ impl View for DelayGraph {
 
         // Compute the time scaling factor
         let time_scaling_factor =
-            self.compute_time_scaling_factor(delay_data, bounds.w, border_width, outline_width);
+            Self::compute_time_scaling_factor(delay_data, bounds.w, border_width, outline_width);
 
         // Draw components
-        self.draw_background(canvas, bounds, background_color);
-        self.draw_delay_times_as_lines(
+        Self::draw_background(canvas, bounds, background_color);
+        Self::draw_delay_times_as_lines(
             canvas,
             delay_data,
             bounds,
@@ -401,7 +401,7 @@ impl View for DelayGraph {
             border_width,
             time_scaling_factor,
         );
-        self.draw_time_line(
+        Self::draw_time_line(
             canvas,
             delay_data,
             bounds,
@@ -410,7 +410,7 @@ impl View for DelayGraph {
             time_scaling_factor,
             border_width,
         );
-        self.draw_tap_velocities(
+        Self::draw_tap_velocities(
             canvas,
             delay_data,
             bounds,
@@ -419,7 +419,7 @@ impl View for DelayGraph {
             time_scaling_factor,
             border_width,
         );
-        self.draw_tap_notes_and_pans(
+        Self::draw_tap_notes_and_pans(
             canvas,
             delay_data,
             bounds,
@@ -431,7 +431,7 @@ impl View for DelayGraph {
             background_color,
             true,
         );
-        self.draw_bounding_outline(canvas, bounds, border_color, border_width);
+        Self::draw_bounding_outline(canvas, bounds, border_color, border_width);
     }
 }
 
@@ -461,7 +461,6 @@ impl DelayGraph {
     }
 
     fn compute_time_scaling_factor(
-        &self,
         delay_data: &SharedDelayData,
         rect_width: f32,
         border_width: f32,
@@ -478,7 +477,6 @@ impl DelayGraph {
     }
 
     fn draw_delay_times_as_lines(
-        &self,
         canvas: &mut Canvas,
         delay_data: &SharedDelayData,
         bounds: BoundingBox,
@@ -504,7 +502,7 @@ impl DelayGraph {
         canvas.stroke_path(&path, &vg::Paint::color(border_color).with_line_width(0.7));
     }
 
-    fn draw_background(&self, canvas: &mut Canvas, bounds: BoundingBox, color: vg::Color) {
+    fn draw_background(canvas: &mut Canvas, bounds: BoundingBox, color: vg::Color) {
         let mut path = vg::Path::new();
         // Use the original bounds directly
         path.rect(bounds.x, bounds.y, bounds.w, bounds.h);
@@ -515,7 +513,6 @@ impl DelayGraph {
     }
 
     fn draw_time_line(
-        &self,
         canvas: &mut Canvas,
         delay_data: &SharedDelayData,
         bounds: BoundingBox,
@@ -545,7 +542,6 @@ impl DelayGraph {
     }
 
     fn draw_tap_velocities(
-        &self,
         canvas: &mut Canvas,
         delay_data: &SharedDelayData,
         bounds: BoundingBox,
@@ -574,7 +570,6 @@ impl DelayGraph {
     }
 
     fn draw_tap_notes_and_pans(
-        &self,
         canvas: &mut Canvas,
         delay_data: &SharedDelayData,
         bounds: BoundingBox,
@@ -701,7 +696,6 @@ impl DelayGraph {
     }
 
     fn draw_bounding_outline(
-        &self,
         canvas: &mut Canvas,
         bounds: BoundingBox,
         color: vg::Color,
