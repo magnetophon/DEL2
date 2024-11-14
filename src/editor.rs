@@ -1,9 +1,9 @@
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc, Mutex,
+    Arc,
 };
 
-use nih_plug::prelude::{AtomicF32, Editor};
+use nih_plug::prelude::Editor;
 use nih_plug_vizia::{
     assets, create_vizia_editor,
     vizia::{prelude::*, vg},
@@ -12,8 +12,8 @@ use nih_plug_vizia::{
 };
 
 use crate::{
-    util, AtomicBoolArray, AtomicByteArray, Del2Params, LastPlayedNotes, SharedDelayData,
-    SharedDelayDataOutput, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE,
+    util, AtomicBoolArray, AtomicByteArray, AtomicF32, Del2Params, LastPlayedNotes, CLEAR_TAPS,
+    LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE,
 };
 
 mod dual_meter;
@@ -22,7 +22,6 @@ use crate::editor::dual_meter::DualMeter;
 #[derive(Lens, Clone)]
 pub struct Data {
     pub params: Arc<Del2Params>,
-    pub delay_data: Arc<Mutex<SharedDelayDataOutput>>,
     pub input_meter: Arc<AtomicF32>,
     pub output_meter: Arc<AtomicF32>,
     pub is_learning: Arc<AtomicBool>,
@@ -326,7 +325,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
             .class("parameters");
             VStack::new(cx, |cx| {
                 ZStack::new(cx, |cx| {
-                    DelayGraph::new(cx, Data::delay_data)
+                    DelayGraph::new(cx, Data::params)
                     // .overflow(Overflow::Hidden)
                         ;
                     Label::new(cx, "DEL2").class("plugin-name");
@@ -364,7 +363,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
 ///////////////////////////////////////////////////////////////////////////////
 
 pub struct DelayGraph {
-    delay_data: Arc<Mutex<SharedDelayDataOutput>>,
+    params: Arc<Del2Params>,
 }
 
 // TODO: add grid to show bars & beats
@@ -375,8 +374,7 @@ impl View for DelayGraph {
     }
 
     fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
-        let mut locked_delay_data = self.delay_data.lock().unwrap();
-        let delay_data = locked_delay_data.read();
+        // let params = self.params.clone();
 
         let bounds = draw_context.bounds();
 
@@ -388,14 +386,18 @@ impl View for DelayGraph {
         let outline_width = draw_context.outline_width();
 
         // Compute the time scaling factor
-        let time_scaling_factor =
-            Self::compute_time_scaling_factor(delay_data, bounds.w, border_width, outline_width);
+        let time_scaling_factor = Self::compute_time_scaling_factor(
+            self.params.clone(),
+            bounds.w,
+            border_width,
+            outline_width,
+        );
 
         // Draw components
         Self::draw_background(canvas, bounds, background_color);
         Self::draw_delay_times_as_lines(
             canvas,
-            delay_data,
+            self.params.clone(),
             bounds,
             border_color,
             border_width,
@@ -403,7 +405,7 @@ impl View for DelayGraph {
         );
         Self::draw_time_line(
             canvas,
-            delay_data,
+            self.params.clone(),
             bounds,
             selection_color,
             outline_width,
@@ -412,7 +414,7 @@ impl View for DelayGraph {
         );
         Self::draw_tap_velocities(
             canvas,
-            delay_data,
+            self.params.clone(),
             bounds,
             outline_color,
             outline_width,
@@ -421,7 +423,7 @@ impl View for DelayGraph {
         );
         Self::draw_tap_notes_and_pans(
             canvas,
-            delay_data,
+            self.params.clone(),
             bounds,
             selection_color,
             outline_width,
@@ -436,20 +438,19 @@ impl View for DelayGraph {
 }
 
 impl DelayGraph {
-    pub fn new<SharedDelayDataL>(cx: &mut Context, delay_data: SharedDelayDataL) -> Handle<Self>
+    fn new<ParamsL>(cx: &mut Context, params: ParamsL) -> Handle<Self>
     where
-        SharedDelayDataL: Lens<Target = Arc<Mutex<SharedDelayDataOutput>>>,
+        ParamsL: Lens<Target = Arc<Del2Params>>,
     {
         Self {
-            delay_data: delay_data.get(cx),
+            params: params.get(cx),
         }
         .build(cx, |cx| {
             Label::new(
                 cx,
-                delay_data.map(move |data| {
-                    let mut locked_delay_data = data.lock().unwrap();
-                    let delay_data = locked_delay_data.read();
-                    match delay_data.current_tap {
+                params.map(move |params| {
+                    let current_tap_value = params.current_tap.load(Ordering::SeqCst);
+                    match current_tap_value {
                         0 => String::new(),
                         1 => "1 tap".to_string(),
                         tap_nr => format!("{tap_nr} taps"),
@@ -461,24 +462,25 @@ impl DelayGraph {
     }
 
     fn compute_time_scaling_factor(
-        delay_data: &SharedDelayData,
+        params: Arc<Del2Params>,
         rect_width: f32,
         border_width: f32,
         outline_width: f32,
     ) -> f32 {
-        let max_delay_time = if delay_data.current_tap > 0 {
-            delay_data.delay_times[delay_data.current_tap - 1]
+        let current_tap_value = params.current_tap.load(Ordering::SeqCst) as usize;
+        let max_delay_time = if current_tap_value > 0 {
+            params.delay_times[current_tap_value - 1].load(Ordering::SeqCst)
         } else {
             0
         };
-        ((max_delay_time as f32 + delay_data.max_tap_samples as f32)
+        ((max_delay_time as f32 + params.max_tap_samples.load(Ordering::SeqCst) as f32)
             / outline_width.mul_add(-0.5, rect_width - border_width))
         .recip()
     }
 
     fn draw_delay_times_as_lines(
         canvas: &mut Canvas,
-        delay_data: &SharedDelayData,
+        params: Arc<Del2Params>,
         bounds: BoundingBox,
         border_color: vg::Color,
         border_width: f32,
@@ -486,12 +488,12 @@ impl DelayGraph {
     ) {
         let mut path = vg::Path::new();
 
-        for i in 0..delay_data.current_tap {
-            // Combine delay time with time scaling factor for correct horizontal scaling
-            let x_offset =
-                (delay_data.delay_times[i] as f32).mul_add(time_scaling_factor, border_width * 0.5);
+        let current_tap_value = params.current_tap.load(Ordering::SeqCst) as usize;
 
-            // Line from bottom to top border considering border thickness
+        for i in 0..current_tap_value {
+            let delay_time_value = params.delay_times[i].load(Ordering::SeqCst) as f32;
+            let x_offset = delay_time_value.mul_add(time_scaling_factor, border_width * 0.5);
+
             let start_y = border_width.mul_add(-0.5, bounds.y + bounds.h);
             let end_y = border_width.mul_add(0.5, bounds.y);
 
@@ -514,21 +516,28 @@ impl DelayGraph {
 
     fn draw_time_line(
         canvas: &mut Canvas,
-        delay_data: &SharedDelayData,
+        params: Arc<Del2Params>,
         bounds: BoundingBox,
         color: vg::Color,
         line_width: f32,
         scaling_factor: f32,
         border_width: f32,
     ) {
-        let max_delay_time = if delay_data.current_tap > 0 {
-            delay_data.delay_times[delay_data.current_tap - 1]
+        let max_delay_time = if params.current_tap.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+            params.delay_times[params.current_tap.load(std::sync::atomic::Ordering::SeqCst) - 1]
+                .load(std::sync::atomic::Ordering::SeqCst)
         } else {
             0
         };
-        if delay_data.current_time > max_delay_time {
-            let x_offset =
-                (delay_data.current_time as f32).mul_add(scaling_factor, border_width * 0.5);
+        if params
+            .current_time
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > max_delay_time
+        {
+            let x_offset = (params
+                .current_time
+                .load(std::sync::atomic::Ordering::SeqCst) as f32)
+                .mul_add(scaling_factor, border_width * 0.5);
             let mut path = vg::Path::new();
             path.move_to(
                 bounds.x + x_offset,
@@ -543,7 +552,7 @@ impl DelayGraph {
 
     fn draw_tap_velocities(
         canvas: &mut Canvas,
-        delay_data: &SharedDelayData,
+        params: Arc<Del2Params>,
         bounds: BoundingBox,
         color: vg::Color,
         line_width: f32,
@@ -551,13 +560,15 @@ impl DelayGraph {
         border_width: f32,
     ) {
         let mut path = vg::Path::new();
-        for i in 0..delay_data.current_tap {
-            let x_offset =
-                (delay_data.delay_times[i] as f32).mul_add(scaling_factor, border_width * 0.5);
-            let velocity_height = delay_data.velocities[i].mul_add(
-                -border_width.mul_add(-0.5, bounds.h),
-                border_width.mul_add(-0.5, bounds.h),
-            );
+        for i in 0..params.current_tap.load(std::sync::atomic::Ordering::SeqCst) {
+            let x_offset = (params.delay_times[i].load(std::sync::atomic::Ordering::SeqCst) as f32)
+                .mul_add(scaling_factor, border_width * 0.5);
+            let velocity_height = params.velocities[i]
+                .load(std::sync::atomic::Ordering::SeqCst)
+                .mul_add(
+                    -border_width.mul_add(-0.5, bounds.h),
+                    border_width.mul_add(-0.5, bounds.h),
+                );
 
             path.move_to(
                 bounds.x + x_offset,
@@ -571,7 +582,7 @@ impl DelayGraph {
 
     fn draw_tap_notes_and_pans(
         canvas: &mut Canvas,
-        delay_data: &SharedDelayData,
+        params: Arc<Del2Params>,
         bounds: BoundingBox,
         color: vg::Color,
         line_width: f32,
@@ -586,9 +597,12 @@ impl DelayGraph {
 
         // Determine min and max note values if zoomed
         let (min_note_value, max_note_value) = if zoomed {
-            let mut used_notes = Vec::from(&delay_data.notes[0..delay_data.current_tap]);
-            if delay_data.first_note != NO_LEARNED_NOTE {
-                used_notes.push(delay_data.first_note);
+            let mut used_notes: Vec<u8> =
+                (0..params.current_tap.load(std::sync::atomic::Ordering::SeqCst))
+                    .map(|i| params.notes[i].load(Ordering::SeqCst))
+                    .collect();
+            if params.first_note.load(std::sync::atomic::Ordering::SeqCst) != NO_LEARNED_NOTE {
+                used_notes.push(params.first_note.load(std::sync::atomic::Ordering::SeqCst));
             }
             let min = used_notes.iter().copied().min().unwrap_or(0);
             let max = used_notes.iter().copied().max().unwrap_or(127);
@@ -604,7 +618,7 @@ impl DelayGraph {
         let available_height = 2.0f32.mul_add(-(margin + diamond_size + border_width), bounds.h);
 
         // Draw half a diamond for the first note at time 0
-        let first_note = delay_data.first_note;
+        let first_note = params.first_note.load(std::sync::atomic::Ordering::SeqCst);
         if first_note != NO_LEARNED_NOTE {
             let normalized_first_note = if max_note_value == min_note_value {
                 f32::from(first_note) / 127.0
@@ -635,14 +649,15 @@ impl DelayGraph {
         }
 
         // Continue with the rest of the drawing process as usual
-        for i in 0..delay_data.current_tap {
-            let x_offset =
-                (delay_data.delay_times[i] as f32).mul_add(scaling_factor, border_width * 0.5);
+        for i in 0..params.current_tap.load(std::sync::atomic::Ordering::SeqCst) {
+            let x_offset = (params.delay_times[i].load(std::sync::atomic::Ordering::SeqCst) as f32)
+                .mul_add(scaling_factor, border_width * 0.5);
 
             let normalized_note = if max_note_value == min_note_value {
-                f32::from(delay_data.notes[i]) / 127.0
+                f32::from(params.notes[i].load(std::sync::atomic::Ordering::SeqCst)) / 127.0
             } else {
-                (f32::from(delay_data.notes[i]) - min_note_value)
+                (f32::from(params.notes[i].load(std::sync::atomic::Ordering::SeqCst))
+                    - min_note_value)
                     / (max_note_value - min_note_value)
             };
 
@@ -660,7 +675,7 @@ impl DelayGraph {
             diamond_path.line_to(diamond_center_x, diamond_center_y - diamond_half_size);
             diamond_path.close();
 
-            let pan_value = delay_data.pans[i];
+            let pan_value = params.pans[i].load(std::sync::atomic::Ordering::SeqCst);
             let line_length = 50.0;
             let pan_offset = pan_value * line_length;
 

@@ -31,14 +31,12 @@ use bit_mask_ring_buf::BMRingBuf;
 use default_boxed::DefaultBoxed;
 use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
-use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::ops::Index;
 use std::simd::f32x4;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode};
-use triple_buffer::TripleBuffer;
 
 mod delay_tap;
 mod editor;
@@ -99,9 +97,6 @@ struct Del2 {
     delay_tap_gain: Box<[f32]>,
     delay_tap_amp_envelope: Box<[f32]>,
 
-    delay_data: SharedDelayData,
-    delay_data_input: SharedDelayDataInput,
-    delay_data_output: Arc<Mutex<SharedDelayDataOutput>>,
     // N counters to know where in the fade in we are: 0 is the start
     amp_envelopes: [Smoother<f32>; NUM_TAPS],
     sample_rate: f32,
@@ -123,46 +118,6 @@ struct Del2 {
     enabled_actions: Arc<AtomicBoolArray>,
 }
 
-// for use in graph
-#[derive(Clone)]
-pub struct SharedDelayData {
-    delay_times: [u32; NUM_TAPS],
-    velocities: [f32; NUM_TAPS],
-    pans: [f32; NUM_TAPS],
-    notes: [u8; NUM_TAPS],
-    current_tap: usize,
-    current_time: u32,
-    max_tap_samples: u32,
-    first_note: u8,
-}
-impl Default for SharedDelayData {
-    fn default() -> Self {
-        Self {
-            delay_times: [0; NUM_TAPS],
-            velocities: [0.0; NUM_TAPS],
-            pans: [0.0; NUM_TAPS],
-            notes: [0; NUM_TAPS],
-            current_tap: 0,
-            current_time: 0,
-            max_tap_samples: 0,
-            first_note: NO_LEARNED_NOTE,
-        }
-    }
-}
-
-pub type SharedDelayDataInput = triple_buffer::Input<SharedDelayData>;
-pub type SharedDelayDataOutput = triple_buffer::Output<SharedDelayData>;
-
-impl Data for SharedDelayData {
-    fn same(&self, other: &Self) -> bool {
-        self.delay_times == other.delay_times
-            && self.velocities == other.velocities
-            && self.notes == other.notes
-            && self.current_tap == other.current_tap
-            && self.current_time == other.current_time
-            && self.max_tap_samples == other.max_tap_samples
-    }
-}
 /// All the parameters
 #[derive(Params)]
 pub struct Del2Params {
@@ -478,9 +433,6 @@ enum CountingState {
 
 impl Default for Del2 {
     fn default() -> Self {
-        let initial_delay_data: SharedDelayData = SharedDelayData::default();
-        let (delay_data_input, delay_data_output) = TripleBuffer::new(&initial_delay_data).split();
-
         let filter_params = array_init(|_| Arc::new(FilterParams::new()));
         let should_update_filter = Arc::new(AtomicBool::new(false));
         let learned_notes = Arc::new(AtomicByteArray::new(NO_LEARNED_NOTE));
@@ -524,9 +476,6 @@ impl Default for Del2 {
             delay_tap_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_amp_envelope: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
-            delay_data: initial_delay_data,
-            delay_data_input,
-            delay_data_output: Arc::new(Mutex::new(delay_data_output)),
             amp_envelopes,
             sample_rate: 1.0,
             peak_meter_decay_weight: 1.0,
@@ -568,7 +517,7 @@ impl Del2Params {
             notes: AtomicU8Array(array_init::array_init(|_| Arc::new(AtomicU8::new(0)))),
             current_time: Arc::new(AtomicU32::new(0)),
             max_tap_samples: Arc::new(AtomicU32::new(0)),
-            first_note: Arc::new(AtomicU8::new(0)),
+            first_note: Arc::new(AtomicU8::new(NO_LEARNED_NOTE)),
 
             gain: FloatParam::new(
                 "Gain",
@@ -638,7 +587,6 @@ impl Plugin for Del2 {
                 params: self.params.clone(),
                 input_meter: self.input_meter.clone(),
                 output_meter: self.output_meter.clone(),
-                delay_data: self.delay_data_output.clone(),
                 is_learning: self.is_learning.clone(),
                 learning_index: self.learning_index.clone(),
                 learned_notes: self.learned_notes.clone(),
