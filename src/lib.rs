@@ -25,6 +25,7 @@ https://github.com/neodsp/simper-filter
 #![feature(get_mut_unchecked)]
 use array_init::array_init;
 use bit_mask_ring_buf::BMRingBuf;
+use default_boxed::DefaultBoxed;
 use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
@@ -80,18 +81,19 @@ struct Del2 {
 
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
-    delayed_audio_l: [Vec<f32>; NUM_TAPS],
-    delayed_audio_r: [Vec<f32>; NUM_TAPS],
+    delayed_audio_l: [Box<[f32]>; NUM_TAPS],
+    delayed_audio_r: [Box<[f32]>; NUM_TAPS],
     mute_in_delay_buffer: BMRingBuf<bool>,
-    mute_in_delayed: [[bool; MAX_BLOCK_SIZE]; NUM_TAPS],
+    mute_in_delayed: [Box<[bool]>; NUM_TAPS],
+    mute_in_delay_temp_buffer: Box<[bool]>,
 
     // for the smoothers
-    gain: Vec<f32>,
-    dry_wet: Vec<f32>,
-    output_gain: Vec<f32>,
-    global_drive: Vec<f32>,
-    delay_tap_gain: Vec<f32>,
-    delay_tap_amp_envelope: Vec<f32>,
+    gain: Box<[f32]>,
+    dry_wet: Box<[f32]>,
+    output_gain: Box<[f32]>,
+    global_drive: Box<[f32]>,
+    delay_tap_gain: Box<[f32]>,
+    delay_tap_amp_envelope: Box<[f32]>,
 
     delay_data: SharedDelayData,
     delay_data_input: SharedDelayDataInput,
@@ -467,6 +469,11 @@ impl Default for Del2 {
         let ladders: [LadderFilter; NUM_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
+        // let delayed_audio_l = array_init(|_| f32::default_boxed_array::<MAX_BLOCK_SIZE>());
+        // let delayed_audio_r = array_init(|_| f32::default_boxed_array::<MAX_BLOCK_SIZE>());
+        let delayed_audio_l = array_init(|_| vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice());
+        let delayed_audio_r = array_init(|_| vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice());
+        let mute_in_delayed = array_init(|_| vec![false; MAX_BLOCK_SIZE].into_boxed_slice());
 
         Self {
             params: Arc::new(Del2Params::new(
@@ -484,18 +491,19 @@ impl Default for Del2 {
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
-            delayed_audio_l: array_init(|_| vec![0.0; MAX_BLOCK_SIZE]),
-            delayed_audio_r: array_init(|_| vec![0.0; MAX_BLOCK_SIZE]),
+            delayed_audio_l,
+            delayed_audio_r,
 
             mute_in_delay_buffer: BMRingBuf::<bool>::from_len(TOTAL_DELAY_SAMPLES),
-            mute_in_delayed: [[false; MAX_BLOCK_SIZE]; NUM_TAPS],
+            mute_in_delayed,
+            mute_in_delay_temp_buffer: bool::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
-            gain: vec![0.0; MAX_BLOCK_SIZE],
-            dry_wet: vec![0.0; MAX_BLOCK_SIZE],
-            output_gain: vec![0.0; MAX_BLOCK_SIZE],
-            global_drive: vec![0.0; MAX_BLOCK_SIZE],
-            delay_tap_gain: vec![0.0; MAX_BLOCK_SIZE],
-            delay_tap_amp_envelope: vec![0.0; MAX_BLOCK_SIZE],
+            gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            dry_wet: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            output_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            global_drive: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_amp_envelope: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
             delay_data: initial_delay_data,
             delay_data_input,
@@ -663,7 +671,7 @@ impl Plugin for Del2 {
         let mut block_start: usize = 0;
         let mut block_end: usize = MAX_BLOCK_SIZE.min(num_samples);
 
-        self.resize_temp_buffers(block_end);
+        // self.resize_temp_buffers(block_end);
         // write the audio buffer into the delay
         self.write_into_delay(buffer);
 
@@ -1040,15 +1048,15 @@ impl Del2 {
     // If we don't, we are slower.
     fn resize_temp_buffers(&mut self, max_size: usize) {
         for i in 0..NUM_TAPS {
-            self.delayed_audio_l[i].resize(max_size, 0.0);
-            self.delayed_audio_r[i].resize(max_size, 0.0);
+            // self.delayed_audio_l[i].resize(max_size, 0.0);
+            // self.delayed_audio_r[i].resize(max_size, 0.0);
         }
-        self.gain.resize(max_size, 0.0);
-        self.dry_wet.resize(max_size, 0.0);
-        self.output_gain.resize(max_size, 0.0);
-        self.global_drive.resize(max_size, 0.0);
-        self.delay_tap_gain.resize(max_size, 0.0);
-        self.delay_tap_amp_envelope.resize(max_size, 0.0);
+        // self.gain.resize(max_size, 0.0);
+        // self.dry_wet.resize(max_size, 0.0);
+        // self.output_gain.resize(max_size, 0.0);
+        // self.global_drive.resize(max_size, 0.0);
+        // self.delay_tap_gain.resize(max_size, 0.0);
+        // self.delay_tap_amp_envelope.resize(max_size, 0.0);
     }
 
     fn update_min_max_tap_samples(&mut self) {
@@ -1079,10 +1087,11 @@ impl Del2 {
             } else {
                 !self.is_playing_action(MUTE_IN) || self.enabled_actions.load(MUTE_OUT)
             };
-            let mute_buffer = [mute_in_value; MAX_BLOCK_SIZE];
-
+            for elem in self.mute_in_delay_temp_buffer.iter_mut() {
+                *elem = mute_in_value;
+            }
             self.mute_in_delay_buffer
-                .write_latest(&mute_buffer[..block_len], write_index);
+                .write_latest(&self.mute_in_delay_temp_buffer[..block_len], write_index);
 
             self.delay_write_index =
                 (write_index + block_len as isize) % self.delay_buffer_size as isize;
