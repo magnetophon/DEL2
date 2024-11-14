@@ -606,10 +606,10 @@ impl DelayGraph {
         // Draw half a diamond for the first note at time 0
         let first_note = delay_data.first_note;
         if first_note != NO_LEARNED_NOTE {
-            let normalized_first_note = if max_note_value != min_note_value {
-                (f32::from(first_note) - min_note_value) / (max_note_value - min_note_value)
-            } else {
+            let normalized_first_note = if max_note_value == min_note_value {
                 f32::from(first_note) / 127.0
+            } else {
+                (f32::from(first_note) - min_note_value) / (max_note_value - min_note_value)
             };
 
             let first_note_height =
@@ -639,11 +639,11 @@ impl DelayGraph {
             let x_offset =
                 (delay_data.delay_times[i] as f32).mul_add(scaling_factor, border_width * 0.5);
 
-            let normalized_note = if max_note_value != min_note_value {
+            let normalized_note = if max_note_value == min_note_value {
+                f32::from(delay_data.notes[i]) / 127.0
+            } else {
                 (f32::from(delay_data.notes[i]) - min_note_value)
                     / (max_note_value - min_note_value)
-            } else {
-                f32::from(delay_data.notes[i]) / 127.0
             };
 
             let note_height =

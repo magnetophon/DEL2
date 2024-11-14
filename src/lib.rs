@@ -1412,10 +1412,16 @@ impl Del2 {
     fn s2v_f32_ms_then_s() -> Arc<dyn Fn(&str) -> Option<f32> + Send + Sync> {
         Arc::new(move |string| {
             let string = string.trim().to_lowercase();
-            if let Some(ms_value_str) = string.strip_suffix("ms").or(string.strip_suffix(" ms")) {
+            if let Some(ms_value_str) = string
+                .strip_suffix("ms")
+                .or_else(|| string.strip_suffix(" ms"))
+            {
                 return ms_value_str.trim().parse::<f32>().ok();
             }
-            if let Some(s_value_str) = string.strip_suffix("s").or(string.strip_suffix(" s")) {
+            if let Some(s_value_str) = string
+                .strip_suffix("s")
+                .or_else(|| string.strip_suffix(" s"))
+            {
                 return s_value_str.trim().parse::<f32>().ok().map(|s| s * 1000.0);
             }
             string.parse::<f32>().ok()
