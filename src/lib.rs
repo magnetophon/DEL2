@@ -50,7 +50,6 @@ const VELOCITY_HIGH_NAME_PREFIX: &str = "high velocity";
 // this seems to be the number JUCE is using
 const MAX_BLOCK_SIZE: usize = 32768;
 const PEAK_METER_DECAY_MS: f64 = 150.0;
-const MAX_LEARNED_NOTES: usize = 8;
 // abuse the difference in range between u8 and midi notes for special meaning
 const NO_LEARNED_NOTE: u8 = 128;
 const LEARNING: u8 = 129;
@@ -443,7 +442,6 @@ impl FilterGuiParams {
 
             mode: EnumParam::new(format!("{name_prefix} mode"), default_mode) // Use the passed default value
                 .with_callback(Arc::new({
-                    let should_update_filter = should_update_filter;
                     move |_| should_update_filter.store(true, Ordering::Release)
                 })),
         }
@@ -464,14 +462,13 @@ impl Default for Del2 {
 
         let filter_params = array_init(|_| Arc::new(FilterParams::new()));
         let should_update_filter = Arc::new(AtomicBool::new(false));
-        let learned_notes = Arc::new(AtomicByteArray::new());
+        let learned_notes = Arc::new(AtomicByteArray::new(NO_LEARNED_NOTE));
         let enabled_actions = Arc::new(AtomicBoolArray::new());
         let ladders: [LadderFilter; NUM_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
-
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
 
-        let instance = Self {
+        Self {
             params: Arc::new(Del2Params::new(
                 should_update_filter.clone(),
                 enabled_actions.clone(),
@@ -511,7 +508,7 @@ impl Default for Del2 {
             delay_write_index: 0,
             is_learning: Arc::new(AtomicBool::new(false)),
             learning_index: Arc::new(AtomicUsize::new(0)),
-            learned_notes,
+            learned_notes: learned_notes.clone(),
             last_played_notes: Arc::new(LastPlayedNotes::new()),
             samples_since_last_event: 0,
             timing_last_event: 0,
@@ -520,13 +517,7 @@ impl Default for Del2 {
             counting_state: CountingState::TimeOut,
             should_update_filter,
             enabled_actions,
-        };
-
-        for i in 0..MAX_LEARNED_NOTES {
-            instance.learned_notes.store(i, NO_LEARNED_NOTE);
         }
-
-        instance
     }
 }
 
@@ -1702,7 +1693,7 @@ impl MyLadderMode {
         ]
     }
 
-    fn index(&self) -> Option<usize> {
+    fn index(self) -> Option<usize> {
         Self::sequence().iter().position(|&mode| mode == self.0)
     }
 
@@ -1814,15 +1805,23 @@ impl AtomicBoolArray {
         self.data.fetch_xor(mask, Ordering::SeqCst);
     }
 }
-// #[derive(Serialize, Deserialize)]
 pub struct AtomicByteArray {
     data: AtomicU64,
 }
 
 impl AtomicByteArray {
-    const fn new() -> Self {
+    fn new(initial_byte: u8) -> Self {
+        let u64_value = u64::from(initial_byte)
+            | (u64::from(initial_byte) << 8)
+            | (u64::from(initial_byte) << 16)
+            | (u64::from(initial_byte) << 24)
+            | (u64::from(initial_byte) << 32)
+            | (u64::from(initial_byte) << 40)
+            | (u64::from(initial_byte) << 48)
+            | (u64::from(initial_byte) << 56);
+
         Self {
-            data: AtomicU64::new(0),
+            data: AtomicU64::new(u64_value),
         }
     }
 
@@ -1903,12 +1902,12 @@ pub struct LastPlayedNotes {
 
 impl LastPlayedNotes {
     /// Constructs a new instance of `LastPlayedNotes`.
-    const fn new() -> Self {
+    fn new() -> Self {
         // Initializes the state, notes, sequence, and current_sequence fields.
         Self {
             state: AtomicU8::new(0),
-            notes: AtomicByteArray::new(),
-            sequence: AtomicByteArray::new(),
+            notes: AtomicByteArray::new(0),
+            sequence: AtomicByteArray::new(0),
             current_sequence: AtomicU8::new(1),
             active_notes: AtomicBoolArray::new(), // Initialize new field
         }
