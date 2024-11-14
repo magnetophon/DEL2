@@ -34,7 +34,7 @@ use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::simd::f32x4;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode};
 use triple_buffer::TripleBuffer;
@@ -176,6 +176,21 @@ pub struct Del2Params {
     learned_notes: ArcAtomicByteArray,
     #[persist = "enabled-actions"]
     enabled_actions: ArcAtomicBoolArray,
+    #[persist = "delay-times"]
+    delay_times: AtomicU32Array,
+    #[persist = "velocities"]
+    velocities: AtomicF32Array,
+    #[persist = "pans"]
+    pans: AtomicF32Array,
+    #[persist = "notes"]
+    notes: AtomicU8Array,
+    #[persist = "current-tap"]
+    current_tap: Arc<AtomicUsize>,
+    current_time: Arc<AtomicU32>,
+    max_tap_samples: Arc<AtomicU32>,
+    #[persist = "first-note"]
+    first_note: Arc<AtomicU8>,
+
     /// A voice's gain. This can be polyphonically modulated.
     #[id = "gain"]
     gain: FloatParam,
@@ -544,6 +559,16 @@ impl Del2Params {
             global: GlobalParams::new(enabled_actions.clone(), learned_notes.clone()),
             learned_notes: ArcAtomicByteArray(learned_notes),
             enabled_actions: ArcAtomicBoolArray(enabled_actions),
+
+            current_tap: Arc::new(AtomicUsize::new(0)),
+            delay_times: AtomicU32Array(array_init::array_init(|_| Arc::new(AtomicU32::new(0)))),
+            velocities: AtomicF32Array(array_init::array_init(|_| Arc::new(AtomicF32::new(0.0)))),
+            pans: AtomicF32Array(array_init::array_init(|_| Arc::new(AtomicF32::new(0.0)))),
+            notes: AtomicU8Array(array_init::array_init(|_| Arc::new(AtomicU8::new(0)))),
+            current_time: Arc::new(AtomicU32::new(0)),
+            max_tap_samples: Arc::new(AtomicU32::new(0)),
+            first_note: Arc::new(AtomicU8::new(0)),
+
             gain: FloatParam::new(
                 "Gain",
                 util::db_to_gain(0.0),
@@ -1887,6 +1912,77 @@ impl PersistentField<'_, u8> for ArcAtomicBoolArray {
     {
         let value = self.0.load_u8();
         f(&value)
+    }
+}
+
+struct AtomicU8Array([Arc<AtomicU8>; NUM_TAPS]);
+struct AtomicU32Array([Arc<AtomicU32>; NUM_TAPS]);
+struct AtomicF32Array([Arc<AtomicF32>; NUM_TAPS]);
+
+// Implement PersistentField for AtomicU8Array
+impl PersistentField<'_, [u8; 8]> for AtomicU8Array {
+    fn set(&self, new_values: [u8; 8]) {
+        for (atomic, &new_value) in self.0.iter().zip(new_values.iter()) {
+            atomic.store(new_value, Ordering::SeqCst);
+        }
+    }
+
+    fn map<F, R>(&self, f: F) -> R
+    where
+        F: Fn(&[u8; 8]) -> R,
+    {
+        let values: [u8; 8] = self
+            .0
+            .iter()
+            .map(|arc| arc.load(Ordering::SeqCst))
+            .collect::<Vec<u8>>()
+            .try_into()
+            .unwrap_or_else(|_| panic!("Size mismatch"));
+        f(&values)
+    }
+}
+
+impl PersistentField<'_, [u32; 8]> for AtomicU32Array {
+    fn set(&self, new_values: [u32; 8]) {
+        for (atomic, &new_value) in self.0.iter().zip(new_values.iter()) {
+            atomic.store(new_value, Ordering::SeqCst);
+        }
+    }
+
+    fn map<F, R>(&self, f: F) -> R
+    where
+        F: Fn(&[u32; 8]) -> R,
+    {
+        let values: [u32; 8] = self
+            .0
+            .iter()
+            .map(|arc| arc.load(Ordering::SeqCst))
+            .collect::<Vec<u32>>()
+            .try_into()
+            .unwrap_or_else(|_| panic!("Size mismatch"));
+        f(&values)
+    }
+}
+
+impl PersistentField<'_, [f32; 8]> for AtomicF32Array {
+    fn set(&self, new_values: [f32; 8]) {
+        for (atomic, &new_value) in self.0.iter().zip(new_values.iter()) {
+            atomic.store(new_value, Ordering::SeqCst);
+        }
+    }
+
+    fn map<F, R>(&self, f: F) -> R
+    where
+        F: Fn(&[f32; 8]) -> R,
+    {
+        let values: [f32; 8] = self
+            .0
+            .iter()
+            .map(|arc| arc.load(Ordering::SeqCst))
+            .collect::<Vec<f32>>()
+            .try_into()
+            .unwrap_or_else(|_| panic!("Size mismatch"));
+        f(&values)
     }
 }
 
