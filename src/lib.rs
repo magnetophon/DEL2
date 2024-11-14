@@ -601,8 +601,14 @@ impl Plugin for Del2 {
         &mut self,
         _audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
-        _context: &mut impl InitContext<Self>,
+        context: &mut impl InitContext<Self>,
     ) -> bool {
+        println!(
+            "initialize taps: {}",
+            self.params
+                .current_tap
+                .load(std::sync::atomic::Ordering::SeqCst)
+        );
         // Set the sample rate from the buffer configuration
         self.sample_rate = buffer_config.sample_rate;
 
@@ -614,6 +620,13 @@ impl Plugin for Del2 {
         // Calculate and set the delay buffer size
         self.set_delay_buffer_size(buffer_config);
 
+        for tap_index in 0..self
+            .params
+            .current_tap
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            self.load_and_configure_tap(self.sample_rate, 0, 0, None, tap_index);
+        }
         // Initialize filter parameters for each tap
         self.initialize_filter_parameters();
 
@@ -621,6 +634,12 @@ impl Plugin for Del2 {
     }
 
     fn reset(&mut self) {
+        println!(
+            "reset taps: {}",
+            self.params
+                .current_tap
+                .load(std::sync::atomic::Ordering::SeqCst)
+        );
         for tap in 0..NUM_TAPS {
             self.ladders[tap].s = [f32x4::splat(0.); 4];
             self.amp_envelopes[tap].reset(0.0);
@@ -647,6 +666,11 @@ impl Plugin for Del2 {
         let mut next_event = context.next_event();
         let mut block_start: usize = 0;
         let mut block_end: usize = MAX_BLOCK_SIZE.min(num_samples);
+
+        // for now, we assume one note or less per block
+        let mut live_timing = 0;
+        let mut live_channel = 0;
+        let mut live_voice_id = None;
 
         // write the audio buffer into the delay
         self.write_into_delay(buffer);
@@ -679,43 +703,9 @@ impl Plugin for Del2 {
                                 velocity,
                             } => {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
-                                if self
-                                    .params
-                                    .current_tap
-                                    .load(std::sync::atomic::Ordering::SeqCst)
-                                    > old_nr_taps
-                                {
-                                    let tap_index = self
-                                        .params
-                                        .current_tap
-                                        .load(std::sync::atomic::Ordering::SeqCst)
-                                        - 1;
-                                    // let mute_in = self.mute_in_delayed[tap_index][0];
-                                    // let mute_out = self.enabled_actions.load(MUTE_OUT);
-                                    // let is_muted = mute_in || mute_out;
-                                    let delay_time = self.params.delay_times[tap_index]
-                                        .load(std::sync::atomic::Ordering::SeqCst);
-                                    let amp_envelope = Smoother::new(SmoothingStyle::Linear(
-                                        self.params.global.attack_ms.value(),
-                                    ));
-
-                                    // don't start the envelope when in instant mode
-                                    if self.params.global.mute_is_toggle.value() {
-                                        // This starts with the attack portion of the amplitude envelope
-                                        amp_envelope.reset(0.0);
-                                        amp_envelope.set_target(sample_rate, 1.0);
-                                    }
-                                    let delay_tap =
-                                        self.start_delay_tap(context, timing, channel, note);
-
-                                    delay_tap.velocity = velocity;
-                                    delay_tap.amp_envelope = amp_envelope;
-                                    delay_tap.tap_index = tap_index;
-                                    delay_tap.is_muted = false;
-                                    delay_tap.id = voice_id.unwrap_or_else(|| {
-                                        compute_fallback_id(note, channel, delay_time)
-                                    });
-                                }
+                                let live_timing = timing;
+                                let live_channel = channel;
+                                let live_voice_id = voice_id;
                             }
                             NoteEvent::NoteOff {
                                 timing: _,
@@ -854,6 +844,25 @@ impl Plugin for Del2 {
                 }
             }
 
+            if self
+                .params
+                .current_tap
+                .load(std::sync::atomic::Ordering::SeqCst)
+                > old_nr_taps
+            {
+                let tap_index = self
+                    .params
+                    .current_tap
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                    - 1;
+                self.load_and_configure_tap(
+                    sample_rate,
+                    live_timing,
+                    live_channel,
+                    live_voice_id,
+                    tap_index,
+                );
+            }
             self.prepare_for_delay(block_end - block_start);
 
             if self
@@ -1247,7 +1256,49 @@ impl Del2 {
                 .store(NO_LEARNED_NOTE, Ordering::SeqCst);
         }
     }
+    fn load_and_configure_tap(
+        &mut self,
+        sample_rate: f32,
+        // context: &mut (impl ProcessContext<Self> + nih_plug::prelude::ProcessContext<Self>),
+        timing: u32,
+        channel: u8,
+        voice_id: Option<i32>,
+        tap_index: usize,
+    ) {
+        // Determine tap index
+        println!("loading {tap_index} + 1 taps");
+        println!(
+            "voice id: {:#?}, channel: {channel}, timing: {timing}",
+            voice_id
+        );
 
+        // Load atomic values corresponding to the tap index
+        let delay_time = self.params.delay_times[tap_index].load(Ordering::SeqCst);
+        let note = self.params.notes[tap_index].load(Ordering::SeqCst);
+        let velocity = self.params.velocities[tap_index].load(Ordering::SeqCst);
+
+        // Create amplitude envelope
+        let mut amp_envelope =
+            Smoother::new(SmoothingStyle::Linear(self.params.global.attack_ms.value()));
+
+        // Conditionally reset and configure the amplitude envelope
+        if self.params.global.mute_is_toggle.value() {
+            amp_envelope.reset(0.0);
+            amp_envelope.set_target(sample_rate, 1.0);
+        }
+
+        // Start delay tap and configure its properties
+        let mut delay_tap = self.start_delay_tap(timing, channel, note);
+        delay_tap.velocity = velocity;
+        delay_tap.amp_envelope = amp_envelope;
+        delay_tap.tap_index = tap_index;
+        delay_tap.is_muted = false;
+
+        // Set a unique identifier for the delay tap
+        delay_tap.id = voice_id.unwrap_or_else(|| compute_fallback_id(note, channel, delay_time));
+
+        // delay_tap
+    }
     fn prepare_for_delay(&mut self, buffer_samples: usize) {
         self.no_more_events(buffer_samples as u32);
 
@@ -1538,7 +1589,7 @@ impl Del2 {
     /// delay tap will be stolen. Returns a reference to the new delay tap.
     fn start_delay_tap(
         &mut self,
-        context: &mut impl ProcessContext<Self>,
+        // context: &mut impl ProcessContext<Self>,
         sample_offset: u32,
         channel: u8,
         note: u8,
@@ -1587,12 +1638,12 @@ impl Del2 {
             // resources
             {
                 let oldest_delay_tap = oldest_delay_tap.as_ref().unwrap();
-                context.send_event(NoteEvent::VoiceTerminated {
-                    timing: sample_offset,
-                    voice_id: Some(oldest_delay_tap.id),
-                    channel: oldest_delay_tap.channel,
-                    note: oldest_delay_tap.note,
-                });
+                // context.send_event(NoteEvent::VoiceTerminated {
+                // timing: sample_offset,
+                // voice_id: Some(oldest_delay_tap.id),
+                // channel: oldest_delay_tap.channel,
+                // note: oldest_delay_tap.note,
+                // });
             }
 
             *oldest_delay_tap = Some(new_delay_tap);

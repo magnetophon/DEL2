@@ -12,12 +12,11 @@ use nih_plug_vizia::{
 };
 
 use crate::{
-    util, AtomicBoolArray, AtomicByteArray, AtomicF32, Del2Params, LastPlayedNotes, CLEAR_TAPS,
-    LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE,
+    editor::dual_meter::DualMeter, util, AtomicBoolArray, AtomicByteArray, AtomicF32, Del2Params,
+    LastPlayedNotes, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE,
 };
 
 mod dual_meter;
-use crate::editor::dual_meter::DualMeter;
 
 #[derive(Lens, Clone)]
 pub struct Data {
