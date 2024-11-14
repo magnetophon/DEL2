@@ -508,7 +508,7 @@ impl Default for Del2 {
             delay_write_index: 0,
             is_learning: Arc::new(AtomicBool::new(false)),
             learning_index: Arc::new(AtomicUsize::new(0)),
-            learned_notes: learned_notes.clone(),
+            learned_notes,
             last_played_notes: Arc::new(LastPlayedNotes::new()),
             samples_since_last_event: 0,
             timing_last_event: 0,
