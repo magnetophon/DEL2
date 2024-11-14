@@ -671,7 +671,6 @@ impl Plugin for Del2 {
         let mut block_start: usize = 0;
         let mut block_end: usize = MAX_BLOCK_SIZE.min(num_samples);
 
-        // self.resize_temp_buffers(block_end);
         // write the audio buffer into the delay
         self.write_into_delay(buffer);
 
@@ -1044,21 +1043,6 @@ impl Plugin for Del2 {
 }
 
 impl Del2 {
-    // Either we resize in the audio thread, or in the initialization fn
-    // If we don't, we are slower.
-    fn resize_temp_buffers(&mut self, max_size: usize) {
-        for i in 0..NUM_TAPS {
-            // self.delayed_audio_l[i].resize(max_size, 0.0);
-            // self.delayed_audio_r[i].resize(max_size, 0.0);
-        }
-        // self.gain.resize(max_size, 0.0);
-        // self.dry_wet.resize(max_size, 0.0);
-        // self.output_gain.resize(max_size, 0.0);
-        // self.global_drive.resize(max_size, 0.0);
-        // self.delay_tap_gain.resize(max_size, 0.0);
-        // self.delay_tap_amp_envelope.resize(max_size, 0.0);
-    }
-
     fn update_min_max_tap_samples(&mut self) {
         let sample_rate = self.sample_rate;
         self.delay_data.max_tap_samples =
