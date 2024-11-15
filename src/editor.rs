@@ -688,16 +688,24 @@ impl DelayGraph {
         zoomed: bool,
     ) {
         let mut diamond_path = vg::Path::new();
+        let mut center_path = vg::Path::new();
         let mut pan_path = vg::Path::new();
+        let first_note = params.first_note.load(std::sync::atomic::Ordering::SeqCst);
 
+        let panning_center = if params.taps.panning_center.value() < 0 {
+            first_note
+        } else {
+            params.taps.panning_center.value() as u8
+        };
         // Determine min and max note values if zoomed
         let (min_note_value, max_note_value) = if zoomed {
             let mut used_notes: Vec<u8> =
                 (0..params.current_tap.load(std::sync::atomic::Ordering::SeqCst))
                     .map(|i| params.notes[i].load(Ordering::SeqCst))
                     .collect();
-            if params.first_note.load(std::sync::atomic::Ordering::SeqCst) != NO_LEARNED_NOTE {
-                used_notes.push(params.first_note.load(std::sync::atomic::Ordering::SeqCst));
+            if first_note != NO_LEARNED_NOTE {
+                used_notes.push(first_note);
+                used_notes.push(panning_center);
             }
             let min = used_notes.iter().copied().min().unwrap_or(0);
             let max = used_notes.iter().copied().max().unwrap_or(127);
@@ -711,10 +719,40 @@ impl DelayGraph {
         // Calculate available height with margins
         let margin = 3.0 * line_width;
         let available_height = 2.0f32.mul_add(-(margin + diamond_size + border_width), bounds.h);
-
-        // Draw half a diamond for the first note at time 0
-        let first_note = params.first_note.load(std::sync::atomic::Ordering::SeqCst);
+        // Draw half a diamond for the panning center
         if first_note != NO_LEARNED_NOTE {
+            let normalized_panning_center = if max_note_value == min_note_value {
+                panning_center as f32 / 127.0
+            } else {
+                (panning_center as f32 - min_note_value) / (max_note_value - min_note_value)
+            };
+
+            let target_panning_center_height =
+                (1.0 - normalized_panning_center).mul_add(available_height, margin + diamond_size);
+
+            if params.previous_panning_center_height.load(Ordering::SeqCst) == 0.0 {
+                params
+                    .previous_panning_center_height
+                    .store(target_panning_center_height, Ordering::SeqCst);
+            }
+            let panning_center_height =
+                (params.previous_panning_center_height.load(Ordering::SeqCst) * ZOOM_SMOOTH_POLE)
+                    + (target_panning_center_height * (1.0 - ZOOM_SMOOTH_POLE));
+            params
+                .previous_panning_center_height
+                .store(panning_center_height, Ordering::SeqCst);
+
+            let diamond_half_size = line_width;
+
+            let panning_center_x = bounds.x;
+            let panning_center_y = bounds.y + panning_center_height;
+
+            center_path.move_to(panning_center_x, panning_center_y + diamond_half_size);
+            center_path.line_to(panning_center_x + diamond_half_size, panning_center_y);
+            center_path.line_to(panning_center_x, panning_center_y - diamond_half_size);
+            center_path.close();
+
+            // Draw half a diamond for the first note at time 0
             let normalized_first_note = if max_note_value == min_note_value {
                 f32::from(first_note) / 127.0
             } else {
@@ -802,6 +840,12 @@ impl DelayGraph {
             &vg::Paint::color(border_color).with_line_width(line_width),
         );
 
+        // Draw the diamond for panning center before the first note
+        canvas.stroke_path(
+            &center_path,
+            &vg::Paint::color(border_color).with_line_width(line_width),
+        );
+
         canvas.stroke_path(
             &diamond_path,
             &vg::Paint::color(color).with_line_width(line_width),
@@ -818,7 +862,6 @@ impl DelayGraph {
 
             canvas.stroke_path(
                 &cover_line_path,
-                // &vg::Paint::color(Color::red().into()).with_line_width(line_width),
                 &vg::Paint::color(background_color).with_line_width(line_width),
             );
         }

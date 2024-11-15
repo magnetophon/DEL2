@@ -151,6 +151,7 @@ pub struct Del2Params {
     previous_time_scaling_factor: Arc<AtomicF32>,
     previous_note_heights: AtomicF32Array,
     previous_first_note_height: Arc<AtomicF32>,
+    previous_panning_center_height: Arc<AtomicF32>,
 
     /// A voice's gain. This can be polyphonically modulated.
     #[id = "gain"]
@@ -278,7 +279,7 @@ impl GlobalParams {
 #[derive(Params)]
 pub struct TapsParams {
     #[id = "panning_center"]
-    pub panning_center: FloatParam,
+    pub panning_center: IntParam,
     #[id = "panning_amount"]
     pub panning_amount: FloatParam,
     #[id = "note_to_cutoff_amount"]
@@ -295,16 +296,13 @@ pub struct TapsParams {
 impl TapsParams {
     pub fn new(should_update_filter: Arc<AtomicBool>) -> Self {
         Self {
-            panning_center: FloatParam::new(
+            panning_center: IntParam::new(
                 "panning center",
-                -1.0,
-                FloatRange::Linear {
-                    min: -1.0,
-                    max: 127.0,
-                },
+                -1,
+                IntRange::Linear { min: -1, max: 127 },
             )
-            .with_value_to_string(Del2::v2s_f32_note())
-            .with_string_to_value(Del2::s2v_f32_note()),
+            .with_value_to_string(Del2::v2s_i32_note())
+            .with_string_to_value(Del2::s2v_i32_note()),
             panning_amount: FloatParam::new(
                 "panning_amount",
                 0.0,
@@ -538,6 +536,7 @@ impl Del2Params {
                 Arc::new(AtomicF32::new(0.0))
             })),
             previous_first_note_height: Arc::new(AtomicF32::new(0.0)),
+            previous_panning_center_height: Arc::new(AtomicF32::new(0.0)),
 
             gain: FloatParam::new(
                 "Gain",
@@ -911,14 +910,14 @@ impl Plugin for Del2 {
                 .smoothed
                 .next_block(&mut self.global_drive, block_len);
 
-            let panning_center = if self.params.taps.panning_center.value() < 0.0 {
+            let panning_center = if self.params.taps.panning_center.value() < 0 {
                 f32::from(
                     self.params
                         .first_note
                         .load(std::sync::atomic::Ordering::SeqCst),
                 )
             } else {
-                self.params.taps.panning_center.value()
+                self.params.taps.panning_center.value() as f32
             };
             let panning_amount = self.params.taps.panning_amount.value();
 
@@ -1257,6 +1256,9 @@ impl Del2 {
         self.params
             .previous_first_note_height
             .store(0.0, Ordering::SeqCst);
+        self.params
+            .previous_panning_center_height
+            .store(0.0, Ordering::SeqCst);
         for i in 0..NUM_TAPS {
             self.params.previous_note_heights[i].store(0.0, Ordering::SeqCst);
         }
@@ -1533,10 +1535,10 @@ impl Del2 {
             string.parse::<f32>().ok()
         })
     }
-    fn v2s_f32_note() -> Arc<dyn Fn(f32) -> String + Send + Sync> {
+    fn v2s_i32_note() -> Arc<dyn Fn(i32) -> String + Send + Sync> {
         Arc::new(move |value| {
-            let note_nr = value.round() as u8; // Convert the floating-point value to the nearest u8
-            if value < 0.0 {
+            let note_nr = value as u8; // Convert the floating-point value to the nearest u8
+            if value < 0 {
                 "first note of pattern".to_string()
             } else {
                 let note_name = util::NOTES[(note_nr % 12) as usize];
@@ -1545,7 +1547,7 @@ impl Del2 {
             }
         })
     }
-    fn s2v_f32_note() -> Arc<dyn Fn(&str) -> Option<f32> + Send + Sync> {
+    fn s2v_i32_note() -> Arc<dyn Fn(&str) -> Option<i32> + Send + Sync> {
         Arc::new(move |string| {
             let trimmed_string = string.trim().to_lowercase();
 
@@ -1555,12 +1557,12 @@ impl Del2 {
                 .iter()
                 .any(|&keyword| trimmed_string.contains(keyword))
             {
-                return Some(-1.0);
+                return Some(-1);
             }
             let len = trimmed_string.len();
             if len < 2 {
                 // if it's short, return to default: "first note of pattern"
-                return Some(-1.0);
+                return Some(-1);
             }
 
             // The note part could be one or two characters, based on whether it includes a sharp or flat (e.g., "C", "C#", "D")
@@ -1578,7 +1580,7 @@ impl Del2 {
                     .iter()
                     .position(|&n| n.eq_ignore_ascii_case(note_name))
                 {
-                    return Some((note_index as i32 + (octave + 1) * 12) as f32);
+                    return Some(note_index as i32 + (octave + 1) * 12);
                 }
             }
 
