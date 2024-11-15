@@ -26,6 +26,11 @@ pub struct Data {
     pub is_learning: Arc<AtomicBool>,
     pub learning_index: Arc<AtomicUsize>,
     pub learned_notes: Arc<AtomicByteArray>,
+    // to temp store the note we had during learning
+    // so we can keep abusing the notes above 127 to signify the states
+    // LEARNING and NO_LEARNED_NOTE but we can still go back
+    // to the last properly learned note before we started learning
+    pub last_learned_notes: Arc<AtomicByteArray>,
     pub last_played_notes: Arc<LastPlayedNotes>,
     pub enabled_actions: Arc<AtomicBoolArray>,
 }
@@ -159,6 +164,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 Data::is_learning,
                                 Data::learning_index,
                                 Data::learned_notes,
+                                Data::last_learned_notes,
                                 Data::last_played_notes,
                                 Data::enabled_actions,
                                 MUTE_IN,
@@ -176,6 +182,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 Data::is_learning,
                                 Data::learning_index,
                                 Data::learned_notes,
+                                Data::last_learned_notes,
                                 Data::last_played_notes,
                                 Data::enabled_actions,
                                 CLEAR_TAPS,
@@ -197,6 +204,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 Data::is_learning,
                                 Data::learning_index,
                                 Data::learned_notes,
+                                Data::last_learned_notes,
                                 Data::last_played_notes,
                                 Data::enabled_actions,
                                 MUTE_OUT,
@@ -214,6 +222,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                                 Data::is_learning,
                                 Data::learning_index,
                                 Data::learned_notes,
+                                Data::last_learned_notes,
                                 Data::last_played_notes,
                                 Data::enabled_actions,
                                 LOCK_TAPS,
@@ -751,12 +760,10 @@ pub struct ActionTrigger {
     is_learning: Arc<AtomicBool>,
     learning_index: Arc<AtomicUsize>,
     learned_notes: Arc<AtomicByteArray>,
+    last_learned_notes: Arc<AtomicByteArray>,
     last_played_notes: Arc<LastPlayedNotes>,
     enabled_actions: Arc<AtomicBoolArray>,
     own_index: usize,
-    // to temp store the note we had during learning
-    // so we can keep abusing the notes above 127 to signify other things
-    last_learned_note: u8,
 }
 impl ActionTrigger {
     pub fn new<
@@ -764,6 +771,7 @@ impl ActionTrigger {
         IsLearningL,
         LearningIndexL,
         LearnedNotesL,
+        LastLearnedNotesL,
         LastPlayedNotesL,
         EnabledActionsL,
     >(
@@ -772,6 +780,7 @@ impl ActionTrigger {
         is_learning: IsLearningL,
         learning_index: LearningIndexL,
         learned_notes: LearnedNotesL,
+        last_learned_notes: LastLearnedNotesL,
         last_played_notes: LastPlayedNotesL,
         enabled_actions: EnabledActionsL,
         own_index: usize,
@@ -781,6 +790,7 @@ impl ActionTrigger {
         IsLearningL: Lens<Target = Arc<AtomicBool>>,
         LearningIndexL: Lens<Target = Arc<AtomicUsize>>,
         LearnedNotesL: Lens<Target = Arc<AtomicByteArray>>,
+        LastLearnedNotesL: Lens<Target = Arc<AtomicByteArray>>,
         LastPlayedNotesL: Lens<Target = Arc<LastPlayedNotes>>,
         EnabledActionsL: Lens<Target = Arc<AtomicBoolArray>>,
     {
@@ -789,10 +799,10 @@ impl ActionTrigger {
             is_learning: is_learning.get(cx),
             learning_index: learning_index.get(cx),
             learned_notes: learned_notes.get(cx),
+            last_learned_notes: last_learned_notes.get(cx),
             last_played_notes: last_played_notes.get(cx),
             enabled_actions: enabled_actions.get(cx),
             own_index,
-            last_learned_note: NO_LEARNED_NOTE,
         }
         .build(cx, move |cx| {
             Label::new(
@@ -807,16 +817,20 @@ impl ActionTrigger {
     }
 
     pub fn start_learning(&mut self) {
+        let index = self.learning_index.load(Ordering::SeqCst);
+        self.learned_notes
+            .store(index, self.last_learned_notes.load(index));
         self.is_learning.store(true, Ordering::SeqCst);
         let index = self.own_index;
-        self.last_learned_note = self.learned_notes.load(index);
+        self.last_learned_notes
+            .store(index, self.learned_notes.load(index));
         self.learned_notes.store(index, LEARNING);
         self.learning_index.store(index, Ordering::SeqCst);
     }
     pub fn stop_learning(&self) {
         self.is_learning.store(false, Ordering::SeqCst);
         self.learned_notes
-            .store(self.own_index, self.last_learned_note);
+            .store(self.own_index, self.last_learned_notes.load(self.own_index));
     }
 
     // Checks if learning is active for this trigger

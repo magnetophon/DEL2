@@ -108,6 +108,7 @@ struct Del2 {
     // for which control are we learning?
     learning_index: Arc<AtomicUsize>,
     learned_notes: Arc<AtomicByteArray>,
+    last_learned_notes: Arc<AtomicByteArray>,
     last_played_notes: Arc<LastPlayedNotes>,
     samples_since_last_event: u32,
     timing_last_event: u32,
@@ -436,6 +437,7 @@ impl Default for Del2 {
         let filter_params = array_init(|_| Arc::new(FilterParams::new()));
         let should_update_filter = Arc::new(AtomicBool::new(false));
         let learned_notes = Arc::new(AtomicByteArray::new(NO_LEARNED_NOTE));
+        let last_learned_notes = Arc::new(AtomicByteArray::new(NO_LEARNED_NOTE));
         let enabled_actions = Arc::new(AtomicBoolArray::new());
         let ladders: [LadderFilter; NUM_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
@@ -485,6 +487,7 @@ impl Default for Del2 {
             is_learning: Arc::new(AtomicBool::new(false)),
             learning_index: Arc::new(AtomicUsize::new(0)),
             learned_notes,
+            last_learned_notes,
             last_played_notes: Arc::new(LastPlayedNotes::new()),
             samples_since_last_event: 0,
             timing_last_event: 0,
@@ -590,6 +593,7 @@ impl Plugin for Del2 {
                 is_learning: self.is_learning.clone(),
                 learning_index: self.learning_index.clone(),
                 learned_notes: self.learned_notes.clone(),
+                last_learned_notes: self.last_learned_notes.clone(),
                 last_played_notes: self.last_played_notes.clone(),
                 enabled_actions: self.enabled_actions.clone(),
             },
@@ -1118,8 +1122,9 @@ impl Del2 {
         }
         if is_learning {
             self.is_learning.store(false, Ordering::SeqCst);
-            self.learned_notes
-                .store(self.learning_index.load(Ordering::SeqCst), note);
+            let index = self.learning_index.load(Ordering::SeqCst);
+            self.learned_notes.store(index, note);
+            self.last_learned_notes.store(index, note);
             self.last_played_notes.note_off(note);
         }
 
@@ -1192,7 +1197,6 @@ impl Del2 {
             }
             if self.is_playing_action(CLEAR_TAPS) {
                 self.clear_taps(timing, false);
-                // self.last_played_notes.note_off(self.learned_notes.load(CLEAR_TAPS))
             }
         }
     }
