@@ -17,7 +17,8 @@ use crate::{
 };
 
 mod dual_meter;
-const ZOOM_SMOOTH_POLE: f32 = 0.91;
+
+const ZOOM_SMOOTH_POLE: f32 = 0.915;
 
 #[derive(Lens, Clone)]
 pub struct Data {
