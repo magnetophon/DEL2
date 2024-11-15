@@ -19,7 +19,6 @@ crate-type = ["cdylib", "lib"]
 # thread in debug builds.
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["assert_process_allocs"] }
 bit_mask_ring_buf = "0.5"
-triple_buffer = "8.0.0"
 
 nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git" }
 synfx-dsp     = { version = "0.5.6" }
