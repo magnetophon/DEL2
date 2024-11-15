@@ -17,6 +17,7 @@ use crate::{
 };
 
 mod dual_meter;
+const ZOOM_SMOOTH_POLE: f32 = 0.91;
 
 #[derive(Lens, Clone)]
 pub struct Data {
@@ -401,13 +402,12 @@ impl View for DelayGraph {
             outline_width,
         );
 
-        let factor = 0.9;
         let time_scaling_factor = (self
             .params
             .previous_time_scaling_factor
             .load(Ordering::SeqCst)
-            * factor)
-            + (target_time_scaling_factor * (1.0 - factor));
+            * ZOOM_SMOOTH_POLE)
+            + (target_time_scaling_factor * (1.0 - ZOOM_SMOOTH_POLE));
         self.params
             .previous_time_scaling_factor
             .store(time_scaling_factor, Ordering::SeqCst);
@@ -644,10 +644,22 @@ impl DelayGraph {
                 (f32::from(first_note) - min_note_value) / (max_note_value - min_note_value)
             };
 
-            let first_note_height =
+            let target_note_height =
                 (1.0 - normalized_first_note).mul_add(available_height, margin + diamond_size);
+
+            if params.previous_first_note_height.load(Ordering::SeqCst) == 0.0 {
+                params
+                    .previous_first_note_height
+                    .store(target_note_height, Ordering::SeqCst);
+            }
+            let note_height = (params.previous_first_note_height.load(Ordering::SeqCst)
+                * ZOOM_SMOOTH_POLE)
+                + (target_note_height * (1.0 - ZOOM_SMOOTH_POLE));
+            params
+                .previous_first_note_height
+                .store(note_height, Ordering::SeqCst);
             let first_diamond_center_x = bounds.x;
-            let first_diamond_center_y = bounds.y + first_note_height;
+            let first_diamond_center_y = bounds.y + note_height;
             let diamond_half_size = line_width;
 
             // Drawing only the right half of the diamond
@@ -679,9 +691,16 @@ impl DelayGraph {
                     / (max_note_value - min_note_value)
             };
 
-            let note_height =
+            let target_note_height =
                 (1.0 - normalized_note).mul_add(available_height, margin + diamond_size);
 
+            if params.previous_note_heights[i].load(Ordering::SeqCst) == 0.0 {
+                params.previous_note_heights[i].store(target_note_height, Ordering::SeqCst);
+            }
+            let note_height = (params.previous_note_heights[i].load(Ordering::SeqCst)
+                * ZOOM_SMOOTH_POLE)
+                + (target_note_height * (1.0 - ZOOM_SMOOTH_POLE));
+            params.previous_note_heights[i].store(note_height, Ordering::SeqCst);
             let diamond_center_x = bounds.x + x_offset;
             let diamond_center_y = bounds.y + note_height;
 

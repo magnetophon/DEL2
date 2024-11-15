@@ -148,6 +148,8 @@ pub struct Del2Params {
     #[persist = "first-note"]
     first_note: Arc<AtomicU8>,
     previous_time_scaling_factor: Arc<AtomicF32>,
+    previous_note_heights: AtomicF32Array,
+    previous_first_note_height: Arc<AtomicF32>,
 
     /// A voice's gain. This can be polyphonically modulated.
     #[id = "gain"]
@@ -525,6 +527,10 @@ impl Del2Params {
             max_tap_samples: Arc::new(AtomicU32::new(0)),
             first_note: Arc::new(AtomicU8::new(NO_LEARNED_NOTE)),
             previous_time_scaling_factor: Arc::new(AtomicF32::new(0.0)),
+            previous_note_heights: AtomicF32Array(array_init::array_init(|_| {
+                Arc::new(AtomicF32::new(0.0))
+            })),
+            previous_first_note_height: Arc::new(AtomicF32::new(0.0)),
 
             gain: FloatParam::new(
                 "Gain",
@@ -1220,6 +1226,14 @@ impl Del2 {
     fn clear_taps(&mut self, timing: u32, restart: bool) {
         self.enabled_actions.store(LOCK_TAPS, false);
         self.params.current_tap.store(0, Ordering::SeqCst);
+
+        self.params
+            .previous_first_note_height
+            .store(0.0, Ordering::SeqCst);
+        for i in 0..NUM_TAPS {
+            self.params.previous_note_heights[i].store(0.0, Ordering::SeqCst);
+        }
+
         self.start_release_for_all_delay_taps(self.sample_rate);
         if restart {
             if self.params.global.mute_is_toggle.value() {
