@@ -22,6 +22,7 @@ https://github.com/user-attachments/assets/cd501d5a-0c7d-404d-b970-8f6272594568
   - In toggle-mode, the trigger note for mute toggles the respective mute
   - In direct-mode, the trigger note switches it on when you press it, and off when you let it go
     The note also (retroactively) turns the other mute off when you press it.
+- The status of the triggers and the current tap pattern are saved and retrieved alongside the preset or DAW session.
 
 ## Planned features
 
