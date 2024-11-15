@@ -832,7 +832,12 @@ impl DelayGraph {
             let pan_offset = pan_value * line_length;
 
             pan_path.move_to(diamond_center_x, diamond_center_y);
-            pan_path.line_to(diamond_center_x + pan_offset, diamond_center_y);
+            pan_path.line_to(
+                (diamond_center_x + pan_offset)
+                    .max(bounds.x)
+                    .min(bounds.x + bounds.w),
+                diamond_center_y,
+            );
         }
 
         canvas.stroke_path(
