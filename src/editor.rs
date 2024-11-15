@@ -401,6 +401,7 @@ impl View for DelayGraph {
         let border_color: vg::Color = draw_context.border_color().into();
         let outline_color: vg::Color = draw_context.outline_color().into();
         let selection_color: vg::Color = draw_context.selection_color().into();
+        let font_color: vg::Color = draw_context.font_color().into();
         let border_width = draw_context.border_width();
         let outline_width = draw_context.outline_width();
         let tap_meters = self.tap_meters.clone();
@@ -461,7 +462,7 @@ impl View for DelayGraph {
             outline_width,
             time_scaling_factor,
             border_width,
-            border_color,
+            font_color,
             background_color,
             true,
         );
