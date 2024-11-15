@@ -12,19 +12,26 @@ use nih_plug_vizia::{
 };
 
 use crate::{
-    editor::dual_meter::DualMeter, util, AtomicBoolArray, AtomicByteArray, AtomicF32, Del2Params,
-    LastPlayedNotes, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE,
+    editor::dual_meter::DualMeter, util, AtomicBoolArray, AtomicByteArray, AtomicF32,
+    AtomicF32Array, Del2Params, LastPlayedNotes, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN,
+    MUTE_OUT, NO_LEARNED_NOTE,
 };
 
 mod dual_meter;
 
 const ZOOM_SMOOTH_POLE: f32 = 0.915;
 
+/// The minimum decibel value that the meters display
+const MIN_TICK: f32 = -60.0;
+/// The maximum decibel value that the meters display
+const MAX_TICK: f32 = 0.0;
+
 #[derive(Lens, Clone)]
 pub struct Data {
     pub params: Arc<Del2Params>,
     pub input_meter: Arc<AtomicF32>,
     pub output_meter: Arc<AtomicF32>,
+    pub tap_meters: Arc<AtomicF32Array>,
     pub is_learning: Arc<AtomicBool>,
     pub learning_index: Arc<AtomicUsize>,
     pub learned_notes: Arc<AtomicByteArray>,
@@ -335,7 +342,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
             .class("parameters");
             VStack::new(cx, |cx| {
                 ZStack::new(cx, |cx| {
-                    DelayGraph::new(cx, Data::params)
+                    DelayGraph::new(cx, Data::params, Data::tap_meters)
                     // .overflow(Overflow::Hidden)
                         ;
                     Label::new(cx, "DEL2").class("plugin-name");
@@ -374,6 +381,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
 
 pub struct DelayGraph {
     params: Arc<Del2Params>,
+    tap_meters: Arc<AtomicF32Array>,
 }
 
 // TODO: add grid to show bars & beats
@@ -395,6 +403,7 @@ impl View for DelayGraph {
         let selection_color: vg::Color = draw_context.selection_color().into();
         let border_width = draw_context.border_width();
         let outline_width = draw_context.outline_width();
+        let tap_meters = self.tap_meters.clone();
 
         // Compute the time scaling factor
         let target_time_scaling_factor = Self::compute_time_scaling_factor(
@@ -436,8 +445,10 @@ impl View for DelayGraph {
         Self::draw_tap_velocities(
             canvas,
             params.clone(),
+            tap_meters.clone(),
             bounds,
             outline_color,
+            border_color,
             outline_width,
             time_scaling_factor,
             border_width,
@@ -459,12 +470,18 @@ impl View for DelayGraph {
 }
 
 impl DelayGraph {
-    fn new<ParamsL>(cx: &mut Context, params: ParamsL) -> Handle<Self>
+    fn new<ParamsL, TapMetersL>(
+        cx: &mut Context,
+        params: ParamsL,
+        tap_meters: TapMetersL,
+    ) -> Handle<Self>
     where
         ParamsL: Lens<Target = Arc<Del2Params>>,
+        TapMetersL: Lens<Target = Arc<AtomicF32Array>>,
     {
         Self {
             params: params.get(cx),
+            tap_meters: tap_meters.get(cx),
         }
         .build(cx, |cx| {
             Label::new(
@@ -574,31 +591,58 @@ impl DelayGraph {
     fn draw_tap_velocities(
         canvas: &mut Canvas,
         params: Arc<Del2Params>,
+        tap_meters: Arc<AtomicF32Array>,
         bounds: BoundingBox,
-        color: vg::Color,
+        velocity_color: vg::Color,
+        meter_color: vg::Color,
         line_width: f32,
         scaling_factor: f32,
         border_width: f32,
     ) {
-        let mut path = vg::Path::new();
         for i in 0..params.current_tap.load(std::sync::atomic::Ordering::SeqCst) {
             let x_offset = (params.delay_times[i].load(std::sync::atomic::Ordering::SeqCst) as f32)
                 .mul_add(scaling_factor, border_width * 0.5);
-            let velocity_height = params.velocities[i]
-                .load(std::sync::atomic::Ordering::SeqCst)
-                .mul_add(
-                    -border_width.mul_add(-0.5, bounds.h),
-                    border_width.mul_add(-0.5, bounds.h),
-                );
 
+            let velocity_value = params.velocities[i].load(std::sync::atomic::Ordering::SeqCst);
+            let velocity_height = velocity_value.mul_add(bounds.h, -border_width * 1.0);
+
+            let meter_db =
+                util::gain_to_db(tap_meters[i].load(std::sync::atomic::Ordering::Relaxed));
+            let meter_height = {
+                let tick_fraction = (meter_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
+                (tick_fraction * bounds.h).max(0.0) // Scale using bounds height
+            };
+
+            let mut path = vg::Path::new();
             path.move_to(
-                bounds.x + x_offset,
-                border_width.mul_add(-0.5, bounds.y + bounds.h),
+                bounds.x + x_offset - (line_width * 0.75),
+                bounds.y + bounds.h - velocity_height,
             );
-            path.line_to(bounds.x + x_offset, bounds.y + velocity_height);
-        }
+            path.line_to(
+                bounds.x + x_offset - (line_width * 0.75),
+                bounds.y + bounds.h,
+            );
 
-        canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
+            canvas.stroke_path(
+                &path,
+                &vg::Paint::color(velocity_color).with_line_width(line_width * 1.5),
+            );
+
+            path = vg::Path::new();
+            path.move_to(
+                bounds.x + x_offset + (line_width * 0.75),
+                bounds.y + bounds.h - meter_height,
+            );
+            path.line_to(
+                bounds.x + x_offset + (line_width * 0.75),
+                bounds.y + bounds.h,
+            );
+
+            canvas.stroke_path(
+                &path,
+                &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
+            );
+        }
     }
 
     fn draw_tap_notes_and_pans(

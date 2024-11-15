@@ -103,6 +103,7 @@ struct Del2 {
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
     output_meter: Arc<AtomicF32>,
+    tap_meters: Arc<AtomicF32Array>,
     delay_write_index: isize,
     is_learning: Arc<AtomicBool>,
     // for which control are we learning?
@@ -447,6 +448,11 @@ impl Default for Del2 {
         let ladders: [LadderFilter; NUM_TAPS] =
             array_init(|i| LadderFilter::new(filter_params[i].clone()));
         let amp_envelopes = array_init::array_init(|_| Smoother::none());
+
+        let tap_meters = AtomicF32Array(array_init::array_init(|_| {
+            Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB))
+        }))
+        .into();
         // let delayed_audio_l = array_init(|_| f32::default_boxed_array::<MAX_BLOCK_SIZE>());
         // let delayed_audio_r = array_init(|_| f32::default_boxed_array::<MAX_BLOCK_SIZE>());
         let delayed_audio_l = array_init(|_| vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice());
@@ -488,6 +494,7 @@ impl Default for Del2 {
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
             output_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
+            tap_meters,
             delay_write_index: 0,
             is_learning: Arc::new(AtomicBool::new(false)),
             learning_index: Arc::new(AtomicUsize::new(0)),
@@ -600,6 +607,7 @@ impl Plugin for Del2 {
                 params: self.params.clone(),
                 input_meter: self.input_meter.clone(),
                 output_meter: self.output_meter.clone(),
+                tap_meters: self.tap_meters.clone(),
                 is_learning: self.is_learning.clone(),
                 learning_index: self.learning_index.clone(),
                 learned_notes: self.learned_notes.clone(),
@@ -995,14 +1003,35 @@ impl Plugin for Del2 {
                     }
                 }
 
+                let mut amplitude = 0.0;
                 for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                     let post_filter_gain = self.dry_wet[value_idx] * self.output_gain[value_idx]
                         / (drive * self.global_drive[value_idx]);
+                    let left = self.delayed_audio_l[tap_index][sample_idx] * post_filter_gain;
+                    let right = self.delayed_audio_r[tap_index][sample_idx] * post_filter_gain;
+                    output[0][sample_idx] += left;
+                    output[1][sample_idx] += right;
+                    amplitude += left.abs(); // + right.abs();
+                }
 
-                    output[0][sample_idx] +=
-                        self.delayed_audio_l[tap_index][sample_idx] * post_filter_gain;
-                    output[1][sample_idx] +=
-                        self.delayed_audio_r[tap_index][sample_idx] * post_filter_gain;
+                if self.params.editor_state.is_open() {
+                    amplitude = (amplitude / block_len as f32).abs();
+                    let current_peak_meter =
+                        self.tap_meters[tap_index].load(std::sync::atomic::Ordering::Relaxed);
+                    let new_peak_meter = if amplitude > current_peak_meter {
+                        amplitude
+                    } else {
+                        // println!("self.peak_meter_decay_weight: {}",self.peak_meter_decay_weight);
+
+                        current_peak_meter.mul_add(0.8, amplitude * (1.0 - 0.8))
+                        // current_peak_meter.mul_add(
+                        //     self.peak_meter_decay_weight,
+                        //     amplitude * (1.0 - self.peak_meter_decay_weight),
+                        // )
+                    };
+
+                    self.tap_meters[tap_index]
+                        .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed);
                 }
             }
 
@@ -1451,7 +1480,6 @@ impl Del2 {
                 amplitude += *sample;
             }
 
-            // Example of condition dependent on editor or GUI state
             if self.params.editor_state.is_open() {
                 amplitude = (amplitude / num_samples as f32).abs();
                 let current_peak_meter = peak_meter.load(std::sync::atomic::Ordering::Relaxed);
@@ -1974,7 +2002,7 @@ impl PersistentField<'_, u8> for ArcAtomicBoolArray {
 }
 struct AtomicU8Array([Arc<AtomicU8>; NUM_TAPS]);
 struct AtomicU32Array([Arc<AtomicU32>; NUM_TAPS]);
-struct AtomicF32Array([Arc<AtomicF32>; NUM_TAPS]);
+pub struct AtomicF32Array([Arc<AtomicF32>; NUM_TAPS]);
 
 // Implement PersistentField for AtomicU8Array
 impl PersistentField<'_, [u8; 8]> for AtomicU8Array {
