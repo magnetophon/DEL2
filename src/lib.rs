@@ -304,9 +304,11 @@ impl TapsParams {
             panning_amount: FloatParam::new(
                 "panning_amount",
                 0.0,
-                FloatRange::Linear {
+                FloatRange::SymmetricalSkewed {
                     min: -1.0,
                     max: 1.0,
+                    factor: FloatRange::skew_factor(-1.2),
+                    center: 0.0,
                 },
             )
             .with_unit(" %")
@@ -915,8 +917,7 @@ impl Plugin for Del2 {
                 let tap_index = delay_tap.tap_index;
                 let note = self.params.notes[tap_index].load(std::sync::atomic::Ordering::SeqCst);
 
-                let pan =
-                    ((f32::from(note) - panning_center) / 12.0 * panning_amount).clamp(-1.0, 1.0);
+                let pan = ((f32::from(note) - panning_center) * panning_amount).clamp(-1.0, 1.0);
                 self.params.pans[tap_index].store(pan, Ordering::SeqCst);
 
                 let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
