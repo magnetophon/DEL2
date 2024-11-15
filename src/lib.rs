@@ -1339,43 +1339,40 @@ impl Del2 {
         let velocity = self.params.velocities[tap].load(std::sync::atomic::Ordering::SeqCst);
         let velocity_params = &self.params.taps;
 
-        unsafe {
-            let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
+        let filter_params = unsafe { Arc::get_mut_unchecked(&mut self.filter_params[tap]) };
 
-            // Cache repeated calculations
-            let low_params = &velocity_params.velocity_low;
-            let high_params = &velocity_params.velocity_high;
+        // Cache repeated calculations
+        let low_params = &velocity_params.velocity_low;
+        let high_params = &velocity_params.velocity_high;
 
-            let res = Self::lerp(low_params.res.value(), high_params.res.value(), velocity);
-            let velocity_cutoff = Self::log_interpolate(
-                low_params.cutoff.value(),
-                high_params.cutoff.value(),
-                velocity,
-            );
-            let note_cutoff = util::midi_note_to_freq(
-                self.params.notes[tap].load(std::sync::atomic::Ordering::SeqCst),
-            );
-            let cutoff = note_cutoff
-                .mul_add(
-                    self.params.taps.note_to_cutoff_amount.value(),
-                    velocity_cutoff * self.params.taps.velocity_to_cutoff_amount.value(),
-                )
-                .clamp(10.0, 20_000.0);
-            let drive_db = Self::lerp(
-                util::gain_to_db(low_params.drive.value()),
-                util::gain_to_db(high_params.drive.value()),
-                velocity,
-            );
-            let drive = util::db_to_gain(drive_db);
-            let mode =
-                MyLadderMode::lerp(low_params.mode.value(), high_params.mode.value(), velocity);
+        let res = Self::lerp(low_params.res.value(), high_params.res.value(), velocity);
+        let velocity_cutoff = Self::log_interpolate(
+            low_params.cutoff.value(),
+            high_params.cutoff.value(),
+            velocity,
+        );
+        let note_cutoff = util::midi_note_to_freq(
+            self.params.notes[tap].load(std::sync::atomic::Ordering::SeqCst),
+        );
+        let cutoff = note_cutoff
+            .mul_add(
+                self.params.taps.note_to_cutoff_amount.value(),
+                velocity_cutoff * self.params.taps.velocity_to_cutoff_amount.value(),
+            )
+            .clamp(10.0, 20_000.0);
+        let drive_db = Self::lerp(
+            util::gain_to_db(low_params.drive.value()),
+            util::gain_to_db(high_params.drive.value()),
+            velocity,
+        );
+        let drive = util::db_to_gain(drive_db);
+        let mode = MyLadderMode::lerp(low_params.mode.value(), high_params.mode.value(), velocity);
 
-            filter_params.set_resonance(res);
-            filter_params.set_frequency(cutoff);
-            filter_params.drive = drive;
-            filter_params.ladder_mode = mode;
-            self.ladders[tap].set_mix(mode);
-        }
+        filter_params.set_resonance(res);
+        filter_params.set_frequency(cutoff);
+        filter_params.drive = drive;
+        filter_params.ladder_mode = mode;
+        self.ladders[tap].set_mix(mode);
     }
 
     fn lerp(a: f32, b: f32, x: f32) -> f32 {
@@ -1417,11 +1414,9 @@ impl Del2 {
 
     fn initialize_filter_parameters(&mut self) {
         for tap in 0..NUM_TAPS {
-            unsafe {
-                // Safety: Assumes exclusive access is guaranteed beforehand.
-                let filter_params = Arc::get_mut_unchecked(&mut self.filter_params[tap]);
-                filter_params.set_sample_rate(self.sample_rate);
-            }
+            // Safety: Assumes exclusive access is guaranteed beforehand.
+            let filter_params = unsafe { Arc::get_mut_unchecked(&mut self.filter_params[tap]) };
+            filter_params.set_sample_rate(self.sample_rate);
         }
     }
 
