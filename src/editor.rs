@@ -812,6 +812,10 @@ impl ActionTrigger {
                     Self::get_note_name(note_nr)
                 }),
             )
+            .color(learned_notes.map(move |notes| {
+                let note_nr = notes.load(own_index);
+                Self::get_note_color(note_nr)
+            }))
             .class("action-label");
         })
     }
@@ -859,6 +863,15 @@ impl ActionTrigger {
         }
     }
 
+    fn get_note_color(note_nr: u8) -> Color {
+        if note_nr == LEARNING {
+            // blue
+            Color::rgb(88, 121, 175)
+            // Color::rgb(13, 25, 49) // dark grey
+        } else {
+            Color::rgb(224, 206, 145) // yellow
+        }
+    }
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //                       for drawing
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////
