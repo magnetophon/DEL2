@@ -12,12 +12,9 @@ use nih_plug_vizia::{
 };
 
 use crate::{
-    editor::dual_meter::DualMeter, util, AtomicBoolArray, AtomicByteArray, AtomicF32,
-    AtomicF32Array, Del2Params, LastPlayedNotes, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN,
-    MUTE_OUT, NO_LEARNED_NOTE,
+    util, AtomicBoolArray, AtomicByteArray, AtomicF32, AtomicF32Array, Del2Params, LastPlayedNotes,
+    CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE,
 };
-
-mod dual_meter;
 
 const ZOOM_SMOOTH_POLE: f32 = 0.915;
 
@@ -342,33 +339,11 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
             .class("parameters");
             VStack::new(cx, |cx| {
                 ZStack::new(cx, |cx| {
-                    DelayGraph::new(cx, Data::params, Data::tap_meters)
+                    DelayGraph::new(cx, Data::params, Data::tap_meters, Data::input_meter, Data::output_meter)
                     // .overflow(Overflow::Hidden)
                         ;
                     Label::new(cx, "DEL2").class("plugin-name");
                 });
-                VStack::new(cx, |cx| {
-                    //meters
-                    HStack::new(cx, |cx| {
-                        VStack::new(cx, |cx| {
-                            Label::new(cx, "in").class("peak-meter-label");
-                            Label::new(cx, "out").class("peak-meter-label");
-                        })
-                        .class("peak-meter-label-group");
-                        DualMeter::new(
-                            cx,
-                            Data::input_meter.map(|input_meter| {
-                                util::gain_to_db(input_meter.load(Ordering::Relaxed))
-                            }),
-                            Data::output_meter.map(|output_meter| {
-                                util::gain_to_db(output_meter.load(Ordering::Relaxed))
-                            }),
-                            Some(Duration::from_millis(600)),
-                        );
-                    })
-                    .class("peak-meter-plus-label-group");
-                })
-                .class("peak-meter-group");
                 ResizeHandle::new(cx);
             });
         });
@@ -382,6 +357,8 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
 pub struct DelayGraph {
     params: Arc<Del2Params>,
     tap_meters: Arc<AtomicF32Array>,
+    input_meter: Arc<AtomicF32>,
+    output_meter: Arc<AtomicF32>,
 }
 
 // TODO: add grid to show bars & beats
@@ -405,6 +382,8 @@ impl View for DelayGraph {
         let border_width = draw_context.border_width();
         let outline_width = draw_context.outline_width();
         let tap_meters = self.tap_meters.clone();
+        let input_meter = self.input_meter.clone();
+        let output_meter = self.output_meter.clone();
 
         // Compute the time scaling factor
         let target_time_scaling_factor = Self::compute_time_scaling_factor(
@@ -447,6 +426,8 @@ impl View for DelayGraph {
             canvas,
             params.clone(),
             tap_meters.clone(),
+            input_meter.clone(),
+            output_meter.clone(),
             bounds,
             outline_color,
             border_color,
@@ -471,18 +452,24 @@ impl View for DelayGraph {
 }
 
 impl DelayGraph {
-    fn new<ParamsL, TapMetersL>(
+    fn new<ParamsL, TapMetersL, InputMeterL, OutputMeterL>(
         cx: &mut Context,
         params: ParamsL,
         tap_meters: TapMetersL,
+        input_meter: InputMeterL,
+        output_meter: OutputMeterL,
     ) -> Handle<Self>
     where
         ParamsL: Lens<Target = Arc<Del2Params>>,
         TapMetersL: Lens<Target = Arc<AtomicF32Array>>,
+        InputMeterL: Lens<Target = Arc<AtomicF32>>,
+        OutputMeterL: Lens<Target = Arc<AtomicF32>>,
     {
         Self {
             params: params.get(cx),
             tap_meters: tap_meters.get(cx),
+            input_meter: input_meter.get(cx),
+            output_meter: output_meter.get(cx),
         }
         .build(cx, |cx| {
             Label::new(
@@ -593,6 +580,8 @@ impl DelayGraph {
         canvas: &mut Canvas,
         params: Arc<Del2Params>,
         tap_meters: Arc<AtomicF32Array>,
+        input_meter: Arc<AtomicF32>,
+        output_meter: Arc<AtomicF32>,
         bounds: BoundingBox,
         velocity_color: vg::Color,
         meter_color: vg::Color,
@@ -644,6 +633,46 @@ impl DelayGraph {
                 &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
             );
         }
+
+        // Draw input_meter to the far left
+        let input_db = util::gain_to_db(input_meter.load(std::sync::atomic::Ordering::Relaxed));
+        let input_height = {
+            let tick_fraction = (input_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
+            (tick_fraction * bounds.h).max(0.0)
+        };
+        let mut path = vg::Path::new();
+        path.move_to(
+            bounds.x + border_width + 0.5 * line_width,
+            bounds.y + bounds.h - input_height,
+        );
+        path.line_to(
+            bounds.x + border_width + 0.5 * line_width,
+            bounds.y + bounds.h,
+        );
+        canvas.stroke_path(
+            &path,
+            &vg::Paint::color(meter_color).with_line_width(line_width),
+        );
+
+        // Draw output_meter to the far right
+        let output_db = util::gain_to_db(output_meter.load(std::sync::atomic::Ordering::Relaxed));
+        let output_height = {
+            let tick_fraction = (output_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
+            (tick_fraction * bounds.h).max(0.0)
+        };
+        path = vg::Path::new();
+        path.move_to(
+            bounds.x + bounds.w - border_width - 0.5 * line_width,
+            bounds.y + bounds.h - output_height,
+        );
+        path.line_to(
+            bounds.x + bounds.w - border_width - 0.5 * line_width,
+            bounds.y + bounds.h,
+        );
+        canvas.stroke_path(
+            &path,
+            &vg::Paint::color(meter_color).with_line_width(line_width),
+        );
     }
 
     fn draw_tap_notes_and_pans(

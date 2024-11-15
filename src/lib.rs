@@ -1011,23 +1011,18 @@ impl Plugin for Del2 {
                     let right = self.delayed_audio_r[tap_index][sample_idx] * post_filter_gain;
                     output[0][sample_idx] += left;
                     output[1][sample_idx] += right;
-                    amplitude += left.abs(); // + right.abs();
+                    amplitude += left.abs() + right.abs();
                 }
 
                 if self.params.editor_state.is_open() {
+                    let weight = self.peak_meter_decay_weight * 0.93; // TODO: way too slow without this, why is that?
                     amplitude = (amplitude / block_len as f32).abs();
                     let current_peak_meter =
                         self.tap_meters[tap_index].load(std::sync::atomic::Ordering::Relaxed);
                     let new_peak_meter = if amplitude > current_peak_meter {
                         amplitude
                     } else {
-                        // println!("self.peak_meter_decay_weight: {}",self.peak_meter_decay_weight);
-
-                        current_peak_meter.mul_add(0.8, amplitude * (1.0 - 0.8))
-                        // current_peak_meter.mul_add(
-                        //     self.peak_meter_decay_weight,
-                        //     amplitude * (1.0 - self.peak_meter_decay_weight),
-                        // )
+                        current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
                     };
 
                     self.tap_meters[tap_index]

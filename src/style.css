@@ -87,6 +87,7 @@ param-slider .value-entry {
 
 delay-graph {
     top: 9px;
+    bottom: 14px;
     right: 9px;
     border-width: 1px;
     outline-width: 5px;
@@ -125,11 +126,6 @@ generic-ui {
     child-right: 0px;
 }
 
-/* generic-ui .row { */
-/* col-between: 6px; */
-/* height: auto; */
-/* layout-type: row; */
-/* } */
 .row {
     height: 30px;
     layout-type: row;
@@ -155,54 +151,4 @@ generic-ui .label {
     right: 9px;
     top: 1s;
     bottom: 1s;
-}
-
-.peak-meter-group {
-    height: 85px;
-    left: 0px;
-    right: 9px;
-    top: 3px;
-    bottom: 0px;
-}
-
-dual-meter {
-    /* width: 584px; */
-    width: 1s;
-    height: 25px;
-    color: #e0ce91;
-    left: 0px;
-    bottom: 0px;
-}
-
-dual-meter .bar {
-    height: 50%;
-    border-width: 1px;
-    outline-width: 1.3px;
-    border-color: #4e4e4e;
-    color: #e0ce91;
-    top: 13px;
-}
-
-dual-meter .ticks {
-    height: 50%;
-}
-dual-meter .ticks__tick {
-    top: 0px;
-    width: 1px;
-    height: 30%;
-}
-dual-meter .ticks__label {
-    top: 4px; /* In pixels in an attempt to get this to better align to the grid */
-    font-size: 13;
-}
-.peak-meter-label {
-    left: 0px;
-}
-
-.peak-meter-label-group {
-    right: 9px;
-    top: 2px;
-    bottom: 22px;
-    font-size: 16;
-    width: 29px;
 }
