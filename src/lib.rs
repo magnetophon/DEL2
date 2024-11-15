@@ -147,6 +147,7 @@ pub struct Del2Params {
     max_tap_samples: Arc<AtomicU32>,
     #[persist = "first-note"]
     first_note: Arc<AtomicU8>,
+    previous_time_scaling_factor: Arc<AtomicF32>,
 
     /// A voice's gain. This can be polyphonically modulated.
     #[id = "gain"]
@@ -523,6 +524,7 @@ impl Del2Params {
             current_time: Arc::new(AtomicU32::new(0)),
             max_tap_samples: Arc::new(AtomicU32::new(0)),
             first_note: Arc::new(AtomicU8::new(NO_LEARNED_NOTE)),
+            previous_time_scaling_factor: Arc::new(AtomicF32::new(0.0)),
 
             gain: FloatParam::new(
                 "Gain",

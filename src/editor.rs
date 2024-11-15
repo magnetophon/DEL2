@@ -394,13 +394,23 @@ impl View for DelayGraph {
         let outline_width = draw_context.outline_width();
 
         // Compute the time scaling factor
-        let time_scaling_factor = Self::compute_time_scaling_factor(
+        let target_time_scaling_factor = Self::compute_time_scaling_factor(
             self.params.clone(),
             bounds.w,
             border_width,
             outline_width,
         );
 
+        let factor = 0.9;
+        let time_scaling_factor = (self
+            .params
+            .previous_time_scaling_factor
+            .load(Ordering::SeqCst)
+            * factor)
+            + (target_time_scaling_factor * (1.0 - factor));
+        self.params
+            .previous_time_scaling_factor
+            .store(time_scaling_factor, Ordering::SeqCst);
         // Draw components
         Self::draw_background(canvas, bounds, background_color);
         Self::draw_delay_times_as_lines(
