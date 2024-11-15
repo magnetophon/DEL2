@@ -385,6 +385,7 @@ impl View for DelayGraph {
     fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
         // let params = self.params.clone();
 
+        let params = self.params.clone();
         let bounds = draw_context.bounds();
 
         let background_color: vg::Color = draw_context.background_color().into();
@@ -396,26 +397,27 @@ impl View for DelayGraph {
 
         // Compute the time scaling factor
         let target_time_scaling_factor = Self::compute_time_scaling_factor(
-            self.params.clone(),
+            params.clone(),
             bounds.w,
             border_width,
             outline_width,
         );
-
-        let time_scaling_factor = (self
-            .params
-            .previous_time_scaling_factor
-            .load(Ordering::SeqCst)
+        if params.previous_time_scaling_factor.load(Ordering::SeqCst) == 0.0 {
+            params
+                .previous_time_scaling_factor
+                .store(target_time_scaling_factor, Ordering::SeqCst);
+        }
+        let time_scaling_factor = (params.previous_time_scaling_factor.load(Ordering::SeqCst)
             * ZOOM_SMOOTH_POLE)
             + (target_time_scaling_factor * (1.0 - ZOOM_SMOOTH_POLE));
-        self.params
+        params
             .previous_time_scaling_factor
             .store(time_scaling_factor, Ordering::SeqCst);
         // Draw components
         Self::draw_background(canvas, bounds, background_color);
         Self::draw_delay_times_as_lines(
             canvas,
-            self.params.clone(),
+            params.clone(),
             bounds,
             border_color,
             border_width,
@@ -423,7 +425,7 @@ impl View for DelayGraph {
         );
         Self::draw_time_line(
             canvas,
-            self.params.clone(),
+            params.clone(),
             bounds,
             selection_color,
             outline_width,
@@ -432,7 +434,7 @@ impl View for DelayGraph {
         );
         Self::draw_tap_velocities(
             canvas,
-            self.params.clone(),
+            params.clone(),
             bounds,
             outline_color,
             outline_width,
@@ -441,7 +443,7 @@ impl View for DelayGraph {
         );
         Self::draw_tap_notes_and_pans(
             canvas,
-            self.params.clone(),
+            params.clone(),
             bounds,
             selection_color,
             outline_width,

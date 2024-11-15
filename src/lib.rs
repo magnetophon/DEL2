@@ -1228,6 +1228,9 @@ impl Del2 {
         self.params.current_tap.store(0, Ordering::SeqCst);
 
         self.params
+            .previous_time_scaling_factor
+            .store(0.0, Ordering::SeqCst);
+        self.params
             .previous_first_note_height
             .store(0.0, Ordering::SeqCst);
         for i in 0..NUM_TAPS {
