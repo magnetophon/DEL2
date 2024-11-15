@@ -311,7 +311,7 @@ impl TapsParams {
                 FloatRange::SymmetricalSkewed {
                     min: -1.0,
                     max: 1.0,
-                    factor: FloatRange::skew_factor(-1.2),
+                    factor: FloatRange::skew_factor(-1.3),
                     center: 0.0,
                 },
             )
