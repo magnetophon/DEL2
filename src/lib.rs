@@ -1322,38 +1322,29 @@ impl Del2 {
     fn prepare_for_delay(&mut self, buffer_samples: usize) {
         self.no_more_events(buffer_samples as u32);
 
-        if self
-            .params
-            .current_tap
-            .load(std::sync::atomic::Ordering::SeqCst)
-            > 0
-        {
-            self.params.current_time.store(
-                self.params.delay_times[self
-                    .params
-                    .current_tap
-                    .load(std::sync::atomic::Ordering::SeqCst)
-                    - 1]
-                .load(std::sync::atomic::Ordering::SeqCst)
-                    + self.samples_since_last_event,
-                Ordering::SeqCst,
-            );
+        // Cache the current tap value to reduce atomic loads
+        let current_tap = self.params.current_tap.load(Ordering::SeqCst);
+        let samples_since_last_event = self.samples_since_last_event; // Cache to a local variable
+
+        // Calculate the current time based on whether there are taps
+        let current_time = if current_tap > 0 {
+            let last_delay_time = self.params.delay_times[current_tap - 1].load(Ordering::SeqCst);
+            last_delay_time + samples_since_last_event
         } else {
-            self.params
-                .current_time
-                .store(self.samples_since_last_event, Ordering::SeqCst);
-        }
-        // FIXME: remove
-        // self.delay_data_input.write(self.params.clone());
+            samples_since_last_event
+        };
+
+        // Store the computed current time
+        self.params
+            .current_time
+            .store(current_time, Ordering::SeqCst);
     }
 
     fn no_more_events(&mut self, buffer_samples: u32) {
         match self.counting_state {
             CountingState::TimeOut => {}
             CountingState::CountingInBuffer => {
-                // TODO: is this correct?
-                // timing_last_event is sometimes bigger than buffer_samples, so this overflows:
-                // self.samples_since_last_event = buffer_samples as u32 - self.timing_last_event;
+                // Use saturating_sub to safely handle potential overflow
                 self.samples_since_last_event =
                     buffer_samples.saturating_sub(self.timing_last_event);
                 self.counting_state = CountingState::CountingAcrossBuffer;
@@ -1363,65 +1354,66 @@ impl Del2 {
             }
         }
 
-        if self.samples_since_last_event
-            > self
-                .params
-                .max_tap_samples
-                .load(std::sync::atomic::Ordering::SeqCst)
-        {
+        if self.samples_since_last_event > self.params.max_tap_samples.load(Ordering::SeqCst) {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
-            if self
-                .params
-                .current_tap
-                .load(std::sync::atomic::Ordering::SeqCst)
-                == 0
-            {
+
+            if self.params.current_tap.load(Ordering::SeqCst) == 0 {
                 self.params
                     .first_note
                     .store(NO_LEARNED_NOTE, Ordering::SeqCst);
             }
-        };
+        }
     }
 
     fn update_filter(&mut self, tap: usize) {
+        // Load atomic values that are used outside computation steps
         let velocity = self.params.velocities[tap].load(std::sync::atomic::Ordering::SeqCst);
-        let velocity_params = &self.params.taps;
 
+        // Unsafe block to get a mutable reference to the filter parameters
         let filter_params = unsafe { Arc::get_mut_unchecked(&mut self.filter_params[tap]) };
 
-        // Cache repeated calculations
+        // Reference to velocity parameters
+        let velocity_params = &self.params.taps;
         let low_params = &velocity_params.velocity_low;
         let high_params = &velocity_params.velocity_high;
 
+        // Direct calculation using values needed for multiple operations
         let res = Self::lerp(low_params.res.value(), high_params.res.value(), velocity);
+
         let velocity_cutoff = Self::log_interpolate(
             low_params.cutoff.value(),
             high_params.cutoff.value(),
             velocity,
         );
+
         let note_cutoff = util::midi_note_to_freq(
             self.params.notes[tap].load(std::sync::atomic::Ordering::SeqCst),
         );
         let cutoff = note_cutoff
             .mul_add(
-                self.params.taps.note_to_cutoff_amount.value(),
-                velocity_cutoff * self.params.taps.velocity_to_cutoff_amount.value(),
+                velocity_params.note_to_cutoff_amount.value(),
+                velocity_cutoff * velocity_params.velocity_to_cutoff_amount.value(),
             )
             .clamp(10.0, 20_000.0);
+
         let drive_db = Self::lerp(
             util::gain_to_db(low_params.drive.value()),
             util::gain_to_db(high_params.drive.value()),
             velocity,
         );
         let drive = util::db_to_gain(drive_db);
+
         let mode = MyLadderMode::lerp(low_params.mode.value(), high_params.mode.value(), velocity);
 
+        // Apply computed parameters
         filter_params.set_resonance(res);
         filter_params.set_frequency(cutoff);
         filter_params.drive = drive;
         filter_params.ladder_mode = mode;
+
+        // Update filter mix mode
         self.ladders[tap].set_mix(mode);
     }
 
@@ -1464,7 +1456,6 @@ impl Del2 {
 
     fn initialize_filter_parameters(&mut self) {
         for tap in 0..NUM_TAPS {
-            // Safety: Assumes exclusive access is guaranteed beforehand.
             let filter_params = unsafe { Arc::get_mut_unchecked(&mut self.filter_params[tap]) };
             filter_params.set_sample_rate(self.sample_rate);
         }
@@ -1473,8 +1464,8 @@ impl Del2 {
     fn update_peak_meter(&self, buffer: &mut Buffer, peak_meter: &AtomicF32) {
         // Access samples using the iterator
         for channel_samples in buffer.iter_samples() {
-            let mut amplitude = 0.0;
             let num_samples = channel_samples.len();
+            let mut amplitude = 0.0;
 
             for sample in channel_samples {
                 // Process each sample (e.g., apply gain if necessary)
@@ -1601,64 +1592,38 @@ impl Del2 {
 
     /// Start a new delay tap with the given delay tap ID. If all `delay_taps` are currently in use, the oldest
     /// delay tap will be stolen. Returns a reference to the new delay tap.
-    fn start_delay_tap(
-        &mut self,
-        // context: &mut impl ProcessContext<Self>,
-        // sample_offset: u32,
-        channel: u8,
-        note: u8,
-    ) -> &mut DelayTap {
+    fn start_delay_tap(&mut self, channel: u8, note: u8) -> &mut DelayTap {
+        // Initialize new delay tap with the provided arguments
         let new_delay_tap = DelayTap {
             id: 0,
             internal_id: self.next_internal_id,
             channel,
             note,
             velocity: 1.0,
-
             releasing: false,
             amp_envelope: Smoother::none(),
-
             delay_tap_gain: None,
             is_muted: false,
-            tap_index: NUM_TAPS, // start with tap_index out of bounds, to make sure it gets set.
+            tap_index: NUM_TAPS, // Initial out-of-bounds safety index
         };
         self.next_internal_id = self.next_internal_id.wrapping_add(1);
 
+        // Manage mute toggle state
         if self.params.global.mute_is_toggle.value() {
             self.enabled_actions.store(MUTE_OUT, false);
         }
 
-        // Can't use `.iter_mut().find()` here because nonlexical lifetimes don't apply to return
-        // values
-        if let Some(free_idx) = self
-            .delay_taps
-            .iter()
-            .position(std::option::Option::is_none)
-        {
+        // Find a free index or replace the oldest delay tap
+        if let Some(free_idx) = self.delay_taps.iter().position(Option::is_none) {
             self.delay_taps[free_idx] = Some(new_delay_tap);
             self.delay_taps[free_idx].as_mut().unwrap()
         } else {
-            // If there is no free delay tap, find and steal the oldest one
-            // SAFETY: We can skip a lot of checked unwraps here since we already know all delay_taps are in
-            //         use
-            let oldest_delay_tap = unsafe {
-                self.delay_taps
-                    .iter_mut()
-                    .min_by_key(|delay_tap| delay_tap.as_ref().unwrap_unchecked().internal_id)
-                    .unwrap_unchecked()
-            };
-
-            // The stolen delay tap needs to be terminated so the host can reuse its modulation
-            // resources
-            // {
-            // let oldest_delay_tap = oldest_delay_tap.as_ref().unwrap();
-            // context.send_event(NoteEvent::VoiceTerminated {
-            // timing: sample_offset,
-            // voice_id: Some(oldest_delay_tap.id),
-            // channel: oldest_delay_tap.channel,
-            // note: oldest_delay_tap.note,
-            // });
-            // }
+            // Find, replace and return the oldest delay tap
+            let oldest_delay_tap = self
+                .delay_taps
+                .iter_mut()
+                .min_by_key(|t| t.as_ref().map(|tap| tap.internal_id).unwrap_or(u64::MAX))
+                .expect("At least one delay tap should exist");
 
             *oldest_delay_tap = Some(new_delay_tap);
             oldest_delay_tap.as_mut().unwrap()
