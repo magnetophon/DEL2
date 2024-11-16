@@ -664,6 +664,9 @@ impl Plugin for Del2 {
             self.load_and_configure_tap(self.sample_rate, 0, None, tap_index);
         }
 
+        self.counting_state = CountingState::TimeOut;
+        self.timing_last_event = 0;
+        self.samples_since_last_event = 0;
         // Indicate filter update needed
         self.should_update_filter.store(true, Ordering::Release);
         // Reset buffers and envelopes here. This can be called from the audio thread and may not
@@ -1206,6 +1209,11 @@ impl Del2 {
             self.params.notes[current_tap].store(note, Ordering::SeqCst);
 
             self.params.current_tap.fetch_add(1, Ordering::SeqCst);
+            if self.params.current_tap.load(Ordering::SeqCst) == NUM_TAPS {
+                self.counting_state = CountingState::TimeOut;
+                self.timing_last_event = 0;
+                self.samples_since_last_event = 0;
+            }
 
             // Indicate filter update needed
             self.should_update_filter.store(true, Ordering::Release);
