@@ -496,6 +496,8 @@ impl DelayGraph {
         let current_tap_value = params.current_tap.load(Ordering::SeqCst);
         let current_time_value = params.current_time.load(Ordering::SeqCst);
         let max_tap_samples = params.max_tap_samples.load(Ordering::SeqCst);
+        let max_tap_seconds = params.global.max_tap_seconds.value();
+        let sample_rate = max_tap_samples as f32 / max_tap_seconds;
         let max_delay_time = if current_tap_value > 0 {
             params.delay_times[current_tap_value - 1].load(Ordering::SeqCst)
         } else {
@@ -503,7 +505,7 @@ impl DelayGraph {
         };
         let zoom_tap_samples =
             if current_time_value == max_delay_time || current_tap_value == NUM_TAPS {
-                0.1 * max_tap_samples as f32
+                0.1 * sample_rate
             } else {
                 max_tap_samples as f32
             };
