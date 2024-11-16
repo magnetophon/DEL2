@@ -489,42 +489,65 @@ impl DelayGraph {
         border_width: f32,
         outline_width: f32,
     ) -> f32 {
+        // Load atomic values once
         let current_tap_value = params.current_tap.load(Ordering::SeqCst);
         let current_time_value = params.current_time.load(Ordering::SeqCst);
         let max_tap_samples = params.max_tap_samples.load(Ordering::SeqCst);
+
+        // Calculate max delay time if necessary
         let max_delay_time = if current_tap_value > 0 {
             params.delay_times[current_tap_value - 1].load(Ordering::SeqCst)
         } else {
             0
         };
+
+        // Calculate zoom tap samples using a conditional
         let zoom_tap_samples =
             if current_time_value == max_delay_time || current_tap_value == NUM_TAPS {
                 0.16 * max_delay_time as f32
             } else {
                 max_tap_samples as f32
             };
-        ((max_delay_time as f32 + zoom_tap_samples)
-            / outline_width.mul_add(-0.5, rect_width - border_width))
-        .recip()
+
+        // Use mul_add for efficient denominator calculation
+        let denominator = outline_width.mul_add(-0.5, rect_width - border_width);
+
+        // Calculate scaling factor
+        let total_delay = max_delay_time as f32 + zoom_tap_samples;
+        if denominator == 0.0 {
+            // Handle potential division by zero
+            return f32::INFINITY;
+        }
+
+        // Use recip for reciprocal calculation
+        (total_delay / denominator).recip()
     }
 
     /// Smoothly updates the value stored within an AtomicF32 based on a target value.
     /// If the current value is f32::EPSILON, it initializes with the target value.
     fn gui_smooth(target_value: f32, atomic_value: &AtomicF32) -> f32 {
-        // Check if current value is f32::EPSILON and initialize if necessary
-        if atomic_value.load(Ordering::SeqCst) == f32::EPSILON {
-            atomic_value.store(target_value, Ordering::SeqCst);
+        // Load current value once
+        let mut current_value = atomic_value.load(Ordering::SeqCst);
+
+        // Check and initialize if the value is still set to the default (consider if EPSILON is appropriate)
+        if current_value == f32::EPSILON {
+            current_value = target_value;
+            atomic_value.store(current_value, Ordering::SeqCst);
+            return current_value;
         }
 
-        // Load the (possibly new) current value and compute the smoothed value
-        let current_value = atomic_value.load(Ordering::SeqCst);
-        let smoothed_value =
-            (current_value * ZOOM_SMOOTH_POLE) + (target_value * (1.0 - ZOOM_SMOOTH_POLE));
+        // Compute the smoothed value
+        let smoothed_value = current_value.mul_add(
+            ZOOM_SMOOTH_POLE,
+            target_value - target_value * ZOOM_SMOOTH_POLE,
+        );
 
-        // Store the smoothed value
-        atomic_value.store(smoothed_value, Ordering::SeqCst);
+        // Store only if there's a change
+        if smoothed_value != current_value {
+            atomic_value.store(smoothed_value, Ordering::SeqCst);
+        }
 
-        // Return the smoothed value
+        // Return
         smoothed_value
     }
 
@@ -573,26 +596,28 @@ impl DelayGraph {
         scaling_factor: f32,
         border_width: f32,
     ) {
-        let max_delay_time = if params.current_tap.load(std::sync::atomic::Ordering::SeqCst) > 0 {
-            params.delay_times[params.current_tap.load(std::sync::atomic::Ordering::SeqCst) - 1]
-                .load(std::sync::atomic::Ordering::SeqCst)
+        // Load the values once
+        let current_tap = params.current_tap.load(std::sync::atomic::Ordering::SeqCst);
+        let current_time = params
+            .current_time
+            .load(std::sync::atomic::Ordering::SeqCst);
+
+        // Determine the max delay time
+        let max_delay_time = if current_tap > 0 {
+            params.delay_times[current_tap - 1].load(std::sync::atomic::Ordering::SeqCst)
         } else {
             0
         };
-        if params
-            .current_time
-            .load(std::sync::atomic::Ordering::SeqCst)
-            > max_delay_time
-        {
-            let x_offset = (params
-                .current_time
-                .load(std::sync::atomic::Ordering::SeqCst) as f32)
-                .mul_add(scaling_factor, border_width * 0.5);
+
+        if current_time > max_delay_time {
+            // Compute offset using mul_add for precision and performance
+            let x_offset = current_time as f32 * scaling_factor + border_width * 0.5;
+
+            // Calculate y_move using mul_add
+            let y_move = border_width.mul_add(-0.5, bounds.y + bounds.h);
+
             let mut path = vg::Path::new();
-            path.move_to(
-                bounds.x + x_offset,
-                border_width.mul_add(-0.5, bounds.y + bounds.h),
-            );
+            path.move_to(bounds.x + x_offset, y_move);
             path.line_to(bounds.x + x_offset, bounds.y);
             path.close();
 
@@ -613,18 +638,20 @@ impl DelayGraph {
         scaling_factor: f32,
         border_width: f32,
     ) {
-        for i in 0..params.current_tap.load(std::sync::atomic::Ordering::SeqCst) {
-            let x_offset = (params.delay_times[i].load(std::sync::atomic::Ordering::SeqCst) as f32)
-                .mul_add(scaling_factor, border_width * 0.5);
+        let current_tap = params.current_tap.load(std::sync::atomic::Ordering::SeqCst);
+
+        for i in 0..current_tap {
+            let delay_time = params.delay_times[i].load(std::sync::atomic::Ordering::SeqCst) as f32;
+            let x_offset = delay_time.mul_add(scaling_factor, border_width * 0.5);
 
             let velocity_value = params.velocities[i].load(std::sync::atomic::Ordering::SeqCst);
-            let velocity_height = velocity_value.mul_add(bounds.h, -border_width * 1.0);
+            let velocity_height = velocity_value.mul_add(bounds.h, -border_width);
 
             let meter_db =
                 util::gain_to_db(tap_meters[i].load(std::sync::atomic::Ordering::Relaxed));
             let meter_height = {
                 let tick_fraction = (meter_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
-                (tick_fraction * bounds.h).max(0.0) // Scale using bounds height
+                (tick_fraction * bounds.h).max(0.0)
             };
 
             let mut path = vg::Path::new();
@@ -658,7 +685,7 @@ impl DelayGraph {
             );
         }
 
-        // Draw input_meter to the far left
+        // Calculate and draw input meter
         let input_db = util::gain_to_db(input_meter.load(std::sync::atomic::Ordering::Relaxed));
         let input_height = {
             let tick_fraction = (input_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
@@ -666,19 +693,16 @@ impl DelayGraph {
         };
         let mut path = vg::Path::new();
         path.move_to(
-            bounds.x + border_width + 0.5 * line_width,
+            bounds.x + (line_width * 0.75),
             bounds.y + bounds.h - input_height,
         );
-        path.line_to(
-            bounds.x + border_width + 0.5 * line_width,
-            bounds.y + bounds.h,
-        );
+        path.line_to(bounds.x + (line_width * 0.75), bounds.y + bounds.h);
         canvas.stroke_path(
             &path,
-            &vg::Paint::color(meter_color).with_line_width(line_width),
+            &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
         );
 
-        // Draw output_meter to the far right
+        // Calculate and draw output meter
         let output_db = util::gain_to_db(output_meter.load(std::sync::atomic::Ordering::Relaxed));
         let output_height = {
             let tick_fraction = (output_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
@@ -686,16 +710,16 @@ impl DelayGraph {
         };
         path = vg::Path::new();
         path.move_to(
-            bounds.x + bounds.w - border_width - 0.5 * line_width,
+            bounds.x + bounds.w - (line_width * 0.75),
             bounds.y + bounds.h - output_height,
         );
         path.line_to(
-            bounds.x + bounds.w - border_width - 0.5 * line_width,
+            bounds.x + bounds.w - (line_width * 0.75),
             bounds.y + bounds.h,
         );
         canvas.stroke_path(
             &path,
-            &vg::Paint::color(meter_color).with_line_width(line_width),
+            &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
         );
     }
 
@@ -716,46 +740,51 @@ impl DelayGraph {
         let mut center_path = vg::Path::new();
         let mut pan_background_path = vg::Path::new();
         let mut pan_foreground_path = vg::Path::new();
-        let first_note = params.first_note.load(std::sync::atomic::Ordering::SeqCst);
 
-        let panning_center = if params.taps.panning_center.value() < 0 {
+        let current_tap = params.current_tap.load(Ordering::SeqCst);
+        let first_note = params.first_note.load(Ordering::SeqCst);
+        let first_panning_center_value = params.taps.panning_center.value();
+
+        let panning_center = if first_panning_center_value < 0 {
             first_note
         } else {
-            params.taps.panning_center.value() as u8
+            first_panning_center_value as u8
         };
-        // Determine min and max note values if zoomed
+
         let (min_note_value, max_note_value) = if zoomed {
-            let mut used_notes: Vec<u8> =
-                (0..params.current_tap.load(std::sync::atomic::Ordering::SeqCst))
-                    .map(|i| params.notes[i].load(Ordering::SeqCst))
-                    .collect();
+            // Determine min and max note values efficiently
+            let mut used_notes: Vec<u8> = (0..current_tap)
+                .map(|i| params.notes[i].load(Ordering::SeqCst))
+                .collect();
             if first_note != NO_LEARNED_NOTE {
                 used_notes.push(first_note);
                 used_notes.push(panning_center);
             }
-            let min = used_notes.iter().copied().min().unwrap_or(0);
-            let max = used_notes.iter().copied().max().unwrap_or(127);
+            let min = *used_notes.iter().min().unwrap_or(&0);
+            let max = *used_notes.iter().max().unwrap_or(&127);
             (f32::from(min), f32::from(max))
         } else {
             (0.0, 127.0)
         };
 
         let note_size = line_width * 2.0; // Width and height of a note
-
-        // Calculate available height with margins
         let margin = 10.0 * line_width;
-        let available_height = 2.0f32.mul_add(-(margin + note_size + border_width), bounds.h);
-        // Draw half a note for the panning center
-        if first_note != NO_LEARNED_NOTE {
-            let normalized_panning_center = if max_note_value == min_note_value {
-                panning_center as f32 / 127.0
-            } else {
-                (panning_center as f32 - min_note_value) / (max_note_value - min_note_value)
-            };
+        let available_height = (-(margin + note_size + border_width)).mul_add(2.0, bounds.h);
 
+        fn get_normalized_value(value: u8, min: f32, max: f32) -> f32 {
+            if max == min {
+                value as f32 / 127.0
+            } else {
+                (value as f32 - min) / (max - min)
+            }
+        }
+
+        // Draw half a note for panning center
+        if first_note != NO_LEARNED_NOTE {
+            let normalized_panning_center =
+                get_normalized_value(panning_center, min_note_value, max_note_value);
             let target_panning_center_height =
                 (1.0 - normalized_panning_center).mul_add(available_height, margin + note_size);
-
             let panning_center_height = Self::gui_smooth(
                 target_panning_center_height,
                 &params.previous_panning_center_height,
@@ -772,15 +801,10 @@ impl DelayGraph {
             center_path.close();
 
             // Draw half a note for the first note at time 0
-            let normalized_first_note = if max_note_value == min_note_value {
-                f32::from(first_note) / 127.0
-            } else {
-                (f32::from(first_note) - min_note_value) / (max_note_value - min_note_value)
-            };
-
+            let normalized_first_note =
+                get_normalized_value(first_note, min_note_value, max_note_value);
             let target_note_height =
                 (1.0 - normalized_first_note).mul_add(available_height, margin + note_size);
-
             let note_height =
                 Self::gui_smooth(target_note_height, &params.previous_first_note_height);
 
@@ -788,34 +812,25 @@ impl DelayGraph {
             let first_note_center_y = bounds.y + note_height;
             let note_half_size = line_width;
 
-            // Drawing only the right half of the note
             note_path.move_to(first_note_center_x, first_note_center_y + note_half_size);
             note_path.line_to(first_note_center_x + note_half_size, first_note_center_y);
             note_path.line_to(first_note_center_x, first_note_center_y - note_half_size);
             note_path.close();
         }
 
-        for i in 0..params.current_tap.load(std::sync::atomic::Ordering::SeqCst) {
-            let x_offset = (params.delay_times[i].load(std::sync::atomic::Ordering::SeqCst) as f32)
-                .mul_add(scaling_factor, border_width * 0.5);
+        for i in 0..current_tap {
+            let delay_time = params.delay_times[i].load(Ordering::SeqCst) as f32;
+            let x_offset = delay_time.mul_add(scaling_factor, border_width * 0.5);
 
-            let normalized_note = if max_note_value == min_note_value {
-                f32::from(params.notes[i].load(std::sync::atomic::Ordering::SeqCst)) / 127.0
-            } else {
-                (f32::from(params.notes[i].load(std::sync::atomic::Ordering::SeqCst))
-                    - min_note_value)
-                    / (max_note_value - min_note_value)
-            };
-
+            let note_value = params.notes[i].load(Ordering::SeqCst);
+            let normalized_note = get_normalized_value(note_value, min_note_value, max_note_value);
             let target_note_height =
                 (1.0 - normalized_note).mul_add(available_height, margin + note_size);
-
             let note_height =
                 Self::gui_smooth(target_note_height, &params.previous_note_heights[i]);
 
             let note_center_x = bounds.x + x_offset;
             let note_center_y = bounds.y + note_height;
-
             let note_half_size = line_width;
 
             note_path.move_to(note_center_x + note_half_size, note_center_y);
@@ -824,8 +839,9 @@ impl DelayGraph {
             note_path.line_to(note_center_x, note_center_y - note_half_size);
             note_path.close();
 
-            let pan_value = params.pans[i].load(std::sync::atomic::Ordering::SeqCst);
+            let pan_value = params.pans[i].load(Ordering::SeqCst);
             let line_length = 50.0;
+
             if pan_value.abs() > 1.0 / line_length {
                 let target_pan_foreground_length = pan_value * line_length;
                 let target_pan_background_length = if pan_value < 0.0 {
@@ -842,48 +858,42 @@ impl DelayGraph {
                     target_pan_background_length,
                     &params.previous_pan_background_lengths[i],
                 );
+
                 pan_background_path.move_to(note_center_x, note_center_y);
                 pan_background_path.line_to(
                     (note_center_x + pan_background_length)
-                        .max(bounds.x + 1.0)
-                        .min(bounds.x + bounds.w - 1.0),
+                        .clamp(bounds.x + 1.0, bounds.x + bounds.w - 1.0),
                     note_center_y,
                 );
+
                 pan_foreground_path.move_to(note_center_x, note_center_y);
                 pan_foreground_path.line_to(
                     (note_center_x + pan_foreground_length)
-                        .max(bounds.x + 1.0)
-                        .min(bounds.x + bounds.w - 1.0),
+                        .clamp(bounds.x + 1.0, bounds.x + bounds.w - 1.0),
                     note_center_y,
                 );
-            };
+            }
         }
 
         canvas.stroke_path(
             &pan_background_path,
             &vg::Paint::color(border_color).with_line_width(line_width),
         );
-
-        // Draw the note for panning center before the first note
         canvas.stroke_path(
             &center_path,
             &vg::Paint::color(font_color).with_line_width(line_width),
         );
-
         canvas.stroke_path(
             &note_path,
             &vg::Paint::color(color).with_line_width(line_width),
         );
-
         canvas.stroke_path(
             &pan_foreground_path,
             &vg::Paint::color(font_color).with_line_width(line_width),
         );
 
-        // FIXME:
-        // cover up, probably needed due to https://github.com/vizia/vizia/issues/401
+        // Fix cover line drawing as needed
         if first_note != NO_LEARNED_NOTE {
-            // Draw a line over the left half in the background color
             let mut cover_line_path = vg::Path::new();
             let cover_x = border_width.mul_add(0.5, line_width.mul_add(-0.5, bounds.x));
             cover_line_path.move_to(cover_x, bounds.y);
