@@ -504,7 +504,7 @@ impl DelayGraph {
         };
         let zoom_tap_samples =
             if current_time_value == max_delay_time || current_tap_value == NUM_TAPS {
-                0.175 * max_delay_time as f32
+                0.16 * max_delay_time as f32
             } else {
                 max_tap_samples as f32
             };
@@ -728,7 +728,7 @@ impl DelayGraph {
         let diamond_size = line_width * 2.0; // Width and height of a diamond
 
         // Calculate available height with margins
-        let margin = 3.0 * line_width;
+        let margin = 10.0 * line_width;
         let available_height = 2.0f32.mul_add(-(margin + diamond_size + border_width), bounds.h);
         // Draw half a diamond for the panning center
         if first_note != NO_LEARNED_NOTE {
@@ -837,18 +837,11 @@ impl DelayGraph {
             diamond_path.line_to(diamond_center_x, diamond_center_y - diamond_half_size);
             diamond_path.close();
 
-            let panning_amount = params.taps.panning_amount.value();
-            if panning_amount != 0.0 {
-                let pan_value = params.pans[i].load(std::sync::atomic::Ordering::SeqCst);
-                let line_length = 50.0;
+            let pan_value = params.pans[i].load(std::sync::atomic::Ordering::SeqCst);
+            let line_length = 50.0;
+            if pan_value.abs() > 1.0 / line_length {
                 let pan_offset = pan_value * line_length;
-                let direction = if pan_value.abs() < 1.0 / line_length {
-                    0.0
-                } else if pan_value < 0.0 {
-                    -1.0
-                } else {
-                    1.0
-                };
+                let direction = if pan_value < 0.0 { -1.0 } else { 1.0 };
                 pan_path.move_to(diamond_center_x, diamond_center_y);
                 pan_path.line_to(
                     (diamond_center_x + line_length * direction)
