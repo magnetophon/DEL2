@@ -549,10 +549,8 @@ impl DelayGraph {
             target_value - target_value * ZOOM_SMOOTH_POLE,
         );
 
-        // Store only if there's a change
-        if smoothed_value != current_value {
-            atomic_value.store(smoothed_value, Ordering::SeqCst);
-        }
+        // Store the change
+        atomic_value.store(smoothed_value, Ordering::SeqCst);
 
         // Return
         smoothed_value
