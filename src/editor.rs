@@ -526,14 +526,21 @@ impl DelayGraph {
     /// Smoothly updates the value stored within an AtomicF32 based on a target value.
     /// If the current value is f32::EPSILON, it initializes with the target value.
     fn gui_smooth(target_value: f32, atomic_value: &AtomicF32) -> f32 {
+        // Define the threshold relative to the target value
+        let threshold = 0.001 * target_value.abs();
         // Load current value once
-        let mut current_value = atomic_value.load(Ordering::SeqCst);
+        let current_value = atomic_value.load(Ordering::SeqCst);
 
-        // Check and initialize if the value is still set to the default (consider if EPSILON is appropriate)
+        // Early exit if the current value is very close to the target value
+        if (target_value - current_value).abs() < threshold {
+            atomic_value.store(target_value, Ordering::SeqCst);
+            return target_value;
+        }
+
+        // Check if initial condition is met and initialize with the target value if so
         if current_value == f32::EPSILON {
-            current_value = target_value;
-            atomic_value.store(current_value, Ordering::SeqCst);
-            return current_value;
+            atomic_value.store(target_value, Ordering::SeqCst);
+            return target_value;
         }
 
         // Compute the smoothed value
