@@ -444,6 +444,7 @@ impl View for DelayGraph {
             time_scaling_factor,
             border_width,
             font_color,
+            border_color,
             background_color,
             true,
         );
@@ -693,6 +694,7 @@ impl DelayGraph {
         line_width: f32,
         scaling_factor: f32,
         border_width: f32,
+        font_color: vg::Color,
         border_color: vg::Color,
         background_color: vg::Color,
         zoomed: bool,
@@ -700,6 +702,7 @@ impl DelayGraph {
         let mut diamond_path = vg::Path::new();
         let mut center_path = vg::Path::new();
         let mut pan_path = vg::Path::new();
+        let mut pan_amount_path = vg::Path::new();
         let first_note = params.first_note.load(std::sync::atomic::Ordering::SeqCst);
 
         let panning_center = if params.taps.panning_center.value() < 0 {
@@ -803,7 +806,6 @@ impl DelayGraph {
             diamond_path.close();
         }
 
-        // Continue with the rest of the drawing process as usual
         for i in 0..params.current_tap.load(std::sync::atomic::Ordering::SeqCst) {
             let x_offset = (params.delay_times[i].load(std::sync::atomic::Ordering::SeqCst) as f32)
                 .mul_add(scaling_factor, border_width * 0.5);
@@ -837,17 +839,33 @@ impl DelayGraph {
             diamond_path.line_to(diamond_center_x, diamond_center_y - diamond_half_size);
             diamond_path.close();
 
-            let pan_value = params.pans[i].load(std::sync::atomic::Ordering::SeqCst);
-            let line_length = 50.0;
-            let pan_offset = pan_value * line_length;
-
-            pan_path.move_to(diamond_center_x, diamond_center_y);
-            pan_path.line_to(
-                (diamond_center_x + pan_offset)
-                    .max(bounds.x)
-                    .min(bounds.x + bounds.w),
-                diamond_center_y,
-            );
+            let panning_amount = params.taps.panning_amount.value();
+            if panning_amount != 0.0 {
+                let pan_value = params.pans[i].load(std::sync::atomic::Ordering::SeqCst);
+                let line_length = 50.0;
+                let pan_offset = pan_value * line_length;
+                let direction = if pan_value.abs() < 1.0 / line_length {
+                    0.0
+                } else if pan_value < 0.0 {
+                    -1.0
+                } else {
+                    1.0
+                };
+                pan_path.move_to(diamond_center_x, diamond_center_y);
+                pan_path.line_to(
+                    (diamond_center_x + line_length * direction)
+                        .max(bounds.x + 1.0)
+                        .min(bounds.x + bounds.w - 1.0),
+                    diamond_center_y,
+                );
+                pan_amount_path.move_to(diamond_center_x, diamond_center_y);
+                pan_amount_path.line_to(
+                    (diamond_center_x + pan_offset)
+                        .max(bounds.x + 1.0)
+                        .min(bounds.x + bounds.w - 1.0),
+                    diamond_center_y,
+                );
+            };
         }
 
         canvas.stroke_path(
@@ -855,10 +873,15 @@ impl DelayGraph {
             &vg::Paint::color(border_color).with_line_width(line_width),
         );
 
+        canvas.stroke_path(
+            &pan_amount_path,
+            &vg::Paint::color(font_color).with_line_width(line_width),
+        );
+
         // Draw the diamond for panning center before the first note
         canvas.stroke_path(
             &center_path,
-            &vg::Paint::color(border_color).with_line_width(line_width),
+            &vg::Paint::color(font_color).with_line_width(line_width),
         );
 
         canvas.stroke_path(
