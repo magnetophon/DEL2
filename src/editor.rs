@@ -603,6 +603,9 @@ impl DelayGraph {
     ) {
         // Load the values once
         let current_tap = params.current_tap.load(std::sync::atomic::Ordering::SeqCst);
+        if current_tap == NUM_TAPS {
+            return;
+        };
         let current_time = params
             .current_time
             .load(std::sync::atomic::Ordering::SeqCst);
