@@ -2003,37 +2003,24 @@ impl PersistentField<'_, [f32; 8]> for AtomicF32Array {
     }
 }
 
-// TODO: use this:
-// impl<T> Index<usize> for AtomicArray<T> {
-// type Output = Arc<T>;
-// fn index(&self, index: usize) -> &Self::Output {
-// &self.0[index]
-// }
-// }
-
 // Implement the Index trait to allow for array-style access
-impl Index<usize> for AtomicU8Array {
-    type Output = Arc<AtomicU8>;
+macro_rules! impl_index_for_atomic_array {
+    ($atomic_array_type:ident, $atomic_type:ty) => {
+        impl Index<usize> for $atomic_array_type {
+            type Output = Arc<$atomic_type>;
 
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
-    }
-}
-impl Index<usize> for AtomicU32Array {
-    type Output = Arc<AtomicU32>;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
-    }
+            fn index(&self, index: usize) -> &Self::Output {
+                &self.0[index]
+            }
+        }
+    };
 }
 
-impl Index<usize> for AtomicF32Array {
-    type Output = Arc<AtomicF32>;
+// Apply the macro to different types
+impl_index_for_atomic_array!(AtomicU8Array, AtomicU8);
+impl_index_for_atomic_array!(AtomicU32Array, AtomicU32);
+impl_index_for_atomic_array!(AtomicF32Array, AtomicF32);
 
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
-    }
-}
 // Represents the last played notes with capabilities for managing active notes.
 pub struct LastPlayedNotes {
     state: AtomicU8,
