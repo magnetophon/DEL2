@@ -23,7 +23,7 @@ pub struct DelayTap {
     pub amp_envelope: Smoother<f32>,
     /// If this delay tap has polyphonic gain modulation applied, then this contains the normalized
     /// offset and a smoother.
-    pub delay_tap_gain: Option<(f32, Smoother<f32>)>,
+    pub per_tap_gain: Option<(f32, Smoother<f32>)>,
 
     /// Are we currently muting? To determine if we need to trigger the amp envelope,
     pub is_muted: bool,

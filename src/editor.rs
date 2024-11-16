@@ -386,12 +386,8 @@ impl View for DelayGraph {
         let output_meter = self.output_meter.clone();
 
         // Compute the time scaling factor
-        let target_time_scaling_factor = Self::compute_time_scaling_factor(
-            params.clone(),
-            bounds.w,
-            border_width,
-            outline_width,
-        );
+        let target_time_scaling_factor =
+            Self::compute_time_scaling_factor(&params, bounds.w, border_width, outline_width);
 
         let time_scaling_factor = Self::gui_smooth(
             target_time_scaling_factor,
@@ -401,7 +397,7 @@ impl View for DelayGraph {
         Self::draw_background(canvas, bounds, background_color);
         Self::draw_delay_times_as_lines(
             canvas,
-            params.clone(),
+            &params,
             bounds,
             border_color,
             border_width,
@@ -409,7 +405,7 @@ impl View for DelayGraph {
         );
         Self::draw_time_line(
             canvas,
-            params.clone(),
+            &params,
             bounds,
             selection_color,
             outline_width,
@@ -418,10 +414,10 @@ impl View for DelayGraph {
         );
         Self::draw_tap_velocities(
             canvas,
-            params.clone(),
-            tap_meters.clone(),
-            input_meter.clone(),
-            output_meter.clone(),
+            &params,
+            &tap_meters,
+            &input_meter,
+            &output_meter,
             bounds,
             outline_color,
             border_color,
@@ -431,7 +427,7 @@ impl View for DelayGraph {
         );
         Self::draw_tap_notes_and_pans(
             canvas,
-            params.clone(),
+            &params,
             bounds,
             selection_color,
             outline_width,
@@ -484,7 +480,7 @@ impl DelayGraph {
     }
 
     fn compute_time_scaling_factor(
-        params: Arc<Del2Params>,
+        params: &Arc<Del2Params>,
         rect_width: f32,
         border_width: f32,
         outline_width: f32,
@@ -523,8 +519,8 @@ impl DelayGraph {
         (total_delay / denominator).recip()
     }
 
-    /// Smoothly updates the value stored within an AtomicF32 based on a target value.
-    /// If the current value is f32::MAX, it initializes with the target value.
+    /// Smoothly updates the value stored within an `AtomicF32` based on a target value.
+    /// If the current value is `f32::MAX`, it initializes with the target value.
     fn gui_smooth(target_value: f32, atomic_value: &AtomicF32) -> f32 {
         // Define the threshold relative to the target value
         let threshold = 0.001 * target_value.abs();
@@ -546,7 +542,7 @@ impl DelayGraph {
         // Compute the smoothed value
         let smoothed_value = current_value.mul_add(
             ZOOM_SMOOTH_POLE,
-            target_value - target_value * ZOOM_SMOOTH_POLE,
+            target_value.mul_add(-ZOOM_SMOOTH_POLE, target_value),
         );
 
         // Store the change
@@ -558,7 +554,7 @@ impl DelayGraph {
 
     fn draw_delay_times_as_lines(
         canvas: &mut Canvas,
-        params: Arc<Del2Params>,
+        params: &Arc<Del2Params>,
         bounds: BoundingBox,
         border_color: vg::Color,
         border_width: f32,
@@ -566,7 +562,7 @@ impl DelayGraph {
     ) {
         let mut path = vg::Path::new();
 
-        let current_tap_value = params.current_tap.load(Ordering::SeqCst) as usize;
+        let current_tap_value = params.current_tap.load(Ordering::SeqCst);
 
         for i in 0..current_tap_value {
             let delay_time_value = params.delay_times[i].load(Ordering::SeqCst) as f32;
@@ -594,7 +590,7 @@ impl DelayGraph {
 
     fn draw_time_line(
         canvas: &mut Canvas,
-        params: Arc<Del2Params>,
+        params: &Arc<Del2Params>,
         bounds: BoundingBox,
         color: vg::Color,
         line_width: f32,
@@ -617,7 +613,7 @@ impl DelayGraph {
 
         if current_time > max_delay_time {
             // Compute offset using mul_add for precision and performance
-            let x_offset = current_time as f32 * scaling_factor + border_width * 0.5;
+            let x_offset = (current_time as f32).mul_add(scaling_factor, border_width * 0.5);
 
             // Calculate y_move using mul_add
             let y_move = border_width.mul_add(-0.5, bounds.y + bounds.h);
@@ -633,10 +629,10 @@ impl DelayGraph {
 
     fn draw_tap_velocities(
         canvas: &mut Canvas,
-        params: Arc<Del2Params>,
-        tap_meters: Arc<AtomicF32Array>,
-        input_meter: Arc<AtomicF32>,
-        output_meter: Arc<AtomicF32>,
+        params: &Arc<Del2Params>,
+        tap_meters: &Arc<AtomicF32Array>,
+        input_meter: &Arc<AtomicF32>,
+        output_meter: &Arc<AtomicF32>,
         bounds: BoundingBox,
         velocity_color: vg::Color,
         meter_color: vg::Color,
@@ -661,11 +657,11 @@ impl DelayGraph {
 
             let mut path = vg::Path::new();
             path.move_to(
-                bounds.x + x_offset - (line_width * 0.75),
+                line_width.mul_add(-0.75, bounds.x + x_offset),
                 bounds.y + bounds.h - velocity_height,
             );
             path.line_to(
-                bounds.x + x_offset - (line_width * 0.75),
+                line_width.mul_add(-0.75, bounds.x + x_offset),
                 bounds.y + bounds.h,
             );
 
@@ -676,11 +672,11 @@ impl DelayGraph {
 
             path = vg::Path::new();
             path.move_to(
-                bounds.x + x_offset + (line_width * 0.75),
+                line_width.mul_add(0.75, bounds.x + x_offset),
                 bounds.y + bounds.h - meter_height,
             );
             path.line_to(
-                bounds.x + x_offset + (line_width * 0.75),
+                line_width.mul_add(0.75, bounds.x + x_offset),
                 bounds.y + bounds.h,
             );
 
@@ -698,10 +694,10 @@ impl DelayGraph {
         };
         let mut path = vg::Path::new();
         path.move_to(
-            bounds.x + (line_width * 0.75),
+            line_width.mul_add(0.75, bounds.x),
             bounds.y + bounds.h - input_height,
         );
-        path.line_to(bounds.x + (line_width * 0.75), bounds.y + bounds.h);
+        path.line_to(line_width.mul_add(0.75, bounds.x), bounds.y + bounds.h);
         canvas.stroke_path(
             &path,
             &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
@@ -715,11 +711,11 @@ impl DelayGraph {
         };
         path = vg::Path::new();
         path.move_to(
-            bounds.x + bounds.w - (line_width * 0.75),
+            line_width.mul_add(-0.75, bounds.x + bounds.w),
             bounds.y + bounds.h - output_height,
         );
         path.line_to(
-            bounds.x + bounds.w - (line_width * 0.75),
+            line_width.mul_add(-0.75, bounds.x + bounds.w),
             bounds.y + bounds.h,
         );
         canvas.stroke_path(
@@ -730,7 +726,7 @@ impl DelayGraph {
 
     fn draw_tap_notes_and_pans(
         canvas: &mut Canvas,
-        params: Arc<Del2Params>,
+        params: &Arc<Del2Params>,
         bounds: BoundingBox,
         color: vg::Color,
         line_width: f32,
@@ -776,14 +772,13 @@ impl DelayGraph {
         let margin = 10.0 * line_width;
         let available_height = (-(margin + note_size + border_width)).mul_add(2.0, bounds.h);
 
-        fn get_normalized_value(value: u8, min: f32, max: f32) -> f32 {
+        let get_normalized_value = |value: u8, min: f32, max: f32| -> f32 {
             if max == min {
                 value as f32 / 127.0
             } else {
                 (value as f32 - min) / (max - min)
             }
-        }
-
+        };
         // Draw half a note for panning center
         if first_note != NO_LEARNED_NOTE {
             let normalized_panning_center =
@@ -1015,7 +1010,7 @@ impl ActionTrigger {
         })
     }
 
-    pub fn start_learning(&mut self) {
+    pub fn start_learning(&self) {
         let index = self.learning_index.load(Ordering::SeqCst);
         self.learned_notes
             .store(index, self.last_learned_notes.load(index));
@@ -1058,7 +1053,7 @@ impl ActionTrigger {
         }
     }
 
-    fn get_note_color(note_nr: u8) -> Color {
+    const fn get_note_color(note_nr: u8) -> Color {
         if note_nr == LEARNING {
             // blue
             Color::rgb(88, 121, 175)

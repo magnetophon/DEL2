@@ -24,6 +24,11 @@ https://github.com/neodsp/simper-filter
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cast_sign_loss)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::cast_lossless)]
+#![allow(clippy::cognitive_complexity)]
+#![allow(clippy::type_complexity)]
 #![feature(portable_simd)]
 #![feature(get_mut_unchecked)]
 use array_init::array_init;
@@ -94,7 +99,7 @@ struct Del2 {
     dry_wet: Box<[f32]>,
     output_gain: Box<[f32]>,
     global_drive: Box<[f32]>,
-    delay_tap_gain: Box<[f32]>,
+    per_tap_gain: Box<[f32]>,
     delay_tap_amp_envelope: Box<[f32]>,
 
     // N counters to know where in the fade in we are: 0 is the start
@@ -354,8 +359,7 @@ impl TapsParams {
     }
 }
 
-/// This struct contains the parameters for either the high or low tap. The `Params`
-/// trait is implemented manually to avoid copy-pasting parameters for both types of compressor.
+/// This struct contains the parameters for either the high or low tap.
 /// Both versions will have a parameter ID and a parameter name prefix to distinguish them.
 #[derive(Params)]
 pub struct FilterGuiParams {
@@ -486,7 +490,7 @@ impl Default for Del2 {
             dry_wet: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             output_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             global_drive: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            delay_tap_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            per_tap_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_amp_envelope: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
             amp_envelopes,
@@ -771,7 +775,7 @@ impl Plugin for Del2 {
                                                 .gain
                                                 .preview_modulated(normalized_offset);
                                             let (_, smoother) =
-                                                delay_tap.delay_tap_gain.get_or_insert_with(|| {
+                                                delay_tap.per_tap_gain.get_or_insert_with(|| {
                                                     (
                                                         normalized_offset,
                                                         self.params.gain.smoothed.clone(),
@@ -813,16 +817,11 @@ impl Plugin for Del2 {
                                 {
                                     match poly_modulation_id {
                                         GAIN_POLY_MOD_ID => {
-                                            let (normalized_offset, smoother) =
-                                                match delay_tap.delay_tap_gain.as_mut() {
-                                                    Some((o, s)) => (o, s),
-                                                    // If the delay tap does not have existing
-                                                    // polyphonic modulation, then there's nothing
-                                                    // to do here. The global automation/monophonic
-                                                    // modulation has already been taken care of by
-                                                    // the framework.
-                                                    None => continue,
-                                                };
+                                            let Some((normalized_offset, smoother)) =
+                                                delay_tap.per_tap_gain.as_mut()
+                                            else {
+                                                continue;
+                                            };
                                             let target_plain_value =
                                                 self.params.gain.preview_plain(
                                                     normalized_value + *normalized_offset,
@@ -936,10 +935,10 @@ impl Plugin for Del2 {
                 // Depending on whether the delay tap has polyphonic modulation applied to it,
                 // either the global parameter values are used, or the delay tap's smoother is used
                 // to generate unique modulated values for that delay tap
-                let gain = match &delay_tap.delay_tap_gain {
+                let gain = match &delay_tap.per_tap_gain {
                     Some((_, smoother)) => {
-                        smoother.next_block(&mut self.delay_tap_gain, block_len);
-                        &self.delay_tap_gain
+                        smoother.next_block(&mut self.per_tap_gain, block_len);
+                        &self.per_tap_gain
                     }
                     None => &self.gain,
                 };
@@ -1568,7 +1567,7 @@ impl Del2 {
             velocity: 1.0,
             releasing: false,
             amp_envelope: Smoother::none(),
-            delay_tap_gain: None,
+            per_tap_gain: None,
             is_muted: false,
             tap_index: NUM_TAPS, // Initial out-of-bounds safety index
         };
@@ -1588,7 +1587,7 @@ impl Del2 {
             let oldest_delay_tap = self
                 .delay_taps
                 .iter_mut()
-                .min_by_key(|t| t.as_ref().map(|tap| tap.internal_id).unwrap_or(u64::MAX))
+                .min_by_key(|t| t.as_ref().map_or(u64::MAX, |tap| tap.internal_id))
                 .expect("At least one delay tap should exist");
 
             *oldest_delay_tap = Some(new_delay_tap);
@@ -2084,16 +2083,6 @@ impl LastPlayedNotes {
                 self.sequence
                     .store(index, self.current_sequence.fetch_add(1, Ordering::SeqCst));
                 self.active_notes.store(index, true); // Mark as active
-                break;
-            } else {
-                // Overwrite the oldest active note
-                let oldest_index = (0..8).min_by_key(|&i| self.sequence.load(i)).unwrap();
-                self.notes.store(oldest_index, note);
-                self.sequence.store(
-                    oldest_index,
-                    self.current_sequence.fetch_add(1, Ordering::SeqCst),
-                );
-                self.active_notes.store(oldest_index, true); // Mark as active
                 break;
             }
         }
