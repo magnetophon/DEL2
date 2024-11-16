@@ -1113,13 +1113,13 @@ impl Del2 {
     }
 
     fn store_note_on_in_delay_data(&mut self, timing: u32, note: u8, velocity: f32) {
-        let is_tap_slot_available = self
-            .params
-            .current_tap
-            .load(std::sync::atomic::Ordering::SeqCst)
-            < NUM_TAPS;
+        // Load values that are used multiple times at the start
+        let mut current_tap = self.params.current_tap.load(Ordering::SeqCst);
+        let is_tap_slot_available = current_tap < NUM_TAPS;
         let is_delay_note = !self.learned_notes.contains(note);
         let is_learning = self.is_learning.load(Ordering::SeqCst);
+        let taps_unlocked = !self.enabled_actions.load(LOCK_TAPS);
+        let min_tap_samples = self.min_tap_samples;
 
         self.last_played_notes.note_on(note);
 
@@ -1128,7 +1128,6 @@ impl Del2 {
             self.last_played_notes
                 .note_off(self.learned_notes.load(LOCK_TAPS));
         }
-        let taps_unlocked = !self.enabled_actions.load(LOCK_TAPS);
 
         let mut should_record_tap =
             is_delay_note && is_tap_slot_available && taps_unlocked && !is_learning;
@@ -1143,7 +1142,7 @@ impl Del2 {
             }
             CountingState::CountingInBuffer => {
                 // Validate and record a new tap within the buffer
-                if timing - self.timing_last_event > self.min_tap_samples && should_record_tap {
+                if timing - self.timing_last_event > min_tap_samples && should_record_tap {
                     self.samples_since_last_event = timing - self.timing_last_event;
                     self.timing_last_event = timing;
                 } else {
@@ -1152,9 +1151,7 @@ impl Del2 {
             }
             CountingState::CountingAcrossBuffer => {
                 // Handle cross-buffer taps timing
-                if self.samples_since_last_event + timing > self.min_tap_samples
-                    && should_record_tap
-                {
+                if self.samples_since_last_event + timing > min_tap_samples && should_record_tap {
                     self.samples_since_last_event += timing;
                     self.timing_last_event = timing;
                     self.counting_state = CountingState::CountingInBuffer;
@@ -1163,6 +1160,7 @@ impl Del2 {
                 }
             }
         }
+
         if is_learning {
             self.is_learning.store(false, Ordering::SeqCst);
             let index = self.learning_index.load(Ordering::SeqCst);
@@ -1171,20 +1169,8 @@ impl Del2 {
             self.last_played_notes.note_off(note);
         }
 
-        let current_tap = self
-            .params
-            .current_tap
-            .load(std::sync::atomic::Ordering::SeqCst);
-        let mute_in_note = self.learned_notes.load(MUTE_IN);
-        let mute_out_note = self.learned_notes.load(MUTE_OUT);
-
         // Check for timeout condition and reset if necessary
-        if self.samples_since_last_event
-            > self
-                .params
-                .max_tap_samples
-                .load(std::sync::atomic::Ordering::SeqCst)
-        {
+        if self.samples_since_last_event > self.params.max_tap_samples.load(Ordering::SeqCst) {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
@@ -1195,10 +1181,10 @@ impl Del2 {
         {
             // Update tap information with timing and velocity
             if current_tap > 0 {
+                let previous_delay =
+                    self.params.delay_times[current_tap - 1].load(Ordering::SeqCst);
                 self.params.delay_times[current_tap].store(
-                    self.samples_since_last_event
-                        + self.params.delay_times[current_tap - 1]
-                            .load(std::sync::atomic::Ordering::SeqCst),
+                    self.samples_since_last_event + previous_delay,
                     Ordering::SeqCst,
                 );
             } else {
@@ -1208,8 +1194,9 @@ impl Del2 {
             self.params.velocities[current_tap].store(velocity, Ordering::SeqCst);
             self.params.notes[current_tap].store(note, Ordering::SeqCst);
 
-            self.params.current_tap.fetch_add(1, Ordering::SeqCst);
-            if self.params.current_tap.load(Ordering::SeqCst) == NUM_TAPS {
+            current_tap += 1;
+            self.params.current_tap.store(current_tap, Ordering::SeqCst);
+            if current_tap == NUM_TAPS {
                 self.counting_state = CountingState::TimeOut;
                 self.timing_last_event = 0;
                 self.samples_since_last_event = 0;
@@ -1220,9 +1207,10 @@ impl Del2 {
         }
         // Handle ActionTrigger events
         // LOCK_TAPS is handled at the start
-        if !is_learning
-        // this is the value at the start of the fn, from before we adjusted the global one
-        {
+
+        if !is_learning {
+            let mute_in_note = self.learned_notes.load(MUTE_IN);
+            let mute_out_note = self.learned_notes.load(MUTE_OUT);
             let is_toggle = self.params.global.mute_is_toggle.value();
 
             if note == mute_in_note {
@@ -1232,7 +1220,6 @@ impl Del2 {
                     self.enabled_actions.store(MUTE_IN, false);
                     self.enabled_actions.store(MUTE_OUT, false);
                 }
-                // self.last_played_notes.note_off(note);
             }
             if note == mute_out_note {
                 if is_toggle {
@@ -1241,7 +1228,6 @@ impl Del2 {
                     self.enabled_actions.store(MUTE_IN, false);
                     self.enabled_actions.store(MUTE_OUT, false);
                 }
-                // self.last_played_notes.note_off(note);
             }
             if self.is_playing_action(CLEAR_TAPS) {
                 self.clear_taps(timing, false);
