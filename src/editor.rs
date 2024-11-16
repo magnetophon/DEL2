@@ -472,6 +472,7 @@ impl DelayGraph {
                 params.map(move |params| {
                     let current_tap_value = params.current_tap.load(Ordering::SeqCst);
                     match current_tap_value {
+                        // 0 => "tap a rhythm!".to_string(),
                         0 => String::new(),
                         1 => "1 tap".to_string(),
                         tap_nr => format!("{tap_nr} taps"),
@@ -508,10 +509,10 @@ impl DelayGraph {
     }
 
     /// Smoothly updates the value stored within an AtomicF32 based on a target value.
-    /// If the current value is f32::MIN, it initializes with the target value.
+    /// If the current value is f32::EPSILON, it initializes with the target value.
     fn gui_smooth(target_value: f32, atomic_value: &AtomicF32) -> f32 {
-        // Check if current value is f32::MIN and initialize if necessary
-        if atomic_value.load(Ordering::SeqCst) == f32::MIN {
+        // Check if current value is f32::EPSILON and initialize if necessary
+        if atomic_value.load(Ordering::SeqCst) == f32::EPSILON {
             atomic_value.store(target_value, Ordering::SeqCst);
         }
 

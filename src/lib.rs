@@ -1260,17 +1260,17 @@ impl Del2 {
 
         self.params
             .previous_time_scaling_factor
-            .store(f32::MIN, Ordering::SeqCst);
+            .store(f32::EPSILON, Ordering::SeqCst);
         self.params
             .previous_first_note_height
-            .store(f32::MIN, Ordering::SeqCst);
+            .store(f32::EPSILON, Ordering::SeqCst);
         self.params
             .previous_panning_center_height
-            .store(f32::MIN, Ordering::SeqCst);
+            .store(f32::EPSILON, Ordering::SeqCst);
         for i in 0..NUM_TAPS {
-            self.params.previous_note_heights[i].store(f32::MIN, Ordering::SeqCst);
-            self.params.previous_pan_foreground_lengths[i].store(f32::MIN, Ordering::SeqCst);
-            self.params.previous_pan_background_lengths[i].store(f32::MIN, Ordering::SeqCst);
+            self.params.previous_note_heights[i].store(f32::EPSILON, Ordering::SeqCst);
+            self.params.previous_pan_foreground_lengths[i].store(f32::EPSILON, Ordering::SeqCst);
+            self.params.previous_pan_background_lengths[i].store(f32::EPSILON, Ordering::SeqCst);
         }
 
         self.start_release_for_all_delay_taps(self.sample_rate);
