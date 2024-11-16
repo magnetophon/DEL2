@@ -894,12 +894,12 @@ impl DelayGraph {
             &vg::Paint::color(font_color).with_line_width(line_width),
         );
         canvas.stroke_path(
-            &note_path,
-            &vg::Paint::color(color).with_line_width(line_width),
-        );
-        canvas.stroke_path(
             &pan_foreground_path,
             &vg::Paint::color(font_color).with_line_width(line_width),
+        );
+        canvas.stroke_path(
+            &note_path,
+            &vg::Paint::color(color).with_line_width(line_width),
         );
 
         // Fix cover line drawing as needed
