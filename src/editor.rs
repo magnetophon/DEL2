@@ -656,14 +656,9 @@ impl DelayGraph {
             };
 
             let mut path = vg::Path::new();
-            path.move_to(
-                line_width.mul_add(-0.75, bounds.x + x_offset),
-                bounds.y + bounds.h - velocity_height,
-            );
-            path.line_to(
-                line_width.mul_add(-0.75, bounds.x + x_offset),
-                bounds.y + bounds.h,
-            );
+            let x_val = line_width.mul_add(-0.75, bounds.x + x_offset);
+            path.move_to(x_val, bounds.y + bounds.h - velocity_height);
+            path.line_to(x_val, bounds.y + bounds.h);
 
             canvas.stroke_path(
                 &path,
@@ -671,14 +666,9 @@ impl DelayGraph {
             );
 
             path = vg::Path::new();
-            path.move_to(
-                line_width.mul_add(0.75, bounds.x + x_offset),
-                bounds.y + bounds.h - meter_height,
-            );
-            path.line_to(
-                line_width.mul_add(0.75, bounds.x + x_offset),
-                bounds.y + bounds.h,
-            );
+            let x_val = line_width.mul_add(0.75, bounds.x + x_offset);
+            path.move_to(x_val, bounds.y + bounds.h - meter_height);
+            path.line_to(x_val, bounds.y + bounds.h);
 
             canvas.stroke_path(
                 &path,
@@ -693,11 +683,9 @@ impl DelayGraph {
             (tick_fraction * bounds.h).max(0.0)
         };
         let mut path = vg::Path::new();
-        path.move_to(
-            line_width.mul_add(0.75, bounds.x),
-            bounds.y + bounds.h - input_height,
-        );
-        path.line_to(line_width.mul_add(0.75, bounds.x), bounds.y + bounds.h);
+        let x_val = line_width.mul_add(0.75, bounds.x);
+        path.move_to(x_val, bounds.y + bounds.h - input_height);
+        path.line_to(x_val, bounds.y + bounds.h);
         canvas.stroke_path(
             &path,
             &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
@@ -710,14 +698,9 @@ impl DelayGraph {
             (tick_fraction * bounds.h).max(0.0)
         };
         path = vg::Path::new();
-        path.move_to(
-            line_width.mul_add(-0.75, bounds.x + bounds.w),
-            bounds.y + bounds.h - output_height,
-        );
-        path.line_to(
-            line_width.mul_add(-0.75, bounds.x + bounds.w),
-            bounds.y + bounds.h,
-        );
+        let x_val = line_width.mul_add(-0.75, bounds.x + bounds.w);
+        path.move_to(x_val, bounds.y + bounds.h - output_height);
+        path.line_to(x_val, bounds.y + bounds.h);
         canvas.stroke_path(
             &path,
             &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
