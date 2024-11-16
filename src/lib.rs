@@ -152,6 +152,8 @@ pub struct Del2Params {
     previous_note_heights: AtomicF32Array,
     previous_first_note_height: Arc<AtomicF32>,
     previous_panning_center_height: Arc<AtomicF32>,
+    previous_pan_foreground_lengths: AtomicF32Array,
+    previous_pan_background_lengths: AtomicF32Array,
 
     /// A voice's gain. This can be polyphonically modulated.
     #[id = "gain"]
@@ -537,6 +539,12 @@ impl Del2Params {
             })),
             previous_first_note_height: Arc::new(AtomicF32::new(0.0)),
             previous_panning_center_height: Arc::new(AtomicF32::new(0.0)),
+            previous_pan_foreground_lengths: AtomicF32Array(array_init::array_init(|_| {
+                Arc::new(AtomicF32::new(0.0))
+            })),
+            previous_pan_background_lengths: AtomicF32Array(array_init::array_init(|_| {
+                Arc::new(AtomicF32::new(0.0))
+            })),
 
             gain: FloatParam::new(
                 "Gain",
@@ -1252,15 +1260,17 @@ impl Del2 {
 
         self.params
             .previous_time_scaling_factor
-            .store(0.0, Ordering::SeqCst);
+            .store(f32::MIN, Ordering::SeqCst);
         self.params
             .previous_first_note_height
-            .store(0.0, Ordering::SeqCst);
+            .store(f32::MIN, Ordering::SeqCst);
         self.params
             .previous_panning_center_height
-            .store(0.0, Ordering::SeqCst);
+            .store(f32::MIN, Ordering::SeqCst);
         for i in 0..NUM_TAPS {
-            self.params.previous_note_heights[i].store(0.0, Ordering::SeqCst);
+            self.params.previous_note_heights[i].store(f32::MIN, Ordering::SeqCst);
+            self.params.previous_pan_foreground_lengths[i].store(f32::MIN, Ordering::SeqCst);
+            self.params.previous_pan_background_lengths[i].store(f32::MIN, Ordering::SeqCst);
         }
 
         self.start_release_for_all_delay_taps(self.sample_rate);

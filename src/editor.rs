@@ -508,10 +508,10 @@ impl DelayGraph {
     }
 
     /// Smoothly updates the value stored within an AtomicF32 based on a target value.
-    /// If the current value is zero, it initializes with the target value.
+    /// If the current value is f32::MIN, it initializes with the target value.
     fn gui_smooth(target_value: f32, atomic_value: &AtomicF32) -> f32 {
-        // Check if current value is zero and initialize if necessary
-        if atomic_value.load(Ordering::SeqCst) == 0.0 {
+        // Check if current value is f32::MIN and initialize if necessary
+        if atomic_value.load(Ordering::SeqCst) == f32::MIN {
             atomic_value.store(target_value, Ordering::SeqCst);
         }
 
@@ -835,12 +835,21 @@ impl DelayGraph {
             let pan_value = params.pans[i].load(std::sync::atomic::Ordering::SeqCst);
             let line_length = 50.0;
             if pan_value.abs() > 1.0 / line_length {
-                let pan_foreground_length = pan_value * line_length;
-                let pan_background_length = if pan_value < 0.0 {
+                let target_pan_foreground_length = pan_value * line_length;
+                let target_pan_background_length = if pan_value < 0.0 {
                     -line_length
                 } else {
                     line_length
                 };
+
+                let pan_foreground_length = Self::gui_smooth(
+                    target_pan_foreground_length,
+                    &params.previous_pan_foreground_lengths[i],
+                );
+                let pan_background_length = Self::gui_smooth(
+                    target_pan_background_length,
+                    &params.previous_pan_background_lengths[i],
+                );
                 pan_path.move_to(diamond_center_x, diamond_center_y);
                 pan_path.line_to(
                     (diamond_center_x + pan_background_length)
@@ -863,11 +872,6 @@ impl DelayGraph {
             &vg::Paint::color(border_color).with_line_width(line_width),
         );
 
-        canvas.stroke_path(
-            &pan_amount_path,
-            &vg::Paint::color(font_color).with_line_width(line_width),
-        );
-
         // Draw the diamond for panning center before the first note
         canvas.stroke_path(
             &center_path,
@@ -877,6 +881,11 @@ impl DelayGraph {
         canvas.stroke_path(
             &diamond_path,
             &vg::Paint::color(color).with_line_width(line_width),
+        );
+
+        canvas.stroke_path(
+            &pan_amount_path,
+            &vg::Paint::color(font_color).with_line_width(line_width),
         );
 
         // FIXME:
