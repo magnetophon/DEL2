@@ -656,11 +656,7 @@ impl Plugin for Del2 {
         }
         self.delay_taps.fill(None);
 
-        for tap_index in 0..self
-            .params
-            .current_tap
-            .load(std::sync::atomic::Ordering::SeqCst)
-        {
+        for tap_index in 0..self.params.current_tap.load(Ordering::SeqCst) {
             self.load_and_configure_tap(self.sample_rate, 0, None, tap_index);
         }
 
@@ -694,10 +690,7 @@ impl Plugin for Del2 {
         self.write_into_delay(buffer);
 
         while block_start < num_samples {
-            let old_nr_taps = self
-                .params
-                .current_tap
-                .load(std::sync::atomic::Ordering::SeqCst);
+            let old_nr_taps = self.params.current_tap.load(Ordering::SeqCst);
 
             // First of all, handle all note events that happen at the start of the block, and cut
             // the block short if another event happens before the end of it. To handle polyphonic
@@ -721,17 +714,9 @@ impl Plugin for Del2 {
                                 velocity,
                             } => {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
-                                if self
-                                    .params
-                                    .current_tap
-                                    .load(std::sync::atomic::Ordering::SeqCst)
-                                    > old_nr_taps
-                                {
-                                    let tap_index = self
-                                        .params
-                                        .current_tap
-                                        .load(std::sync::atomic::Ordering::SeqCst)
-                                        - 1;
+                                if self.params.current_tap.load(Ordering::SeqCst) > old_nr_taps {
+                                    let tap_index =
+                                        self.params.current_tap.load(Ordering::SeqCst) - 1;
                                     self.load_and_configure_tap(
                                         sample_rate,
                                         // timing,
@@ -872,19 +857,10 @@ impl Plugin for Del2 {
 
             if self
                 .should_update_filter
-                .compare_exchange(
-                    true,
-                    false,
-                    std::sync::atomic::Ordering::SeqCst,
-                    std::sync::atomic::Ordering::SeqCst,
-                )
+                .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
                 .is_ok()
             {
-                for tap in 0..self
-                    .params
-                    .current_tap
-                    .load(std::sync::atomic::Ordering::SeqCst)
-                {
+                for tap in 0..self.params.current_tap.load(Ordering::SeqCst) {
                     self.update_filter(tap);
                 }
             }
@@ -922,11 +898,7 @@ impl Plugin for Del2 {
                 .next_block(&mut self.global_drive, block_len);
 
             let panning_center = if self.params.taps.panning_center.value() < 0 {
-                f32::from(
-                    self.params
-                        .first_note
-                        .load(std::sync::atomic::Ordering::SeqCst),
-                )
+                f32::from(self.params.first_note.load(Ordering::SeqCst))
             } else {
                 self.params.taps.panning_center.value() as f32
             };
@@ -941,16 +913,14 @@ impl Plugin for Del2 {
 
             for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
                 let tap_index = delay_tap.tap_index;
-                let note = self.params.notes[tap_index].load(std::sync::atomic::Ordering::SeqCst);
+                let note = self.params.notes[tap_index].load(Ordering::SeqCst);
 
                 let pan = ((f32::from(note) - panning_center) * panning_amount).clamp(-1.0, 1.0);
                 self.params.pans[tap_index].store(pan, Ordering::SeqCst);
 
                 let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
 
-                let delay_time = self.params.delay_times[tap_index]
-                    .load(std::sync::atomic::Ordering::SeqCst)
-                    as isize;
+                let delay_time = self.params.delay_times[tap_index].load(Ordering::SeqCst) as isize;
                 let write_index = self.delay_write_index;
                 // delay_time - 1 because we are processing 2 samples at once in process_audio
                 let read_index_l = write_index - (delay_time - 1 + offset_l);
@@ -1027,16 +997,14 @@ impl Plugin for Del2 {
                 if self.params.editor_state.is_open() {
                     let weight = self.peak_meter_decay_weight * 0.91; // TODO: way too slow without this, why is that?
                     amplitude = (amplitude / block_len as f32).min(1.0);
-                    let current_peak_meter =
-                        self.tap_meters[tap_index].load(std::sync::atomic::Ordering::Relaxed);
+                    let current_peak_meter = self.tap_meters[tap_index].load(Ordering::Relaxed);
                     let new_peak_meter = if amplitude > current_peak_meter {
                         amplitude
                     } else {
                         current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
                     };
 
-                    self.tap_meters[tap_index]
-                        .store(new_peak_meter, std::sync::atomic::Ordering::Relaxed);
+                    self.tap_meters[tap_index].store(new_peak_meter, Ordering::Relaxed);
                 }
             }
 
@@ -1369,7 +1337,7 @@ impl Del2 {
 
     fn update_filter(&mut self, tap: usize) {
         // Load atomic values that are used outside computation steps
-        let velocity = self.params.velocities[tap].load(std::sync::atomic::Ordering::SeqCst);
+        let velocity = self.params.velocities[tap].load(Ordering::SeqCst);
 
         // Unsafe block to get a mutable reference to the filter parameters
         let filter_params = unsafe { Arc::get_mut_unchecked(&mut self.filter_params[tap]) };
@@ -1388,9 +1356,7 @@ impl Del2 {
             velocity,
         );
 
-        let note_cutoff = util::midi_note_to_freq(
-            self.params.notes[tap].load(std::sync::atomic::Ordering::SeqCst),
-        );
+        let note_cutoff = util::midi_note_to_freq(self.params.notes[tap].load(Ordering::SeqCst));
         let cutoff = note_cutoff
             .mul_add(
                 velocity_params.note_to_cutoff_amount.value(),
@@ -1474,7 +1440,7 @@ impl Del2 {
 
             if self.params.editor_state.is_open() {
                 amplitude = (amplitude / num_samples as f32).min(1.0);
-                let current_peak_meter = peak_meter.load(std::sync::atomic::Ordering::Relaxed);
+                let current_peak_meter = peak_meter.load(Ordering::Relaxed);
                 let new_peak_meter = if amplitude > current_peak_meter {
                     amplitude
                 } else {
@@ -1484,7 +1450,7 @@ impl Del2 {
                     )
                 };
 
-                peak_meter.store(new_peak_meter, std::sync::atomic::Ordering::Relaxed);
+                peak_meter.store(new_peak_meter, Ordering::Relaxed);
             }
         }
     }

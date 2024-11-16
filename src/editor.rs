@@ -602,17 +602,15 @@ impl DelayGraph {
         border_width: f32,
     ) {
         // Load the values once
-        let current_tap = params.current_tap.load(std::sync::atomic::Ordering::SeqCst);
+        let current_tap = params.current_tap.load(Ordering::SeqCst);
         if current_tap == NUM_TAPS {
             return;
         };
-        let current_time = params
-            .current_time
-            .load(std::sync::atomic::Ordering::SeqCst);
+        let current_time = params.current_time.load(Ordering::SeqCst);
 
         // Determine the max delay time
         let max_delay_time = if current_tap > 0 {
-            params.delay_times[current_tap - 1].load(std::sync::atomic::Ordering::SeqCst)
+            params.delay_times[current_tap - 1].load(Ordering::SeqCst)
         } else {
             0
         };
@@ -646,17 +644,16 @@ impl DelayGraph {
         scaling_factor: f32,
         border_width: f32,
     ) {
-        let current_tap = params.current_tap.load(std::sync::atomic::Ordering::SeqCst);
+        let current_tap = params.current_tap.load(Ordering::SeqCst);
 
         for i in 0..current_tap {
-            let delay_time = params.delay_times[i].load(std::sync::atomic::Ordering::SeqCst) as f32;
+            let delay_time = params.delay_times[i].load(Ordering::SeqCst) as f32;
             let x_offset = delay_time.mul_add(scaling_factor, border_width * 0.5);
 
-            let velocity_value = params.velocities[i].load(std::sync::atomic::Ordering::SeqCst);
+            let velocity_value = params.velocities[i].load(Ordering::SeqCst);
             let velocity_height = velocity_value.mul_add(bounds.h, -border_width);
 
-            let meter_db =
-                util::gain_to_db(tap_meters[i].load(std::sync::atomic::Ordering::Relaxed));
+            let meter_db = util::gain_to_db(tap_meters[i].load(Ordering::Relaxed));
             let meter_height = {
                 let tick_fraction = (meter_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
                 (tick_fraction * bounds.h).max(0.0)
@@ -694,7 +691,7 @@ impl DelayGraph {
         }
 
         // Calculate and draw input meter
-        let input_db = util::gain_to_db(input_meter.load(std::sync::atomic::Ordering::Relaxed));
+        let input_db = util::gain_to_db(input_meter.load(Ordering::Relaxed));
         let input_height = {
             let tick_fraction = (input_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
             (tick_fraction * bounds.h).max(0.0)
@@ -711,7 +708,7 @@ impl DelayGraph {
         );
 
         // Calculate and draw output meter
-        let output_db = util::gain_to_db(output_meter.load(std::sync::atomic::Ordering::Relaxed));
+        let output_db = util::gain_to_db(output_meter.load(Ordering::Relaxed));
         let output_height = {
             let tick_fraction = (output_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
             (tick_fraction * bounds.h).max(0.0)
