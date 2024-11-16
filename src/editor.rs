@@ -392,17 +392,11 @@ impl View for DelayGraph {
             border_width,
             outline_width,
         );
-        if params.previous_time_scaling_factor.load(Ordering::SeqCst) == 0.0 {
-            params
-                .previous_time_scaling_factor
-                .store(target_time_scaling_factor, Ordering::SeqCst);
-        }
-        let time_scaling_factor = (params.previous_time_scaling_factor.load(Ordering::SeqCst)
-            * ZOOM_SMOOTH_POLE)
-            + (target_time_scaling_factor * (1.0 - ZOOM_SMOOTH_POLE));
-        params
-            .previous_time_scaling_factor
-            .store(time_scaling_factor, Ordering::SeqCst);
+
+        let time_scaling_factor = Self::gui_smooth(
+            target_time_scaling_factor,
+            &params.previous_time_scaling_factor,
+        );
         // Draw components
         Self::draw_background(canvas, bounds, background_color);
         Self::draw_delay_times_as_lines(
@@ -511,6 +505,26 @@ impl DelayGraph {
         ((max_delay_time as f32 + zoom_tap_samples)
             / outline_width.mul_add(-0.5, rect_width - border_width))
         .recip()
+    }
+
+    /// Smoothly updates the value stored within an AtomicF32 based on a target value.
+    /// If the current value is zero, it initializes with the target value.
+    fn gui_smooth(target_value: f32, atomic_value: &AtomicF32) -> f32 {
+        // Check if current value is zero and initialize if necessary
+        if atomic_value.load(Ordering::SeqCst) == 0.0 {
+            atomic_value.store(target_value, Ordering::SeqCst);
+        }
+
+        // Load the (possibly new) current value and compute the smoothed value
+        let current_value = atomic_value.load(Ordering::SeqCst);
+        let smoothed_value =
+            (current_value * ZOOM_SMOOTH_POLE) + (target_value * (1.0 - ZOOM_SMOOTH_POLE));
+
+        // Store the smoothed value
+        atomic_value.store(smoothed_value, Ordering::SeqCst);
+
+        // Return the smoothed value
+        smoothed_value
     }
 
     fn draw_delay_times_as_lines(
@@ -741,17 +755,10 @@ impl DelayGraph {
             let target_panning_center_height =
                 (1.0 - normalized_panning_center).mul_add(available_height, margin + diamond_size);
 
-            if params.previous_panning_center_height.load(Ordering::SeqCst) == 0.0 {
-                params
-                    .previous_panning_center_height
-                    .store(target_panning_center_height, Ordering::SeqCst);
-            }
-            let panning_center_height =
-                (params.previous_panning_center_height.load(Ordering::SeqCst) * ZOOM_SMOOTH_POLE)
-                    + (target_panning_center_height * (1.0 - ZOOM_SMOOTH_POLE));
-            params
-                .previous_panning_center_height
-                .store(panning_center_height, Ordering::SeqCst);
+            let panning_center_height = Self::gui_smooth(
+                target_panning_center_height,
+                &params.previous_panning_center_height,
+            );
 
             let diamond_half_size = line_width;
 
@@ -773,17 +780,9 @@ impl DelayGraph {
             let target_note_height =
                 (1.0 - normalized_first_note).mul_add(available_height, margin + diamond_size);
 
-            if params.previous_first_note_height.load(Ordering::SeqCst) == 0.0 {
-                params
-                    .previous_first_note_height
-                    .store(target_note_height, Ordering::SeqCst);
-            }
-            let note_height = (params.previous_first_note_height.load(Ordering::SeqCst)
-                * ZOOM_SMOOTH_POLE)
-                + (target_note_height * (1.0 - ZOOM_SMOOTH_POLE));
-            params
-                .previous_first_note_height
-                .store(note_height, Ordering::SeqCst);
+            let note_height =
+                Self::gui_smooth(target_note_height, &params.previous_first_note_height);
+
             let first_diamond_center_x = bounds.x;
             let first_diamond_center_y = bounds.y + note_height;
             let diamond_half_size = line_width;
@@ -819,13 +818,9 @@ impl DelayGraph {
             let target_note_height =
                 (1.0 - normalized_note).mul_add(available_height, margin + diamond_size);
 
-            if params.previous_note_heights[i].load(Ordering::SeqCst) == 0.0 {
-                params.previous_note_heights[i].store(target_note_height, Ordering::SeqCst);
-            }
-            let note_height = (params.previous_note_heights[i].load(Ordering::SeqCst)
-                * ZOOM_SMOOTH_POLE)
-                + (target_note_height * (1.0 - ZOOM_SMOOTH_POLE));
-            params.previous_note_heights[i].store(note_height, Ordering::SeqCst);
+            let note_height =
+                Self::gui_smooth(target_note_height, &params.previous_note_heights[i]);
+
             let diamond_center_x = bounds.x + x_offset;
             let diamond_center_y = bounds.y + note_height;
 
@@ -840,18 +835,22 @@ impl DelayGraph {
             let pan_value = params.pans[i].load(std::sync::atomic::Ordering::SeqCst);
             let line_length = 50.0;
             if pan_value.abs() > 1.0 / line_length {
-                let pan_offset = pan_value * line_length;
-                let direction = if pan_value < 0.0 { -1.0 } else { 1.0 };
+                let pan_foreground_length = pan_value * line_length;
+                let pan_background_length = if pan_value < 0.0 {
+                    -line_length
+                } else {
+                    line_length
+                };
                 pan_path.move_to(diamond_center_x, diamond_center_y);
                 pan_path.line_to(
-                    (diamond_center_x + line_length * direction)
+                    (diamond_center_x + pan_background_length)
                         .max(bounds.x + 1.0)
                         .min(bounds.x + bounds.w - 1.0),
                     diamond_center_y,
                 );
                 pan_amount_path.move_to(diamond_center_x, diamond_center_y);
                 pan_amount_path.line_to(
-                    (diamond_center_x + pan_offset)
+                    (diamond_center_x + pan_foreground_length)
                         .max(bounds.x + 1.0)
                         .min(bounds.x + bounds.w - 1.0),
                     diamond_center_y,
