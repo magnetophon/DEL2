@@ -63,180 +63,136 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
             VStack::new(cx, |cx| {
                 Label::new(cx, "global").class("group-title");
                 HStack::new(cx, |cx| {
-                    // HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "dry/wet").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| &params.global.dry_wet)
-                                .class("widget");
-                        })
-                        .class("row");
+                        Label::new(cx, "dry/wet").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.dry_wet)
+                            .class("widget");
                     })
-                    .class("column");
+                    .class("row");
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "attack").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| &params.global.attack_ms)
-                                .class("widget");
-                        })
-                        .class("row");
+                        Label::new(cx, "attack").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.attack_ms)
+                            .class("widget");
                     })
-                    .class("column");
+                    .class("row");
                 })
                 .class("param-group");
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "dry gain").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| &params.global.output_gain)
-                                .class("widget");
-                        })
-                        .class("row");
+                        Label::new(cx, "dry gain").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.output_gain)
+                            .class("widget");
                     })
-                    .class("column");
+                    .class("row");
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "release").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
-                                .class("widget");
-                        })
-                        .class("row");
+                        Label::new(cx, "release").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
+                            .class("widget");
                     })
-                    .class("column");
+                    .class("row");
                 })
                 .class("param-group");
 
                 HStack::new(cx, |cx| {
-                    // HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "drive").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| {
-                                &params.global.global_drive
-                            })
+                        Label::new(cx, "drive").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.global_drive)
                             .class("widget");
-                        })
-                        .class("row");
                     })
-                    .class("column");
+                    .class("row");
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "min tap").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| {
-                                &params.global.min_tap_milliseconds
-                            })
-                            .class("widget");
+                        Label::new(cx, "min tap").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| {
+                            &params.global.min_tap_milliseconds
                         })
-                        .class("row");
+                        .class("widget");
                     })
-                    .class("column");
+                    .class("row");
                 })
                 .class("param-group");
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "mutes").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| {
-                                &params.global.mute_is_toggle
-                            })
+                        Label::new(cx, "mutes").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
                             .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                             .class("widget");
-                        })
-                        .class("row");
                     })
-                    .class("column");
+                    .class("row");
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "max tap").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| {
-                                &params.global.max_tap_seconds
-                            })
+                        Label::new(cx, "max tap").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.max_tap_seconds)
                             .set_style(ParamSliderStyle::FromLeft)
                             .class("widget");
-                        })
-                        .class("row");
                     })
-                    .class("column");
+                    .class("row");
                 })
                 .class("param-group");
                 Label::new(cx, "triggers").class("group-title");
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "mute in").class("action-name");
-                            ActionTrigger::new(
-                                cx,
-                                Data::params,
-                                Data::is_learning,
-                                Data::learning_index,
-                                Data::learned_notes,
-                                Data::last_learned_notes,
-                                Data::last_played_notes,
-                                Data::enabled_actions,
-                                MUTE_IN,
-                            );
-                        })
-                        .class("row");
+                        Label::new(cx, "mute in").class("action-name");
+                        ActionTrigger::new(
+                            cx,
+                            Data::params,
+                            Data::is_learning,
+                            Data::learning_index,
+                            Data::learned_notes,
+                            Data::last_learned_notes,
+                            Data::last_played_notes,
+                            Data::enabled_actions,
+                            MUTE_IN,
+                        );
                     })
-                    .class("column");
+                    .class("row");
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "clear taps").class("action-name");
-                            ActionTrigger::new(
-                                cx,
-                                Data::params,
-                                Data::is_learning,
-                                Data::learning_index,
-                                Data::learned_notes,
-                                Data::last_learned_notes,
-                                Data::last_played_notes,
-                                Data::enabled_actions,
-                                CLEAR_TAPS,
-                            );
-                        })
-                        .class("row");
+                        Label::new(cx, "clear taps").class("action-name");
+                        ActionTrigger::new(
+                            cx,
+                            Data::params,
+                            Data::is_learning,
+                            Data::learning_index,
+                            Data::learned_notes,
+                            Data::last_learned_notes,
+                            Data::last_played_notes,
+                            Data::enabled_actions,
+                            CLEAR_TAPS,
+                        );
                     })
-                    .class("column");
+                    .class("row");
                 })
                 .class("param-group");
 
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "mute out").class("action-name");
-                            ActionTrigger::new(
-                                cx,
-                                Data::params,
-                                Data::is_learning,
-                                Data::learning_index,
-                                Data::learned_notes,
-                                Data::last_learned_notes,
-                                Data::last_played_notes,
-                                Data::enabled_actions,
-                                MUTE_OUT,
-                            );
-                        })
-                        .class("row");
+                        Label::new(cx, "mute out").class("action-name");
+                        ActionTrigger::new(
+                            cx,
+                            Data::params,
+                            Data::is_learning,
+                            Data::learning_index,
+                            Data::learned_notes,
+                            Data::last_learned_notes,
+                            Data::last_played_notes,
+                            Data::enabled_actions,
+                            MUTE_OUT,
+                        );
                     })
-                    .class("column");
+                    .class("row");
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "lock taps").class("action-name");
-                            ActionTrigger::new(
-                                cx,
-                                Data::params,
-                                Data::is_learning,
-                                Data::learning_index,
-                                Data::learned_notes,
-                                Data::last_learned_notes,
-                                Data::last_played_notes,
-                                Data::enabled_actions,
-                                LOCK_TAPS,
-                            );
-                        })
-                        .class("row");
+                        Label::new(cx, "lock taps").class("action-name");
+                        ActionTrigger::new(
+                            cx,
+                            Data::params,
+                            Data::is_learning,
+                            Data::learning_index,
+                            Data::learned_notes,
+                            Data::last_learned_notes,
+                            Data::last_played_notes,
+                            Data::enabled_actions,
+                            LOCK_TAPS,
+                        );
                     })
-                    .class("column");
+                    .class("row");
                 })
                 .class("param-group");
 
@@ -244,27 +200,17 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
 
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "center").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| {
-                                &params.taps.panning_center
-                            })
+                        Label::new(cx, "center").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.taps.panning_center)
                             .class("widget");
-                        })
-                        .class("row");
                     })
-                    .class("column");
+                    .class("row");
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "note>pan").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| {
-                                &params.taps.panning_amount
-                            })
+                        Label::new(cx, "note>pan").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.taps.panning_amount)
                             .class("widget");
-                        })
-                        .class("row");
                     })
-                    .class("column");
+                    .class("row");
                 })
                 .class("param-group");
 
@@ -272,27 +218,21 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
 
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "vel>cut").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| {
-                                &params.taps.velocity_to_cutoff_amount
-                            })
-                            .class("widget");
+                        Label::new(cx, "vel>cut").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| {
+                            &params.taps.velocity_to_cutoff_amount
                         })
-                        .class("row");
+                        .class("widget");
                     })
-                    .class("column");
+                    .class("row");
                     HStack::new(cx, |cx| {
-                        HStack::new(cx, |cx| {
-                            Label::new(cx, "note>cut").class("slider-label");
-                            ParamSlider::new(cx, Data::params, |params| {
-                                &params.taps.note_to_cutoff_amount
-                            })
-                            .class("widget");
+                        Label::new(cx, "note>cut").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| {
+                            &params.taps.note_to_cutoff_amount
                         })
-                        .class("row");
+                        .class("widget");
                     })
-                    .class("column");
+                    .class("row");
                 })
                 .class("param-group");
 
