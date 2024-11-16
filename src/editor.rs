@@ -848,60 +848,41 @@ impl DelayGraph {
             note_path.close();
 
             let pan_value = params.pans[i].load(Ordering::SeqCst);
-            let line_length = 50.0;
+            let line_length = if pan_value.abs() > 1.0 / 50.0 {
+                50.0
+            } else {
+                0.0
+            };
 
-            if pan_value.abs() > 1.0 / line_length {
-                let target_pan_foreground_length = pan_value * line_length;
-                let target_pan_background_length = if pan_value < 0.0 {
-                    -line_length
-                } else {
-                    line_length
-                };
+            let target_pan_foreground_length = pan_value * line_length;
+            let target_pan_background_length = if pan_value < 0.0 {
+                -line_length
+            } else {
+                line_length
+            };
 
-                for i in 0..NUM_TAPS {
-                    let previous_pan_foreground_length =
-                        params.previous_pan_foreground_lengths[i].load(Ordering::SeqCst);
-                    let previous_pan_background_length =
-                        params.previous_pan_background_lengths[i].load(Ordering::SeqCst);
+            let pan_foreground_length = Self::gui_smooth(
+                target_pan_foreground_length,
+                &params.previous_pan_foreground_lengths[i],
+            );
+            let pan_background_length = Self::gui_smooth(
+                target_pan_background_length,
+                &params.previous_pan_background_lengths[i],
+            );
 
-                    // Check for sign change
-                    if target_pan_foreground_length.signum()
-                        != previous_pan_foreground_length.signum()
-                    {
-                        params.previous_pan_foreground_lengths[i]
-                            .store(target_pan_foreground_length, Ordering::SeqCst);
-                    }
-                    if target_pan_background_length.signum()
-                        != previous_pan_background_length.signum()
-                    {
-                        params.previous_pan_background_lengths[i]
-                            .store(target_pan_background_length, Ordering::SeqCst);
-                    }
-                }
+            pan_background_path.move_to(note_center_x, note_center_y);
+            pan_background_path.line_to(
+                (note_center_x + pan_background_length)
+                    .clamp(bounds.x + 1.0, bounds.x + bounds.w - 1.0),
+                note_center_y,
+            );
 
-                let pan_foreground_length = Self::gui_smooth(
-                    target_pan_foreground_length,
-                    &params.previous_pan_foreground_lengths[i],
-                );
-                let pan_background_length = Self::gui_smooth(
-                    target_pan_background_length,
-                    &params.previous_pan_background_lengths[i],
-                );
-
-                pan_background_path.move_to(note_center_x, note_center_y);
-                pan_background_path.line_to(
-                    (note_center_x + pan_background_length)
-                        .clamp(bounds.x + 1.0, bounds.x + bounds.w - 1.0),
-                    note_center_y,
-                );
-
-                pan_foreground_path.move_to(note_center_x, note_center_y);
-                pan_foreground_path.line_to(
-                    (note_center_x + pan_foreground_length)
-                        .clamp(bounds.x + 1.0, bounds.x + bounds.w - 1.0),
-                    note_center_y,
-                );
-            }
+            pan_foreground_path.move_to(note_center_x, note_center_y);
+            pan_foreground_path.line_to(
+                (note_center_x + pan_foreground_length)
+                    .clamp(bounds.x + 1.0, bounds.x + bounds.w - 1.0),
+                note_center_y,
+            );
         }
 
         canvas.stroke_path(
