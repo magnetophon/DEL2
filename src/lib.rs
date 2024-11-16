@@ -2101,29 +2101,37 @@ impl LastPlayedNotes {
 
     /// Handles the 'note off' event.
     fn note_off(&self, note: u8) {
-        let current_state = self.state.load(Ordering::SeqCst);
+        let mut current_state = self.state.load(Ordering::SeqCst);
 
-        while let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
+        if let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
             // Calculate new state after disabling the note at the found index.
-            let new_state = current_state & !(1 << index);
-            if self
-                .state
-                .compare_exchange_weak(current_state, new_state, Ordering::SeqCst, Ordering::SeqCst)
-                .is_ok()
-            {
-                self.sequence.store(index, 0); // Reset sequence
-                self.active_notes.store(index, false); // Mark as inactive
-                break;
+            loop {
+                let new_state = current_state & !(1 << index);
+                match self.state.compare_exchange_weak(
+                    current_state,
+                    new_state,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                ) {
+                    Ok(_) => {
+                        self.sequence.store(index, 0); // Reset sequence
+                        self.active_notes.store(index, false); // Mark as inactive
+                        break;
+                    }
+                    Err(actual_state) => current_state = actual_state,
+                }
             }
         }
     }
 
     /// Checks if a note is currently being played.
     fn is_playing(&self, note: u8) -> bool {
-        // Find the index of the note and check if its spot in state is occupied.
-        (0..8)
-            .find(|&i| self.notes.load(i) == note)
-            .map_or(false, |index| self.active_notes.load(index))
+        for i in 0..8 {
+            if self.notes.load(i) == note {
+                return self.active_notes.load(i);
+            }
+        }
+        false
     }
 
     /// Print the notes for testing purposes.
