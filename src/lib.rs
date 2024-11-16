@@ -2045,7 +2045,7 @@ impl LastPlayedNotes {
 
     /// Handles the 'note on' event.
     fn note_on(&self, note: u8) {
-        let current_state = self.state.load(Ordering::SeqCst);
+        let mut current_state = self.state.load(Ordering::SeqCst);
 
         // Check if the note is already in the table and reactivate if so.
         if let Some(index) = (0..8).find(|&i| self.notes.load(i) == note) {
@@ -2055,47 +2055,36 @@ impl LastPlayedNotes {
             self.active_notes.store(index, true); // Mark as active
 
             // Ensure it's marked as active in the state.
-            loop {
-                let new_state = current_state | (1 << index); // Set this index as active
-                if self
-                    .state
-                    .compare_exchange_weak(
-                        current_state,
-                        new_state,
-                        Ordering::SeqCst,
-                        Ordering::SeqCst,
-                    )
-                    .is_ok()
-                {
-                    break;
-                }
+            while let Err(actual_state) = self.state.compare_exchange_weak(
+                current_state,
+                current_state | (1 << index), // Set this index as active
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                current_state = actual_state;
             }
             return;
         }
 
-        // Loop until space is found in the notes array.
         loop {
-            // Find first available spot in the notes array.
-            if let Some(index) = (0..8).find(|i| (current_state & (1 << i)) == 0) {
+            // Try to find an empty slot in the current state.
+            if let Some(index) = (0..8).find(|&i| (current_state & (1 << i)) == 0) {
                 // Attempt to occupy this empty spot.
-                let new_state = current_state | (1 << index);
-                if self
-                    .state
-                    .compare_exchange_weak(
-                        current_state,
-                        new_state,
-                        Ordering::SeqCst,
-                        Ordering::SeqCst,
-                    )
-                    .is_ok()
-                {
-                    // Store the note and its sequence once the position is successfully claimed.
-                    self.notes.store(index, note);
-                    self.sequence
-                        .store(index, self.current_sequence.fetch_add(1, Ordering::SeqCst));
-                    self.active_notes.store(index, true); // Mark as active
-                    break;
+                while let Err(actual_state) = self.state.compare_exchange_weak(
+                    current_state,
+                    current_state | (1 << index),
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                ) {
+                    current_state = actual_state;
                 }
+
+                // Store the note and its sequence once the position is successfully claimed.
+                self.notes.store(index, note);
+                self.sequence
+                    .store(index, self.current_sequence.fetch_add(1, Ordering::SeqCst));
+                self.active_notes.store(index, true); // Mark as active
+                break;
             } else {
                 // Overwrite the oldest active note
                 let oldest_index = (0..8).min_by_key(|&i| self.sequence.load(i)).unwrap();
