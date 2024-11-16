@@ -13,7 +13,7 @@ use nih_plug_vizia::{
 
 use crate::{
     util, AtomicBoolArray, AtomicByteArray, AtomicF32, AtomicF32Array, Del2Params, LastPlayedNotes,
-    CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE,
+    CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, NUM_TAPS,
 };
 
 const ZOOM_SMOOTH_POLE: f32 = 0.915;
@@ -493,13 +493,21 @@ impl DelayGraph {
         border_width: f32,
         outline_width: f32,
     ) -> f32 {
-        let current_tap_value = params.current_tap.load(Ordering::SeqCst) as usize;
+        let current_tap_value = params.current_tap.load(Ordering::SeqCst);
+        let current_time_value = params.current_time.load(Ordering::SeqCst);
+        let max_tap_samples = params.max_tap_samples.load(Ordering::SeqCst);
         let max_delay_time = if current_tap_value > 0 {
             params.delay_times[current_tap_value - 1].load(Ordering::SeqCst)
         } else {
             0
         };
-        ((max_delay_time as f32 + params.max_tap_samples.load(Ordering::SeqCst) as f32)
+        let zoom_tap_samples =
+            if current_time_value == max_delay_time || current_tap_value == NUM_TAPS {
+                0.1 * max_tap_samples as f32
+            } else {
+                max_tap_samples as f32
+            };
+        ((max_delay_time as f32 + zoom_tap_samples)
             / outline_width.mul_add(-0.5, rect_width - border_width))
         .recip()
     }
