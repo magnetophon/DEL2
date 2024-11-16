@@ -388,7 +388,7 @@ impl FilterGuiParams {
                 default_cutoff, // Use the passed default value
                 FloatRange::Skewed {
                     min: 10.0,
-                    max: 20_000.0,
+                    max: 18_000.0,
                     factor: FloatRange::skew_factor(-1.6),
                 },
             )
