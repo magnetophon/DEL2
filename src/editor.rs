@@ -711,10 +711,10 @@ impl DelayGraph {
         background_color: vg::Color,
         zoomed: bool,
     ) {
-        let mut diamond_path = vg::Path::new();
+        let mut note_path = vg::Path::new();
         let mut center_path = vg::Path::new();
-        let mut pan_path = vg::Path::new();
-        let mut pan_amount_path = vg::Path::new();
+        let mut pan_background_path = vg::Path::new();
+        let mut pan_foreground_path = vg::Path::new();
         let first_note = params.first_note.load(std::sync::atomic::Ordering::SeqCst);
 
         let panning_center = if params.taps.panning_center.value() < 0 {
@@ -739,12 +739,12 @@ impl DelayGraph {
             (0.0, 127.0)
         };
 
-        let diamond_size = line_width * 2.0; // Width and height of a diamond
+        let note_size = line_width * 2.0; // Width and height of a note
 
         // Calculate available height with margins
         let margin = 10.0 * line_width;
-        let available_height = 2.0f32.mul_add(-(margin + diamond_size + border_width), bounds.h);
-        // Draw half a diamond for the panning center
+        let available_height = 2.0f32.mul_add(-(margin + note_size + border_width), bounds.h);
+        // Draw half a note for the panning center
         if first_note != NO_LEARNED_NOTE {
             let normalized_panning_center = if max_note_value == min_note_value {
                 panning_center as f32 / 127.0
@@ -753,24 +753,24 @@ impl DelayGraph {
             };
 
             let target_panning_center_height =
-                (1.0 - normalized_panning_center).mul_add(available_height, margin + diamond_size);
+                (1.0 - normalized_panning_center).mul_add(available_height, margin + note_size);
 
             let panning_center_height = Self::gui_smooth(
                 target_panning_center_height,
                 &params.previous_panning_center_height,
             );
 
-            let diamond_half_size = line_width;
+            let note_half_size = line_width;
 
             let panning_center_x = bounds.x;
             let panning_center_y = bounds.y + panning_center_height;
 
-            center_path.move_to(panning_center_x, panning_center_y + diamond_half_size);
-            center_path.line_to(panning_center_x + diamond_half_size, panning_center_y);
-            center_path.line_to(panning_center_x, panning_center_y - diamond_half_size);
+            center_path.move_to(panning_center_x, panning_center_y + note_half_size);
+            center_path.line_to(panning_center_x + note_half_size, panning_center_y);
+            center_path.line_to(panning_center_x, panning_center_y - note_half_size);
             center_path.close();
 
-            // Draw half a diamond for the first note at time 0
+            // Draw half a note for the first note at time 0
             let normalized_first_note = if max_note_value == min_note_value {
                 f32::from(first_note) / 127.0
             } else {
@@ -778,29 +778,20 @@ impl DelayGraph {
             };
 
             let target_note_height =
-                (1.0 - normalized_first_note).mul_add(available_height, margin + diamond_size);
+                (1.0 - normalized_first_note).mul_add(available_height, margin + note_size);
 
             let note_height =
                 Self::gui_smooth(target_note_height, &params.previous_first_note_height);
 
-            let first_diamond_center_x = bounds.x;
-            let first_diamond_center_y = bounds.y + note_height;
-            let diamond_half_size = line_width;
+            let first_note_center_x = bounds.x;
+            let first_note_center_y = bounds.y + note_height;
+            let note_half_size = line_width;
 
-            // Drawing only the right half of the diamond
-            diamond_path.move_to(
-                first_diamond_center_x,
-                first_diamond_center_y + diamond_half_size,
-            );
-            diamond_path.line_to(
-                first_diamond_center_x + diamond_half_size,
-                first_diamond_center_y,
-            );
-            diamond_path.line_to(
-                first_diamond_center_x,
-                first_diamond_center_y - diamond_half_size,
-            );
-            diamond_path.close();
+            // Drawing only the right half of the note
+            note_path.move_to(first_note_center_x, first_note_center_y + note_half_size);
+            note_path.line_to(first_note_center_x + note_half_size, first_note_center_y);
+            note_path.line_to(first_note_center_x, first_note_center_y - note_half_size);
+            note_path.close();
         }
 
         for i in 0..params.current_tap.load(std::sync::atomic::Ordering::SeqCst) {
@@ -816,21 +807,21 @@ impl DelayGraph {
             };
 
             let target_note_height =
-                (1.0 - normalized_note).mul_add(available_height, margin + diamond_size);
+                (1.0 - normalized_note).mul_add(available_height, margin + note_size);
 
             let note_height =
                 Self::gui_smooth(target_note_height, &params.previous_note_heights[i]);
 
-            let diamond_center_x = bounds.x + x_offset;
-            let diamond_center_y = bounds.y + note_height;
+            let note_center_x = bounds.x + x_offset;
+            let note_center_y = bounds.y + note_height;
 
-            let diamond_half_size = line_width;
+            let note_half_size = line_width;
 
-            diamond_path.move_to(diamond_center_x + diamond_half_size, diamond_center_y);
-            diamond_path.line_to(diamond_center_x, diamond_center_y + diamond_half_size);
-            diamond_path.line_to(diamond_center_x - diamond_half_size, diamond_center_y);
-            diamond_path.line_to(diamond_center_x, diamond_center_y - diamond_half_size);
-            diamond_path.close();
+            note_path.move_to(note_center_x + note_half_size, note_center_y);
+            note_path.line_to(note_center_x, note_center_y + note_half_size);
+            note_path.line_to(note_center_x - note_half_size, note_center_y);
+            note_path.line_to(note_center_x, note_center_y - note_half_size);
+            note_path.close();
 
             let pan_value = params.pans[i].load(std::sync::atomic::Ordering::SeqCst);
             let line_length = 50.0;
@@ -850,41 +841,41 @@ impl DelayGraph {
                     target_pan_background_length,
                     &params.previous_pan_background_lengths[i],
                 );
-                pan_path.move_to(diamond_center_x, diamond_center_y);
-                pan_path.line_to(
-                    (diamond_center_x + pan_background_length)
+                pan_background_path.move_to(note_center_x, note_center_y);
+                pan_background_path.line_to(
+                    (note_center_x + pan_background_length)
                         .max(bounds.x + 1.0)
                         .min(bounds.x + bounds.w - 1.0),
-                    diamond_center_y,
+                    note_center_y,
                 );
-                pan_amount_path.move_to(diamond_center_x, diamond_center_y);
-                pan_amount_path.line_to(
-                    (diamond_center_x + pan_foreground_length)
+                pan_foreground_path.move_to(note_center_x, note_center_y);
+                pan_foreground_path.line_to(
+                    (note_center_x + pan_foreground_length)
                         .max(bounds.x + 1.0)
                         .min(bounds.x + bounds.w - 1.0),
-                    diamond_center_y,
+                    note_center_y,
                 );
             };
         }
 
         canvas.stroke_path(
-            &pan_path,
+            &pan_background_path,
             &vg::Paint::color(border_color).with_line_width(line_width),
         );
 
-        // Draw the diamond for panning center before the first note
+        // Draw the note for panning center before the first note
         canvas.stroke_path(
             &center_path,
             &vg::Paint::color(font_color).with_line_width(line_width),
         );
 
         canvas.stroke_path(
-            &diamond_path,
+            &note_path,
             &vg::Paint::color(color).with_line_width(line_width),
         );
 
         canvas.stroke_path(
-            &pan_amount_path,
+            &pan_foreground_path,
             &vg::Paint::color(font_color).with_line_width(line_width),
         );
 
