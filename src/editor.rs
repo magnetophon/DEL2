@@ -504,7 +504,7 @@ impl DelayGraph {
         };
         let zoom_tap_samples =
             if current_time_value == max_delay_time || current_tap_value == NUM_TAPS {
-                0.16 * max_delay_time as f32
+                0.175 * max_delay_time as f32
             } else {
                 max_tap_samples as f32
             };
