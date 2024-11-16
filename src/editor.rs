@@ -858,6 +858,27 @@ impl DelayGraph {
                     line_length
                 };
 
+                for i in 0..NUM_TAPS {
+                    let previous_pan_foreground_length =
+                        params.previous_pan_foreground_lengths[i].load(Ordering::SeqCst);
+                    let previous_pan_background_length =
+                        params.previous_pan_background_lengths[i].load(Ordering::SeqCst);
+
+                    // Check for sign change
+                    if target_pan_foreground_length.signum()
+                        != previous_pan_foreground_length.signum()
+                    {
+                        params.previous_pan_foreground_lengths[i]
+                            .store(target_pan_foreground_length, Ordering::SeqCst);
+                    }
+                    if target_pan_background_length.signum()
+                        != previous_pan_background_length.signum()
+                    {
+                        params.previous_pan_background_lengths[i]
+                            .store(target_pan_background_length, Ordering::SeqCst);
+                    }
+                }
+
                 let pan_foreground_length = Self::gui_smooth(
                     target_pan_foreground_length,
                     &params.previous_pan_foreground_lengths[i],
