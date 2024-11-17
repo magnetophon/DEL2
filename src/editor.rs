@@ -2,7 +2,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
 };
-use std::time::Instant;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use nih_plug::prelude::Editor;
 use nih_plug_vizia::{
@@ -17,7 +17,7 @@ use crate::{
     CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, NUM_TAPS,
 };
 
-const GUI_SMOOTHING_DECAY_MS: f32 = 130.0;
+const GUI_SMOOTHING_DECAY_MS: f64 = 240.0;
 
 /// The minimum decibel value that the meters display
 const MIN_TICK: f32 = -60.0;
@@ -330,23 +330,12 @@ impl View for DelayGraph {
         let target_time_scaling_factor =
             Self::compute_time_scaling_factor(&params, bounds.w, border_width, outline_width);
 
-        let now = Instant::now();
-        let now_nanos = now.elapsed().as_nanos() as u64;
-        let last_time_nanos = params.last_frame_time.load(Ordering::SeqCst);
-
-        let frame_duration: f32;
-        if last_time_nanos < now_nanos {
-            frame_duration = (now_nanos - last_time_nanos) as f32 / 1_000_000_000.0;
-        } else {
-            frame_duration = 1.0 / 60.0; // Assuming a 60 FPS default
-        }
-
-        params.last_frame_time.store(now_nanos, Ordering::SeqCst);
+        let gui_decay_weight = Self::calculate_gui_decay_weight(&params);
 
         let time_scaling_factor = Self::gui_smooth(
             target_time_scaling_factor,
             &params.previous_time_scaling_factor,
-            frame_duration,
+            gui_decay_weight,
         );
         // Draw components
         Self::draw_background(canvas, bounds, background_color);
@@ -387,7 +376,7 @@ impl View for DelayGraph {
             selection_color,
             outline_width,
             time_scaling_factor,
-            frame_duration,
+            gui_decay_weight,
             border_width,
             font_color,
             border_color,
@@ -473,10 +462,38 @@ impl DelayGraph {
         // Use recip for reciprocal calculation
         (total_delay / denominator).recip()
     }
+    fn calculate_gui_decay_weight(params: &Arc<Del2Params>) -> f32 {
+        let start = SystemTime::now();
+
+        // Get the duration since the UNIX EPOCH
+        let since_the_epoch = start
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards");
+
+        // Convert current time to nanoseconds since the epoch
+        let now_nanos = since_the_epoch.as_nanos();
+
+        // Load the last frame time, ensuring it's within 64-bit range
+        let last_time_nanos = params.last_frame_time.load(Ordering::SeqCst);
+
+        // Calculate the frame duration using the lower 64 bits
+        let frame_duration: u64 = (now_nanos as u64) - last_time_nanos;
+
+        // Store the current time value inside the AtomicU64 by casting u128 to its lower 64 bits
+        params
+            .last_frame_time
+            .store((now_nanos & u64::MAX as u128) as u64, Ordering::SeqCst);
+
+        // Calculate and return the GUI smoothing decay weight
+        f64::powf(
+            0.25,
+            (GUI_SMOOTHING_DECAY_MS * 1_000_000.0 / frame_duration as f64).recip(),
+        ) as f32
+    }
 
     /// Smoothly updates the value stored within an `f32` based on a target value.
     /// If the current value is `f32::MAX`, it initializes with the target value.
-    fn gui_smooth(target_value: f32, atomic_value: &AtomicF32, frame_duration: f32) -> f32 {
+    fn gui_smooth(target_value: f32, atomic_value: &AtomicF32, gui_decay_weight: f32) -> f32 {
         // Define the threshold relative to the target value
         let threshold = 0.001 * target_value.abs();
         // Load the current value once
@@ -494,14 +511,10 @@ impl DelayGraph {
             return target_value;
         }
 
-        // Calculate adjusted smoothing factor based on frame duration
-        let decay_samples = (GUI_SMOOTHING_DECAY_MS / 1000.0) / frame_duration; // Convert decay time to samples
-        let smooth_pole = f32::powf(0.25, decay_samples.recip()); // Calculate pole with frame-duration based smoothing
-
         // Compute the smoothed value using frame-rate independent smoothing
         let smoothed_value = current_value.mul_add(
-            smooth_pole,
-            target_value.mul_add(-smooth_pole, target_value),
+            gui_decay_weight,
+            target_value.mul_add(-gui_decay_weight, target_value),
         );
 
         // Store the change
@@ -673,7 +686,7 @@ impl DelayGraph {
         color: vg::Color,
         line_width: f32,
         time_scaling_factor: f32,
-        frame_duration: f32,
+        gui_decay_weight: f32,
         border_width: f32,
         font_color: vg::Color,
         border_color: vg::Color,
@@ -754,7 +767,7 @@ impl DelayGraph {
             let panning_center_height = Self::gui_smooth(
                 target_panning_center_height,
                 &params.previous_panning_center_height,
-                frame_duration,
+                gui_decay_weight,
             );
 
             let note_half_size = line_width;
@@ -775,7 +788,7 @@ impl DelayGraph {
             let note_height = Self::gui_smooth(
                 target_note_height,
                 &params.previous_first_note_height,
-                frame_duration,
+                gui_decay_weight,
             );
 
             let first_note_center_x = bounds.x;
@@ -799,7 +812,7 @@ impl DelayGraph {
             let note_height = Self::gui_smooth(
                 target_note_height,
                 &params.previous_note_heights[i],
-                frame_duration,
+                gui_decay_weight,
             );
 
             let note_center_x = bounds.x + x_offset;
@@ -829,12 +842,12 @@ impl DelayGraph {
             let pan_foreground_length = Self::gui_smooth(
                 target_pan_foreground_length,
                 &params.previous_pan_foreground_lengths[i],
-                frame_duration,
+                gui_decay_weight,
             );
             let pan_background_length = Self::gui_smooth(
                 target_pan_background_length,
                 &params.previous_pan_background_lengths[i],
-                frame_duration,
+                gui_decay_weight,
             );
 
             pan_background_path.move_to(note_center_x, note_center_y);

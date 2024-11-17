@@ -550,7 +550,7 @@ impl Del2Params {
             previous_pan_background_lengths: AtomicF32Array(array_init::array_init(|_| {
                 Arc::new(AtomicF32::new(0.0))
             })),
-            last_frame_time: AtomicU64::new(u64::MAX),
+            last_frame_time: AtomicU64::new(0),
 
             gain: FloatParam::new(
                 "Gain",
