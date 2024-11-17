@@ -159,6 +159,7 @@ pub struct Del2Params {
     previous_panning_center_height: Arc<AtomicF32>,
     previous_pan_foreground_lengths: AtomicF32Array,
     previous_pan_background_lengths: AtomicF32Array,
+    last_frame_time: AtomicU64,
 
     /// A voice's gain. This can be polyphonically modulated.
     #[id = "gain"]
@@ -549,6 +550,7 @@ impl Del2Params {
             previous_pan_background_lengths: AtomicF32Array(array_init::array_init(|_| {
                 Arc::new(AtomicF32::new(0.0))
             })),
+            last_frame_time: AtomicU64::new(u64::MAX),
 
             gain: FloatParam::new(
                 "Gain",

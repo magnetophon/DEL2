@@ -2,6 +2,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
 };
+use std::time::Instant;
 
 use nih_plug::prelude::Editor;
 use nih_plug_vizia::{
@@ -16,7 +17,7 @@ use crate::{
     CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, NUM_TAPS,
 };
 
-const ZOOM_SMOOTH_POLE: f32 = 0.915;
+const GUI_SMOOTHING_DECAY_MS: f32 = 130.0;
 
 /// The minimum decibel value that the meters display
 const MIN_TICK: f32 = -60.0;
@@ -329,9 +330,23 @@ impl View for DelayGraph {
         let target_time_scaling_factor =
             Self::compute_time_scaling_factor(&params, bounds.w, border_width, outline_width);
 
+        let now = Instant::now();
+        let now_nanos = now.elapsed().as_nanos() as u64;
+        let last_time_nanos = params.last_frame_time.load(Ordering::SeqCst);
+
+        let frame_duration: f32;
+        if last_time_nanos < now_nanos {
+            frame_duration = (now_nanos - last_time_nanos) as f32 / 1_000_000_000.0;
+        } else {
+            frame_duration = 1.0 / 60.0; // Assuming a 60 FPS default
+        }
+
+        params.last_frame_time.store(now_nanos, Ordering::SeqCst);
+
         let time_scaling_factor = Self::gui_smooth(
             target_time_scaling_factor,
             &params.previous_time_scaling_factor,
+            frame_duration,
         );
         // Draw components
         Self::draw_background(canvas, bounds, background_color);
@@ -372,6 +387,7 @@ impl View for DelayGraph {
             selection_color,
             outline_width,
             time_scaling_factor,
+            frame_duration,
             border_width,
             font_color,
             border_color,
@@ -458,12 +474,12 @@ impl DelayGraph {
         (total_delay / denominator).recip()
     }
 
-    /// Smoothly updates the value stored within an `AtomicF32` based on a target value.
+    /// Smoothly updates the value stored within an `f32` based on a target value.
     /// If the current value is `f32::MAX`, it initializes with the target value.
-    fn gui_smooth(target_value: f32, atomic_value: &AtomicF32) -> f32 {
+    fn gui_smooth(target_value: f32, atomic_value: &AtomicF32, frame_duration: f32) -> f32 {
         // Define the threshold relative to the target value
         let threshold = 0.001 * target_value.abs();
-        // Load current value once
+        // Load the current value once
         let current_value = atomic_value.load(Ordering::SeqCst);
 
         // Early exit if the current value is very close to the target value
@@ -478,16 +494,20 @@ impl DelayGraph {
             return target_value;
         }
 
-        // Compute the smoothed value
+        // Calculate adjusted smoothing factor based on frame duration
+        let decay_samples = (GUI_SMOOTHING_DECAY_MS / 1000.0) / frame_duration; // Convert decay time to samples
+        let smooth_pole = f32::powf(0.25, decay_samples.recip()); // Calculate pole with frame-duration based smoothing
+
+        // Compute the smoothed value using frame-rate independent smoothing
         let smoothed_value = current_value.mul_add(
-            ZOOM_SMOOTH_POLE,
-            target_value.mul_add(-ZOOM_SMOOTH_POLE, target_value),
+            smooth_pole,
+            target_value.mul_add(-smooth_pole, target_value),
         );
 
         // Store the change
         atomic_value.store(smoothed_value, Ordering::SeqCst);
 
-        // Return
+        // Return the smoothed value
         smoothed_value
     }
 
@@ -533,7 +553,7 @@ impl DelayGraph {
         bounds: BoundingBox,
         color: vg::Color,
         line_width: f32,
-        scaling_factor: f32,
+        time_scaling_factor: f32,
         border_width: f32,
     ) {
         // Load the values once
@@ -552,7 +572,7 @@ impl DelayGraph {
 
         if current_time > max_delay_time {
             // Compute offset using mul_add for precision and performance
-            let x_offset = (current_time as f32).mul_add(scaling_factor, border_width * 0.5);
+            let x_offset = (current_time as f32).mul_add(time_scaling_factor, border_width * 0.5);
 
             // Calculate y_move using mul_add
             let y_move = border_width.mul_add(-0.5, bounds.y + bounds.h);
@@ -576,14 +596,14 @@ impl DelayGraph {
         velocity_color: vg::Color,
         meter_color: vg::Color,
         line_width: f32,
-        scaling_factor: f32,
+        time_scaling_factor: f32,
         border_width: f32,
     ) {
         let current_tap = params.current_tap.load(Ordering::SeqCst);
 
         for i in 0..current_tap {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst) as f32;
-            let x_offset = delay_time.mul_add(scaling_factor, border_width * 0.5);
+            let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
 
             let velocity_value = params.velocities[i].load(Ordering::SeqCst);
             let velocity_height = velocity_value.mul_add(bounds.h, -border_width);
@@ -652,7 +672,8 @@ impl DelayGraph {
         bounds: BoundingBox,
         color: vg::Color,
         line_width: f32,
-        scaling_factor: f32,
+        time_scaling_factor: f32,
+        frame_duration: f32,
         border_width: f32,
         font_color: vg::Color,
         border_color: vg::Color,
@@ -733,6 +754,7 @@ impl DelayGraph {
             let panning_center_height = Self::gui_smooth(
                 target_panning_center_height,
                 &params.previous_panning_center_height,
+                frame_duration,
             );
 
             let note_half_size = line_width;
@@ -750,8 +772,11 @@ impl DelayGraph {
                 get_normalized_value(first_note, min_note_value, max_note_value);
             let target_note_height =
                 (1.0 - normalized_first_note).mul_add(available_height, margin + note_size);
-            let note_height =
-                Self::gui_smooth(target_note_height, &params.previous_first_note_height);
+            let note_height = Self::gui_smooth(
+                target_note_height,
+                &params.previous_first_note_height,
+                frame_duration,
+            );
 
             let first_note_center_x = bounds.x;
             let first_note_center_y = bounds.y + note_height;
@@ -765,14 +790,17 @@ impl DelayGraph {
 
         for i in 0..current_tap {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst) as f32;
-            let x_offset = delay_time.mul_add(scaling_factor, border_width * 0.5);
+            let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
 
             let note_value = params.notes[i].load(Ordering::SeqCst);
             let normalized_note = get_normalized_value(note_value, min_note_value, max_note_value);
             let target_note_height =
                 (1.0 - normalized_note).mul_add(available_height, margin + note_size);
-            let note_height =
-                Self::gui_smooth(target_note_height, &params.previous_note_heights[i]);
+            let note_height = Self::gui_smooth(
+                target_note_height,
+                &params.previous_note_heights[i],
+                frame_duration,
+            );
 
             let note_center_x = bounds.x + x_offset;
             let note_center_y = bounds.y + note_height;
@@ -801,10 +829,12 @@ impl DelayGraph {
             let pan_foreground_length = Self::gui_smooth(
                 target_pan_foreground_length,
                 &params.previous_pan_foreground_lengths[i],
+                frame_duration,
             );
             let pan_background_length = Self::gui_smooth(
                 target_pan_background_length,
                 &params.previous_pan_background_lengths[i],
+                frame_duration,
             );
 
             pan_background_path.move_to(note_center_x, note_center_y);
