@@ -441,13 +441,15 @@ impl DelayGraph {
             0
         };
 
-        // Calculate zoom tap samples using a conditional
-        let zoom_tap_samples =
-            if current_time_value == max_delay_time || current_tap_value == NUM_TAPS {
-                0.16 * max_delay_time as f32
-            } else {
-                max_tap_samples as f32
-            };
+        let zoom_tap_samples = if current_time_value == max_delay_time && current_tap_value == 1 {
+            // one delay tap, put it in the middle
+            max_delay_time as f32
+        } else if current_tap_value == NUM_TAPS || current_time_value == max_delay_time {
+            // time out, zoom in but leave a margin
+            0.16 * max_delay_time as f32
+        } else {
+            max_tap_samples as f32
+        };
 
         // Use mul_add for efficient denominator calculation
         let denominator = outline_width.mul_add(-0.5, rect_width - border_width);
