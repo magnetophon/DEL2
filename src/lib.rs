@@ -972,7 +972,12 @@ impl Plugin for Del2 {
                             .copied()
                             .unwrap_or(0.0),
                     ]);
-                    let processed = self.ladders[tap_index].tick_newton(frame);
+                    // most cpu intensive:
+                    // let processed = self.ladders[tap_index].tick_newton(frame);
+                    // lightest non-linear filter
+                    let processed = self.ladders[tap_index].tick_pivotal(frame);
+                    // even lighter, but linear
+                    // let processed = self.ladders[tap_index].tick_linear(frame);
                     let frame_out = *processed.as_array();
                     self.delayed_audio_l[tap_index][i] = frame_out[0];
                     self.delayed_audio_r[tap_index][i] = frame_out[1];
