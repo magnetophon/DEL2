@@ -1499,7 +1499,7 @@ impl Del2 {
         Arc::new(move |value| {
             let note_nr = value as u8; // Convert the floating-point value to the nearest u8
             if value < 0 {
-                "first note of pattern".to_string()
+                "initial note".to_string()
             } else {
                 let note_name = util::NOTES[(note_nr % 12) as usize];
                 let octave = (note_nr / 12) as i8 - 1; // Correct the octave calculation
