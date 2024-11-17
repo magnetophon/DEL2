@@ -376,7 +376,6 @@ impl View for DelayGraph {
             font_color,
             border_color,
             background_color,
-            true,
         );
         Self::draw_bounding_outline(canvas, bounds, border_color, border_width);
     }
@@ -658,7 +657,6 @@ impl DelayGraph {
         font_color: vg::Color,
         border_color: vg::Color,
         background_color: vg::Color,
-        zoomed: bool,
     ) {
         let mut note_path = vg::Path::new();
         let mut center_path = vg::Path::new();
