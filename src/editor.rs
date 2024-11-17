@@ -675,24 +675,42 @@ impl DelayGraph {
             first_panning_center_value as u8
         };
 
-        let (min_note_value, max_note_value) = if zoomed {
-            // Determine min and max note values efficiently
-            let mut used_notes: Vec<u8> = (0..current_tap)
-                .map(|i| params.notes[i].load(Ordering::SeqCst))
-                .collect();
-            if first_note != NO_LEARNED_NOTE {
-                used_notes.push(first_note);
-                used_notes.push(panning_center);
+        let (min_note_value, max_note_value) = if first_note != NO_LEARNED_NOTE {
+            // Initialize min and max with first_note and panning_center
+            let mut min = first_note.min(panning_center);
+            let mut max = first_note.max(panning_center);
+
+            // Iterate through notes to find min and max
+            for i in 0..current_tap {
+                let loaded_note = params.notes[i].load(Ordering::SeqCst);
+                if loaded_note < min {
+                    min = loaded_note;
+                } else if loaded_note > max {
+                    max = loaded_note;
+                }
             }
-            let min = *used_notes.iter().min().unwrap_or(&0);
-            let max = *used_notes.iter().max().unwrap_or(&127);
-            let (zoom_min, zoom_max) = if first_note - min < 12 && max - first_note < 12 {
-                (first_note.saturating_sub(12), first_note.saturating_add(12))
+
+            // Zoom minimum logic
+            let zoom_min = if first_note < min + 12 {
+                first_note.saturating_sub(12)
             } else {
-                (min, max)
+                min
+            };
+            // Zoom maximum logic
+            let zoom_max = if max < first_note + 12 {
+                first_note.saturating_add(12)
+            } else {
+                max
             };
 
-            (f32::from(zoom_min), f32::from(zoom_max))
+            let range_too_large = (min as i16 - max as i16).abs() > 24;
+            let (final_min, final_max) = if range_too_large {
+                (min, max)
+            } else {
+                (zoom_min, zoom_max)
+            };
+
+            (f32::from(final_min), f32::from(final_max))
         } else {
             (0.0, 127.0)
         };
