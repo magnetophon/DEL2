@@ -686,7 +686,13 @@ impl DelayGraph {
             }
             let min = *used_notes.iter().min().unwrap_or(&0);
             let max = *used_notes.iter().max().unwrap_or(&127);
-            (f32::from(min), f32::from(max))
+            let (zoom_min, zoom_max) = if first_note - min < 12 && max - first_note < 12 {
+                (first_note.saturating_sub(12), first_note.saturating_add(12))
+            } else {
+                (min, max)
+            };
+
+            (f32::from(zoom_min), f32::from(zoom_max))
         } else {
             (0.0, 127.0)
         };
