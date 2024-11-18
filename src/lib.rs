@@ -1466,16 +1466,36 @@ impl ClapPlugin for Del2 {
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
 
-    // Don't forget to change these features
-    const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo];
+    // TODO: Don't forget to change these features
+    const CLAP_FEATURES: &'static [ClapFeature] = &[
+        ClapFeature::AudioEffect,
+        ClapFeature::Delay,
+        ClapFeature::Filter,
+        ClapFeature::Distortion,
+        ClapFeature::Mixing,
+        ClapFeature::Stereo,
+        // TODO: Mono,
+        // TODO: Sampler,
+        // TODO: PitchShifter,
+        // TODO: Compressor,
+        // TODO: Limiter,
+        // TODO: Reverb,
+        // TODO: Tremolo,
+        // TODO: MultiEffects,
+    ];
 }
 
 impl Vst3Plugin for Del2 {
     const VST3_CLASS_ID: [u8; 16] = *b"magnetophon/DEL2";
 
-    // And also don't forget to change these categories
-    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
-        &[Vst3SubCategory::Fx, Vst3SubCategory::Dynamics];
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[
+        Vst3SubCategory::Fx,
+        Vst3SubCategory::Delay,
+        Vst3SubCategory::Filter,
+        Vst3SubCategory::Distortion,
+        Vst3SubCategory::Spatial,
+        Vst3SubCategory::Stereo,
+    ];
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
