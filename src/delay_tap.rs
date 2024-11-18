@@ -16,7 +16,7 @@ pub struct DelayTap {
     /// delay tap. This is used to steal the last delay tap in case all 16 delay taps are in use.
     pub internal_id: u64,
     /// The taps delay time.
-    /// A new tap will be created if the delay_time and note are not the same as one that is currently playing.
+    /// A new tap will be created if the `delay_time` and note are not the same as one that is currently playing.
     pub delay_time: u32,
     /// The note's key/note, in `0..128`. Only used for the delay tap terminated event.
     pub note: u8,

@@ -1350,14 +1350,14 @@ impl Del2 {
             delayed_audio_l: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
             delayed_audio_r: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
             filter_params: filter_params.clone(),
-            ladders: LadderFilter::new(filter_params.clone()),
+            ladders: LadderFilter::new(filter_params),
             mute_in_delayed: vec![false; MAX_BLOCK_SIZE].into_boxed_slice(),
             internal_id: self.next_internal_id,
             delay_time,
             note,
             velocity,
             releasing: false,
-            amp_envelope: amp_envelope.clone(),
+            amp_envelope,
             is_muted: false,
         };
         self.next_internal_id = self.next_internal_id.wrapping_add(1);
