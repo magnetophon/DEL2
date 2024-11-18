@@ -49,7 +49,7 @@ use delay_tap::DelayTap;
 
 // max seconds per tap
 const MAX_TAP_SECONDS: usize = 20;
-const NUM_TAPS: usize = 8;
+const NUM_TAPS: usize = 16;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * NUM_TAPS;
 const MAX_SAMPLE_RATE: usize = 192_000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
@@ -1943,8 +1943,8 @@ struct AtomicU32Array([Arc<AtomicU32>; NUM_TAPS]);
 pub struct AtomicF32Array([Arc<AtomicF32>; NUM_TAPS]);
 
 // Implement PersistentField for AtomicU8Array
-impl PersistentField<'_, [u8; 8]> for AtomicU8Array {
-    fn set(&self, new_values: [u8; 8]) {
+impl PersistentField<'_, [u8; NUM_TAPS]> for AtomicU8Array {
+    fn set(&self, new_values: [u8; NUM_TAPS]) {
         for (atomic, &new_value) in self.0.iter().zip(new_values.iter()) {
             atomic.store(new_value, Ordering::SeqCst);
         }
@@ -1952,9 +1952,9 @@ impl PersistentField<'_, [u8; 8]> for AtomicU8Array {
 
     fn map<F, R>(&self, f: F) -> R
     where
-        F: Fn(&[u8; 8]) -> R,
+        F: Fn(&[u8; NUM_TAPS]) -> R,
     {
-        let values: [u8; 8] = self
+        let values: [u8; NUM_TAPS] = self
             .0
             .iter()
             .map(|arc| arc.load(Ordering::SeqCst))
@@ -1965,8 +1965,8 @@ impl PersistentField<'_, [u8; 8]> for AtomicU8Array {
     }
 }
 
-impl PersistentField<'_, [u32; 8]> for AtomicU32Array {
-    fn set(&self, new_values: [u32; 8]) {
+impl PersistentField<'_, [u32; NUM_TAPS]> for AtomicU32Array {
+    fn set(&self, new_values: [u32; NUM_TAPS]) {
         for (atomic, &new_value) in self.0.iter().zip(new_values.iter()) {
             atomic.store(new_value, Ordering::SeqCst);
         }
@@ -1974,9 +1974,9 @@ impl PersistentField<'_, [u32; 8]> for AtomicU32Array {
 
     fn map<F, R>(&self, f: F) -> R
     where
-        F: Fn(&[u32; 8]) -> R,
+        F: Fn(&[u32; NUM_TAPS]) -> R,
     {
-        let values: [u32; 8] = self
+        let values: [u32; NUM_TAPS] = self
             .0
             .iter()
             .map(|arc| arc.load(Ordering::SeqCst))
@@ -1987,8 +1987,8 @@ impl PersistentField<'_, [u32; 8]> for AtomicU32Array {
     }
 }
 
-impl PersistentField<'_, [f32; 8]> for AtomicF32Array {
-    fn set(&self, new_values: [f32; 8]) {
+impl PersistentField<'_, [f32; NUM_TAPS]> for AtomicF32Array {
+    fn set(&self, new_values: [f32; NUM_TAPS]) {
         for (atomic, &new_value) in self.0.iter().zip(new_values.iter()) {
             atomic.store(new_value, Ordering::SeqCst);
         }
@@ -1996,9 +1996,9 @@ impl PersistentField<'_, [f32; 8]> for AtomicF32Array {
 
     fn map<F, R>(&self, f: F) -> R
     where
-        F: Fn(&[f32; 8]) -> R,
+        F: Fn(&[f32; NUM_TAPS]) -> R,
     {
-        let values: [f32; 8] = self
+        let values: [f32; NUM_TAPS] = self
             .0
             .iter()
             .map(|arc| arc.load(Ordering::SeqCst))
