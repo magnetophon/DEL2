@@ -338,51 +338,56 @@ impl View for DelayGraph {
             gui_decay_weight,
         );
 
+        let first_note = params.first_note.load(Ordering::SeqCst);
+
         // Draw components
         Self::draw_background(canvas, bounds, background_color);
-        Self::draw_delay_times_as_lines(
-            canvas,
-            &params,
-            bounds,
-            border_color,
-            border_width,
-            time_scaling_factor,
-        );
-        Self::draw_time_line(
-            canvas,
-            &params,
-            bounds,
-            selection_color,
-            outline_width,
-            time_scaling_factor,
-            border_width,
-        );
-        Self::draw_tap_velocities(
-            canvas,
-            &params,
-            &tap_meters,
-            &input_meter,
-            &output_meter,
-            bounds,
-            outline_color,
-            border_color,
-            outline_width,
-            time_scaling_factor,
-            border_width,
-        );
-        Self::draw_tap_notes_and_pans(
-            canvas,
-            &params,
-            bounds,
-            selection_color,
-            outline_width,
-            time_scaling_factor,
-            gui_decay_weight,
-            border_width,
-            font_color,
-            border_color,
-            background_color,
-        );
+
+        if first_note != NO_LEARNED_NOTE {
+            Self::draw_delay_times_as_lines(
+                canvas,
+                &params,
+                bounds,
+                border_color,
+                border_width,
+                time_scaling_factor,
+            );
+            Self::draw_tap_velocities(
+                canvas,
+                &params,
+                &tap_meters,
+                &input_meter,
+                &output_meter,
+                bounds,
+                outline_color,
+                border_color,
+                outline_width,
+                time_scaling_factor,
+                border_width,
+            );
+            Self::draw_tap_notes_and_pans(
+                canvas,
+                &params,
+                bounds,
+                selection_color,
+                outline_width,
+                time_scaling_factor,
+                gui_decay_weight,
+                border_width,
+                font_color,
+                border_color,
+                background_color,
+            );
+            Self::draw_time_line(
+                canvas,
+                &params,
+                bounds,
+                selection_color,
+                outline_width,
+                time_scaling_factor,
+                border_width,
+            );
+        }
         Self::draw_bounding_outline(canvas, bounds, border_color, border_width);
     }
 }
@@ -695,13 +700,14 @@ impl DelayGraph {
         border_color: vg::Color,
         background_color: vg::Color,
     ) {
+        let first_note = params.first_note.load(Ordering::SeqCst);
+
         let mut note_path = vg::Path::new();
         let mut center_path = vg::Path::new();
         let mut pan_background_path = vg::Path::new();
         let mut pan_foreground_path = vg::Path::new();
 
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
-        let first_note = params.first_note.load(Ordering::SeqCst);
         let panning_center_value = params.taps.panning_center.value();
         let panning_amount = params.taps.panning_amount.value();
 
@@ -711,7 +717,7 @@ impl DelayGraph {
             panning_center_value as u8
         };
 
-        let (min_note_value, max_note_value) = if first_note != NO_LEARNED_NOTE {
+        let (min_note_value, max_note_value) = {
             // Initialize min and max with first_note and panning_center
             let mut min = first_note.min(panning_center);
             let mut max = first_note.max(panning_center);
@@ -747,8 +753,6 @@ impl DelayGraph {
             };
 
             (f32::from(final_min), f32::from(final_max))
-        } else {
-            (0.0, 127.0)
         };
 
         let note_size = line_width * 2.0; // Width and height of a note
@@ -763,47 +767,45 @@ impl DelayGraph {
             }
         };
         // Draw half a note for panning center
-        if first_note != NO_LEARNED_NOTE {
-            let normalized_panning_center =
-                get_normalized_value(panning_center, min_note_value, max_note_value);
-            let target_panning_center_height =
-                (1.0 - normalized_panning_center).mul_add(available_height, margin + note_size);
-            let panning_center_height = Self::gui_smooth(
-                target_panning_center_height,
-                &params.previous_panning_center_height,
-                gui_decay_weight,
-            );
+        let normalized_panning_center =
+            get_normalized_value(panning_center, min_note_value, max_note_value);
+        let target_panning_center_height =
+            (1.0 - normalized_panning_center).mul_add(available_height, margin + note_size);
+        let panning_center_height = Self::gui_smooth(
+            target_panning_center_height,
+            &params.previous_panning_center_height,
+            gui_decay_weight,
+        );
 
-            let note_half_size = line_width;
+        let note_half_size = line_width;
 
-            let panning_center_x = bounds.x;
-            let panning_center_y = bounds.y + panning_center_height;
+        let panning_center_x = bounds.x;
+        let panning_center_y = bounds.y + panning_center_height;
 
-            center_path.move_to(panning_center_x, panning_center_y + note_half_size);
-            center_path.line_to(panning_center_x + note_half_size, panning_center_y);
-            center_path.line_to(panning_center_x, panning_center_y - note_half_size);
-            center_path.close();
+        center_path.move_to(panning_center_x, panning_center_y + note_half_size);
+        center_path.line_to(panning_center_x + note_half_size, panning_center_y);
+        center_path.line_to(panning_center_x, panning_center_y - note_half_size);
+        center_path.close();
 
-            // Draw half a note for the first note at time 0
-            let normalized_first_note =
-                get_normalized_value(first_note, min_note_value, max_note_value);
-            let target_note_height =
-                (1.0 - normalized_first_note).mul_add(available_height, margin + note_size);
-            let note_height = Self::gui_smooth(
-                target_note_height,
-                &params.previous_first_note_height,
-                gui_decay_weight,
-            );
+        // Draw half a note for the first note at time 0
+        let normalized_first_note =
+            get_normalized_value(first_note, min_note_value, max_note_value);
+        let target_note_height =
+            (1.0 - normalized_first_note).mul_add(available_height, margin + note_size);
+        let note_height = Self::gui_smooth(
+            target_note_height,
+            &params.previous_first_note_height,
+            gui_decay_weight,
+        );
 
-            let first_note_center_x = bounds.x;
-            let first_note_center_y = bounds.y + note_height;
-            let note_half_size = line_width;
+        let first_note_center_x = bounds.x;
+        let first_note_center_y = bounds.y + note_height;
+        let note_half_size = line_width;
 
-            note_path.move_to(first_note_center_x, first_note_center_y + note_half_size);
-            note_path.line_to(first_note_center_x + note_half_size, first_note_center_y);
-            note_path.line_to(first_note_center_x, first_note_center_y - note_half_size);
-            note_path.close();
-        }
+        note_path.move_to(first_note_center_x, first_note_center_y + note_half_size);
+        note_path.line_to(first_note_center_x + note_half_size, first_note_center_y);
+        note_path.line_to(first_note_center_x, first_note_center_y - note_half_size);
+        note_path.close();
 
         for i in 0..tap_counter {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst) as f32;
@@ -888,17 +890,15 @@ impl DelayGraph {
         );
 
         // Fix cover line drawing as needed
-        if first_note != NO_LEARNED_NOTE {
-            let mut cover_line_path = vg::Path::new();
-            let cover_x = border_width.mul_add(0.5, line_width.mul_add(-0.5, bounds.x));
-            cover_line_path.move_to(cover_x, bounds.y);
-            cover_line_path.line_to(cover_x, bounds.y + bounds.h);
+        let mut cover_line_path = vg::Path::new();
+        let cover_x = border_width.mul_add(0.5, line_width.mul_add(-0.5, bounds.x));
+        cover_line_path.move_to(cover_x, bounds.y);
+        cover_line_path.line_to(cover_x, bounds.y + bounds.h);
 
-            canvas.stroke_path(
-                &cover_line_path,
-                &vg::Paint::color(background_color).with_line_width(line_width),
-            );
-        }
+        canvas.stroke_path(
+            &cover_line_path,
+            &vg::Paint::color(background_color).with_line_width(line_width),
+        );
     }
 
     fn draw_bounding_outline(
