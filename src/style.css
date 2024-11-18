@@ -116,6 +116,11 @@ action-trigger {
     border-width: 1px;
     transition: background-color 300ms;
 }
+
+action-trigger:hover {
+    background-color: #292929;
+    transition: background-color 100ms;
+}
 .action-name {
     right: 9px;
     top: 1s;
