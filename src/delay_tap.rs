@@ -2,6 +2,9 @@ use nih_plug::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct DelayTap {
+    pub delayed_audio_l: Box<[f32]>,
+    pub delayed_audio_r: Box<[f32]>,
+
     /// The delay taps internal ID. Each delay tap has an internal delay tap ID one higher than the previous
     /// delay tap. This is used to steal the last delay tap in case all 16 delay taps are in use.
     pub internal_id: u64,

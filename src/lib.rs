@@ -19,6 +19,11 @@ https://github.com/neodsp/simper-filter
 
 - optional: live-mode / daw-mode switch
   - compensate for host latency by adjusting the delay read index
+
+TODO: check why it doesn't load any presets before we manually make taps
+TODO: research choke event, possibly clear_taps()
+
+
  */
 
 // #![allow(non_snake_case)]
@@ -89,8 +94,6 @@ struct Del2 {
 
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
-    delayed_audio_l: [Box<[f32]>; NUM_TAPS],
-    delayed_audio_r: [Box<[f32]>; NUM_TAPS],
     mute_in_delay_buffer: BMRingBuf<bool>,
     mute_in_delayed: [Box<[bool]>; NUM_TAPS],
     mute_in_delay_temp_buffer: Box<[bool]>,
@@ -142,7 +145,6 @@ pub struct Del2Params {
     delay_times: AtomicU32Array,
     #[persist = "velocities"]
     velocities: AtomicF32Array,
-    pans: AtomicF32Array,
     #[persist = "notes"]
     notes: AtomicU8Array,
     #[persist = "tap-counter"]
@@ -452,10 +454,6 @@ impl Default for Del2 {
             Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB))
         }))
         .into();
-        // let delayed_audio_l = array_init(|_| f32::default_boxed_array::<MAX_BLOCK_SIZE>());
-        // let delayed_audio_r = array_init(|_| f32::default_boxed_array::<MAX_BLOCK_SIZE>());
-        let delayed_audio_l = array_init(|_| vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice());
-        let delayed_audio_r = array_init(|_| vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice());
         let mute_in_delayed = array_init(|_| vec![false; MAX_BLOCK_SIZE].into_boxed_slice());
 
         Self {
@@ -474,9 +472,6 @@ impl Default for Del2 {
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
-            delayed_audio_l,
-            delayed_audio_r,
-
             mute_in_delay_buffer: BMRingBuf::<bool>::from_len(TOTAL_DELAY_SAMPLES),
             mute_in_delayed,
             mute_in_delay_temp_buffer: bool::default_boxed_array::<MAX_BLOCK_SIZE>(),
@@ -525,7 +520,6 @@ impl Del2Params {
             tap_counter: Arc::new(AtomicUsize::new(0)),
             delay_times: AtomicU32Array(array_init::array_init(|_| Arc::new(AtomicU32::new(0)))),
             velocities: AtomicF32Array(array_init::array_init(|_| Arc::new(AtomicF32::new(0.0)))),
-            pans: AtomicF32Array(array_init::array_init(|_| Arc::new(AtomicF32::new(0.0)))),
             notes: AtomicU8Array(array_init::array_init(|_| Arc::new(AtomicU8::new(0)))),
             current_time: Arc::new(AtomicU32::new(0)),
             max_tap_samples: Arc::new(AtomicU32::new(0)),
@@ -636,8 +630,8 @@ impl Plugin for Del2 {
         }
         self.delay_taps.fill(None);
 
-        for tap_index in 0..self.params.tap_counter.load(Ordering::SeqCst) {
-            self.load_and_configure_tap(self.sample_rate, 0, tap_index);
+        for i in 0..self.params.tap_counter.load(Ordering::SeqCst) {
+            self.load_and_configure_tap(self.sample_rate, 0, i + 1);
         }
 
         self.counting_state = CountingState::TimeOut;
@@ -688,13 +682,11 @@ impl Plugin for Del2 {
                             } => {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
                                 if self.params.tap_counter.load(Ordering::SeqCst) > old_nr_taps {
-                                    let tap_index =
-                                        self.params.tap_counter.load(Ordering::SeqCst) - 1;
                                     self.load_and_configure_tap(
                                         sample_rate,
                                         // timing,
                                         channel,
-                                        tap_index,
+                                        self.params.tap_counter.load(Ordering::SeqCst),
                                     );
                                 }
                             }
@@ -765,20 +757,21 @@ impl Plugin for Del2 {
 
             for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
                 let tap_index = delay_tap.tap_index;
-                let note = self.params.notes[tap_index].load(Ordering::SeqCst);
+                let note = delay_tap.note;
 
                 let pan = ((f32::from(note) - panning_center) * panning_amount).clamp(-1.0, 1.0);
-                self.params.pans[tap_index].store(pan, Ordering::SeqCst);
 
                 let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
 
-                let delay_time = self.params.delay_times[tap_index].load(Ordering::SeqCst) as isize;
+                let delay_time = delay_tap.delay_time as isize;
                 let write_index = self.delay_write_index;
                 // delay_time - 1 because we are processing 2 samples at once in process_audio
                 let read_index_l = write_index - (delay_time - 1 + offset_l);
                 let read_index_r = write_index - (delay_time - 1 + offset_r);
-                self.delay_buffer[0].read_into(&mut self.delayed_audio_l[tap_index], read_index_l);
-                self.delay_buffer[1].read_into(&mut self.delayed_audio_r[tap_index], read_index_r);
+                // self.delay_buffer[0].read_into(&mut self.delayed_audio_l, read_index_l);
+                // self.delay_buffer[1].read_into(&mut self.delayed_audio_r, read_index_r);
+                self.delay_buffer[0].read_into(&mut delay_tap.delayed_audio_l, read_index_l);
+                self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index_r);
 
                 let drive = self.filter_params[tap_index].clone().drive;
                 self.mute_in_delay_buffer.read_into(
@@ -796,22 +789,16 @@ impl Plugin for Del2 {
                     let pre_filter_gain =
                         self.global_drive[value_idx] * self.delay_tap_amp_envelope[value_idx];
 
-                    self.delayed_audio_l[tap_index][sample_idx] *= pre_filter_gain;
-                    self.delayed_audio_r[tap_index][sample_idx] *= pre_filter_gain;
+                    delay_tap.delayed_audio_l[sample_idx] *= pre_filter_gain;
+                    delay_tap.delayed_audio_r[sample_idx] *= pre_filter_gain;
                 }
 
                 for i in (block_start..block_end).step_by(2) {
                     let frame = f32x4::from_array([
-                        self.delayed_audio_l[tap_index][i],
-                        self.delayed_audio_r[tap_index][i],
-                        self.delayed_audio_l[tap_index]
-                            .get(i + 1)
-                            .copied()
-                            .unwrap_or(0.0),
-                        self.delayed_audio_r[tap_index]
-                            .get(i + 1)
-                            .copied()
-                            .unwrap_or(0.0),
+                        delay_tap.delayed_audio_l[i],
+                        delay_tap.delayed_audio_r[i],
+                        delay_tap.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
+                        delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
                     ]);
                     // most cpu intensive:
                     // let processed = self.ladders[tap_index].tick_newton(frame);
@@ -820,11 +807,11 @@ impl Plugin for Del2 {
                     // even lighter, but linear
                     // let processed = self.ladders[tap_index].tick_linear(frame);
                     let frame_out = *processed.as_array();
-                    self.delayed_audio_l[tap_index][i] = frame_out[0];
-                    self.delayed_audio_r[tap_index][i] = frame_out[1];
+                    delay_tap.delayed_audio_l[i] = frame_out[0];
+                    delay_tap.delayed_audio_r[i] = frame_out[1];
                     if i + 1 < block_end {
-                        self.delayed_audio_l[tap_index][i + 1] = frame_out[2];
-                        self.delayed_audio_r[tap_index][i + 1] = frame_out[3];
+                        delay_tap.delayed_audio_l[i + 1] = frame_out[2];
+                        delay_tap.delayed_audio_r[i + 1] = frame_out[3];
                     }
                 }
 
@@ -832,8 +819,8 @@ impl Plugin for Del2 {
                 for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                     let post_filter_gain = self.dry_wet[value_idx] * self.output_gain[value_idx]
                         / (drive * self.global_drive[value_idx]);
-                    let left = self.delayed_audio_l[tap_index][sample_idx] * post_filter_gain;
-                    let right = self.delayed_audio_r[tap_index][sample_idx] * post_filter_gain;
+                    let left = delay_tap.delayed_audio_l[sample_idx] * post_filter_gain;
+                    let right = delay_tap.delayed_audio_r[sample_idx] * post_filter_gain;
                     output[0][sample_idx] += left;
                     output[1][sample_idx] += right;
                     amplitude += (left.abs() + right.abs()) * 0.5;
@@ -986,10 +973,9 @@ impl Del2 {
         {
             // Update tap information with timing and velocity
             if tap_counter > 0 {
-                let previous_delay =
-                    self.params.delay_times[tap_counter - 1].load(Ordering::SeqCst);
                 self.params.delay_times[tap_counter].store(
-                    self.samples_since_last_event + previous_delay,
+                    self.samples_since_last_event
+                        + self.params.delay_times[tap_counter - 1].load(Ordering::SeqCst),
                     Ordering::SeqCst,
                 );
             } else {
@@ -1350,11 +1336,12 @@ impl Del2 {
         })
     }
 
-    fn load_and_configure_tap(&mut self, sample_rate: f32, channel: u8, tap_index: usize) {
+    fn load_and_configure_tap(&mut self, sample_rate: f32, channel: u8, tap_counter: usize) {
+        let new_index = tap_counter - 1;
         // Load atomic values corresponding to the tap index
-        let delay_time = self.params.delay_times[tap_index].load(Ordering::SeqCst);
-        let note = self.params.notes[tap_index].load(Ordering::SeqCst);
-        let velocity = self.params.velocities[tap_index].load(Ordering::SeqCst);
+        let delay_time = self.params.delay_times[new_index].load(Ordering::SeqCst);
+        let note = self.params.notes[new_index].load(Ordering::SeqCst);
+        let velocity = self.params.velocities[new_index].load(Ordering::SeqCst);
 
         // Create amplitude envelope
         let amp_envelope =
@@ -1369,7 +1356,7 @@ impl Del2 {
         // Start delay tap and configure its properties
         let delay_tap = self.start_delay_tap(channel, note, velocity, delay_time);
         delay_tap.amp_envelope = amp_envelope;
-        delay_tap.tap_index = tap_index;
+        delay_tap.tap_index = new_index;
         delay_tap.is_muted = false;
     }
     /// Start a new delay tap with the given delay tap ID. If all `delay_taps` are currently in use, the oldest
@@ -1383,6 +1370,8 @@ impl Del2 {
     ) -> &mut DelayTap {
         // Initialize new delay tap with the provided arguments
         let new_delay_tap = DelayTap {
+            delayed_audio_l: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
+            delayed_audio_r: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
             internal_id: self.next_internal_id,
             delay_time,
             channel,

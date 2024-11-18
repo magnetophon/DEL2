@@ -701,12 +701,13 @@ impl DelayGraph {
 
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
         let first_note = params.first_note.load(Ordering::SeqCst);
-        let first_panning_center_value = params.taps.panning_center.value();
+        let panning_center_value = params.taps.panning_center.value();
+        let panning_amount = params.taps.panning_amount.value();
 
-        let panning_center = if first_panning_center_value < 0 {
+        let panning_center = if panning_center_value < 0 {
             first_note
         } else {
-            first_panning_center_value as u8
+            panning_center_value as u8
         };
 
         let (min_note_value, max_note_value) = if first_note != NO_LEARNED_NOTE {
@@ -827,7 +828,8 @@ impl DelayGraph {
             note_path.line_to(note_center_x, note_center_y - note_half_size);
             note_path.close();
 
-            let pan_value = params.pans[i].load(Ordering::SeqCst);
+            let pan_value =
+                (f32::from(note_value - panning_center) * panning_amount).clamp(-1.0, 1.0);
             let line_length = if pan_value.abs() > 1.0 / 50.0 {
                 50.0
             } else {
