@@ -1,6 +1,12 @@
 /*
 TODO:
 
+- improve voice management:
+  - re-use the voice if the delay time and the note are the same
+    if the velocity is different, we smooth to it, using the attack and release times
+  - the params should have the delay_times, notes and velocities, so nih-plug can persist them
+  - the delay tap should also have delay_times and notes, so it can decide if a new voice should be started
+
 - smooth all dsp params (at the end of the interpolation?)
 
 - evaluate filters:
@@ -136,7 +142,6 @@ pub struct Del2Params {
     delay_times: AtomicU32Array,
     #[persist = "velocities"]
     velocities: AtomicF32Array,
-    #[persist = "pans"]
     pans: AtomicF32Array,
     #[persist = "notes"]
     notes: AtomicU8Array,
@@ -696,14 +701,6 @@ impl Plugin for Del2 {
                             NoteEvent::NoteOff { note, .. } => {
                                 self.store_note_off_in_delay_data(note);
                             }
-                            NoteEvent::Choke {
-                                voice_id,
-                                channel,
-                                note,
-                                ..
-                            } => {
-                                self.choke_delay_taps(voice_id, channel, note);
-                            }
                             _ => (),
                         };
 
@@ -1091,34 +1088,6 @@ impl Del2 {
                 .store(NO_LEARNED_NOTE, Ordering::SeqCst);
         }
     }
-    fn load_and_configure_tap(&mut self, sample_rate: f32, channel: u8, tap_index: usize) {
-        // Load atomic values corresponding to the tap index
-        let delay_time = self.params.delay_times[tap_index].load(Ordering::SeqCst);
-        let note = self.params.notes[tap_index].load(Ordering::SeqCst);
-        let velocity = self.params.velocities[tap_index].load(Ordering::SeqCst);
-
-        // Create amplitude envelope
-        let amp_envelope =
-            Smoother::new(SmoothingStyle::Linear(self.params.global.attack_ms.value()));
-
-        // Conditionally reset and configure the amplitude envelope
-        if self.params.global.mute_is_toggle.value() {
-            amp_envelope.reset(0.0);
-            amp_envelope.set_target(sample_rate, 1.0);
-        }
-
-        // Start delay tap and configure its properties
-        let delay_tap = self.start_delay_tap(channel, note);
-        delay_tap.velocity = velocity;
-        delay_tap.amp_envelope = amp_envelope;
-        delay_tap.tap_index = tap_index;
-        delay_tap.is_muted = false;
-
-        // Set a unique identifier for the delay tap
-        delay_tap.id = compute_id(note, velocity, delay_time);
-
-        // delay_tap
-    }
     fn prepare_for_delay(&mut self, buffer_samples: usize) {
         self.no_more_events(buffer_samples as u32);
 
@@ -1380,21 +1349,42 @@ impl Del2 {
             None
         })
     }
-    /// Get the index of a delay tap by its delay tap ID, if the delay tap exists. This does not immediately
-    /// return a reference to the delay tap to avoid lifetime issues.
-    fn get_idx(&mut self, voice_id: i32) -> Option<usize> {
-        self.delay_taps
-            .iter_mut()
-            .position(|delay_tap| matches!(delay_tap, Some(delay_tap) if delay_tap.id == voice_id))
-    }
 
+    fn load_and_configure_tap(&mut self, sample_rate: f32, channel: u8, tap_index: usize) {
+        // Load atomic values corresponding to the tap index
+        let delay_time = self.params.delay_times[tap_index].load(Ordering::SeqCst);
+        let note = self.params.notes[tap_index].load(Ordering::SeqCst);
+        let velocity = self.params.velocities[tap_index].load(Ordering::SeqCst);
+
+        // Create amplitude envelope
+        let amp_envelope =
+            Smoother::new(SmoothingStyle::Linear(self.params.global.attack_ms.value()));
+
+        // Conditionally reset and configure the amplitude envelope
+        if self.params.global.mute_is_toggle.value() {
+            amp_envelope.reset(0.0);
+            amp_envelope.set_target(sample_rate, 1.0);
+        }
+
+        // Start delay tap and configure its properties
+        let delay_tap = self.start_delay_tap(channel, note, velocity, delay_time);
+        delay_tap.amp_envelope = amp_envelope;
+        delay_tap.tap_index = tap_index;
+        delay_tap.is_muted = false;
+    }
     /// Start a new delay tap with the given delay tap ID. If all `delay_taps` are currently in use, the oldest
     /// delay tap will be stolen. Returns a reference to the new delay tap.
-    fn start_delay_tap(&mut self, channel: u8, note: u8) -> &mut DelayTap {
+    fn start_delay_tap(
+        &mut self,
+        channel: u8,
+        note: u8,
+        velocity: f32,
+        delay_time: u32,
+    ) -> &mut DelayTap {
         // Initialize new delay tap with the provided arguments
         let new_delay_tap = DelayTap {
-            id: 0,
             internal_id: self.next_internal_id,
+            delay_time,
             channel,
             note,
             velocity: 1.0,
@@ -1468,55 +1458,6 @@ impl Del2 {
             }
         }
     }
-
-    /// Immediately terminate one or more delay tap, removing it from the pool.
-    /// If `id` is not provided, then this will terminate all matching `delay_taps`.
-    fn choke_delay_taps(&mut self, id: Option<i32>, channel: u8, note: u8) {
-        for delay_tap in &mut self.delay_taps {
-            match delay_tap {
-                Some(DelayTap {
-                    id: candidate_id,
-                    channel: candidate_channel,
-                    note: candidate_note,
-                    ..
-                }) if id == Some(*candidate_id)
-                    || (channel == *candidate_channel && note == *candidate_note) =>
-                {
-                    *delay_tap = None;
-
-                    if id.is_some() {
-                        return;
-                    }
-                }
-                _ => (),
-            }
-        }
-    }
-}
-
-/// Compute a delay tap ID
-fn compute_id(note: u8, velocity: f32, delay_time: u32) -> i32 {
-    // Ensure inputs are within their valid ranges
-    assert!(note <= 127, "note must be between 0 and 127");
-    // Assume velocity can be mapped to an 8-bit value (0 to 255)
-    assert!(
-        velocity >= 0.0 && velocity <= 1.0,
-        "velocity must be between 0.0 and 1.0"
-    );
-    assert!(
-        delay_time <= 2_097_151,
-        "delay_time exceeds maximum storable value with 21 bits"
-    );
-
-    // Map velocity from 0.0-1.0 to 0-255 (an 8-bit range)
-    let velocity_mapped = (velocity * 255.0).round() as i32 & 0xFF;
-
-    // Combine note, velocity, and delay_time into a 32-bit integer
-    // Encoding layout:
-    // - `note` takes up the least significant 7 bits (bits 0 to 6)
-    // - `velocity_mapped` takes up the next 8 bits (bits 7 to 14)
-    // - `delay_time` takes up the remaining 21 bits, but is shifted to occupy bits 15 to 31
-    (note as i32) | (velocity_mapped << 7) | ((delay_time as i32 & 0x1F_FFFF) << 15)
 }
 
 impl ClapPlugin for Del2 {
