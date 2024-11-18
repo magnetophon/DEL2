@@ -760,7 +760,7 @@ impl DelayGraph {
         let available_height = (-(margin + note_size + border_width)).mul_add(2.0, bounds.h);
 
         let get_normalized_value = |value: u8, min: f32, max: f32| -> f32 {
-            if max == min {
+            if (max - min).abs() < 0.5 {
                 value as f32 / 127.0
             } else {
                 (value as f32 - min) / (max - min)
@@ -832,7 +832,8 @@ impl DelayGraph {
             note_path.close();
 
             let pan_value =
-                (f32::from(note_value - panning_center) * panning_amount).clamp(-1.0, 1.0);
+                ((note_value as f32 - panning_center as f32) * panning_amount).clamp(-1.0, 1.0);
+
             let line_length = if pan_value.abs() > 1.0 / 50.0 {
                 50.0
             } else {

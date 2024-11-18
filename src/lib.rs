@@ -733,10 +733,8 @@ impl Plugin for Del2 {
 
             for (tap_index, delay_tap) in self.delay_taps.iter_mut().enumerate() {
                 if let Some(v) = delay_tap.as_mut() {
-                    let note = v.note;
-
                     let pan =
-                        ((f32::from(note) - panning_center) * panning_amount).clamp(-1.0, 1.0);
+                        ((f32::from(v.note) - panning_center) * panning_amount).clamp(-1.0, 1.0);
 
                     let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
 
@@ -771,8 +769,7 @@ impl Plugin for Del2 {
                             v.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
                             v.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
                         ]);
-                        let processed = v.ladders.tick_pivotal(frame);
-                        let frame_out = *processed.as_array();
+                        let frame_out = *v.ladders.tick_pivotal(frame).as_array();
                         v.delayed_audio_l[i] = frame_out[0];
                         v.delayed_audio_r[i] = frame_out[1];
                         if i + 1 < block_end {
@@ -1317,11 +1314,9 @@ impl Del2 {
 
         // Recycle an old tap if `delay_time` and `note` match
         if let Some(existing_tap) = self.delay_taps.iter_mut().find(|tap_option| {
-            if let Some(tap) = tap_option {
+            tap_option.as_ref().map_or(false, |tap| {
                 tap.delay_time == delay_time && tap.note == note
-            } else {
-                false
-            }
+            })
         }) {
             let tap = existing_tap.as_mut().unwrap();
             tap.velocity = velocity;
