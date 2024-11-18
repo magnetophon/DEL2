@@ -145,8 +145,8 @@ pub struct Del2Params {
     pans: AtomicF32Array,
     #[persist = "notes"]
     notes: AtomicU8Array,
-    #[persist = "current-tap"]
-    current_tap: Arc<AtomicUsize>,
+    #[persist = "tap-counter"]
+    tap_counter: Arc<AtomicUsize>,
     current_time: Arc<AtomicU32>,
     max_tap_samples: Arc<AtomicU32>,
     #[persist = "first-note"]
@@ -522,7 +522,7 @@ impl Del2Params {
             learned_notes: ArcAtomicByteArray(learned_notes),
             enabled_actions: ArcAtomicBoolArray(enabled_actions),
 
-            current_tap: Arc::new(AtomicUsize::new(0)),
+            tap_counter: Arc::new(AtomicUsize::new(0)),
             delay_times: AtomicU32Array(array_init::array_init(|_| Arc::new(AtomicU32::new(0)))),
             velocities: AtomicF32Array(array_init::array_init(|_| Arc::new(AtomicF32::new(0.0)))),
             pans: AtomicF32Array(array_init::array_init(|_| Arc::new(AtomicF32::new(0.0)))),
@@ -636,7 +636,7 @@ impl Plugin for Del2 {
         }
         self.delay_taps.fill(None);
 
-        for tap_index in 0..self.params.current_tap.load(Ordering::SeqCst) {
+        for tap_index in 0..self.params.tap_counter.load(Ordering::SeqCst) {
             self.load_and_configure_tap(self.sample_rate, 0, tap_index);
         }
 
@@ -670,7 +670,7 @@ impl Plugin for Del2 {
         self.write_into_delay(buffer);
 
         while block_start < num_samples {
-            let old_nr_taps = self.params.current_tap.load(Ordering::SeqCst);
+            let old_nr_taps = self.params.tap_counter.load(Ordering::SeqCst);
 
             // First of all, handle all note events that happen at the start of the block, and cut
             // the block short if another event happens before the end of it.
@@ -687,9 +687,9 @@ impl Plugin for Del2 {
                                 ..
                             } => {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
-                                if self.params.current_tap.load(Ordering::SeqCst) > old_nr_taps {
+                                if self.params.tap_counter.load(Ordering::SeqCst) > old_nr_taps {
                                     let tap_index =
-                                        self.params.current_tap.load(Ordering::SeqCst) - 1;
+                                        self.params.tap_counter.load(Ordering::SeqCst) - 1;
                                     self.load_and_configure_tap(
                                         sample_rate,
                                         // timing,
@@ -724,7 +724,7 @@ impl Plugin for Del2 {
                 .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
                 .is_ok()
             {
-                for tap in 0..self.params.current_tap.load(Ordering::SeqCst) {
+                for tap in 0..self.params.tap_counter.load(Ordering::SeqCst) {
                     self.update_filter(tap);
                 }
             }
@@ -919,8 +919,8 @@ impl Del2 {
 
     fn store_note_on_in_delay_data(&mut self, timing: u32, note: u8, velocity: f32) {
         // Load values that are used multiple times at the start
-        let mut current_tap = self.params.current_tap.load(Ordering::SeqCst);
-        let is_tap_slot_available = current_tap < NUM_TAPS;
+        let mut tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
+        let is_tap_slot_available = tap_counter < NUM_TAPS;
         let is_delay_note = !self.learned_notes.contains(note);
         let is_learning = self.is_learning.load(Ordering::SeqCst);
         let taps_unlocked = !self.enabled_actions.load(LOCK_TAPS);
@@ -985,23 +985,23 @@ impl Del2 {
             && velocity > 0.0
         {
             // Update tap information with timing and velocity
-            if current_tap > 0 {
+            if tap_counter > 0 {
                 let previous_delay =
-                    self.params.delay_times[current_tap - 1].load(Ordering::SeqCst);
-                self.params.delay_times[current_tap].store(
+                    self.params.delay_times[tap_counter - 1].load(Ordering::SeqCst);
+                self.params.delay_times[tap_counter].store(
                     self.samples_since_last_event + previous_delay,
                     Ordering::SeqCst,
                 );
             } else {
-                self.params.delay_times[current_tap]
+                self.params.delay_times[tap_counter]
                     .store(self.samples_since_last_event, Ordering::SeqCst);
             }
-            self.params.velocities[current_tap].store(velocity, Ordering::SeqCst);
-            self.params.notes[current_tap].store(note, Ordering::SeqCst);
+            self.params.velocities[tap_counter].store(velocity, Ordering::SeqCst);
+            self.params.notes[tap_counter].store(note, Ordering::SeqCst);
 
-            current_tap += 1;
-            self.params.current_tap.store(current_tap, Ordering::SeqCst);
-            if current_tap == NUM_TAPS {
+            tap_counter += 1;
+            self.params.tap_counter.store(tap_counter, Ordering::SeqCst);
+            if tap_counter == NUM_TAPS {
                 self.counting_state = CountingState::TimeOut;
                 self.timing_last_event = 0;
                 self.samples_since_last_event = 0;
@@ -1055,7 +1055,7 @@ impl Del2 {
 
     fn clear_taps(&mut self, timing: u32, restart: bool) {
         self.enabled_actions.store(LOCK_TAPS, false);
-        self.params.current_tap.store(0, Ordering::SeqCst);
+        self.params.tap_counter.store(0, Ordering::SeqCst);
 
         self.params
             .previous_time_scaling_factor
@@ -1092,12 +1092,12 @@ impl Del2 {
         self.no_more_events(buffer_samples as u32);
 
         // Cache the current tap value to reduce atomic loads
-        let current_tap = self.params.current_tap.load(Ordering::SeqCst);
+        let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
         let samples_since_last_event = self.samples_since_last_event; // Cache to a local variable
 
         // Calculate the current time based on whether there are taps
-        let current_time = if current_tap > 0 {
-            let last_delay_time = self.params.delay_times[current_tap - 1].load(Ordering::SeqCst);
+        let current_time = if tap_counter > 0 {
+            let last_delay_time = self.params.delay_times[tap_counter - 1].load(Ordering::SeqCst);
             last_delay_time + samples_since_last_event
         } else {
             samples_since_last_event
@@ -1128,7 +1128,7 @@ impl Del2 {
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
 
-            if self.params.current_tap.load(Ordering::SeqCst) == 0 {
+            if self.params.tap_counter.load(Ordering::SeqCst) == 0 {
                 self.params
                     .first_note
                     .store(NO_LEARNED_NOTE, Ordering::SeqCst);

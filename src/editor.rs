@@ -410,8 +410,8 @@ impl DelayGraph {
             Label::new(
                 cx,
                 params.map(move |params| {
-                    let current_tap_value = params.current_tap.load(Ordering::SeqCst);
-                    match current_tap_value {
+                    let tap_counter = params.tap_counter.load(Ordering::SeqCst);
+                    match tap_counter {
                         // 0 => "tap a rhythm!".to_string(),
                         0 => String::new(),
                         1 => "1 tap".to_string(),
@@ -430,21 +430,21 @@ impl DelayGraph {
         outline_width: f32,
     ) -> f32 {
         // Load atomic values once
-        let current_tap_value = params.current_tap.load(Ordering::SeqCst);
+        let tap_counter = params.tap_counter.load(Ordering::SeqCst);
         let current_time_value = params.current_time.load(Ordering::SeqCst);
         let max_tap_samples = params.max_tap_samples.load(Ordering::SeqCst);
 
         // Calculate max delay time if necessary
-        let max_delay_time = if current_tap_value > 0 {
-            params.delay_times[current_tap_value - 1].load(Ordering::SeqCst)
+        let max_delay_time = if tap_counter > 0 {
+            params.delay_times[tap_counter - 1].load(Ordering::SeqCst)
         } else {
             0
         };
 
-        let zoom_tap_samples = if current_time_value == max_delay_time && current_tap_value == 1 {
+        let zoom_tap_samples = if current_time_value == max_delay_time && tap_counter == 1 {
             // one delay tap, put it in the middle
             max_delay_time as f32
-        } else if current_tap_value == NUM_TAPS || current_time_value == max_delay_time {
+        } else if tap_counter == NUM_TAPS || current_time_value == max_delay_time {
             // time out, zoom in but leave a margin
             0.16 * max_delay_time as f32
         } else {
@@ -536,9 +536,9 @@ impl DelayGraph {
     ) {
         let mut path = vg::Path::new();
 
-        let current_tap_value = params.current_tap.load(Ordering::SeqCst);
+        let tap_counter = params.tap_counter.load(Ordering::SeqCst);
 
-        for i in 0..current_tap_value {
+        for i in 0..tap_counter {
             let delay_time_value = params.delay_times[i].load(Ordering::SeqCst) as f32;
             let x_offset = delay_time_value.mul_add(time_scaling_factor, border_width * 0.5);
 
@@ -572,15 +572,15 @@ impl DelayGraph {
         border_width: f32,
     ) {
         // Load the values once
-        let current_tap = params.current_tap.load(Ordering::SeqCst);
-        if current_tap == NUM_TAPS {
+        let tap_counter = params.tap_counter.load(Ordering::SeqCst);
+        if tap_counter == NUM_TAPS {
             return;
         };
         let current_time = params.current_time.load(Ordering::SeqCst);
 
         // Determine the max delay time
-        let max_delay_time = if current_tap > 0 {
-            params.delay_times[current_tap - 1].load(Ordering::SeqCst)
+        let max_delay_time = if tap_counter > 0 {
+            params.delay_times[tap_counter - 1].load(Ordering::SeqCst)
         } else {
             0
         };
@@ -614,9 +614,9 @@ impl DelayGraph {
         time_scaling_factor: f32,
         border_width: f32,
     ) {
-        let current_tap = params.current_tap.load(Ordering::SeqCst);
+        let tap_counter = params.tap_counter.load(Ordering::SeqCst);
 
-        for i in 0..current_tap {
+        for i in 0..tap_counter {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst) as f32;
             let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
 
@@ -699,7 +699,7 @@ impl DelayGraph {
         let mut pan_background_path = vg::Path::new();
         let mut pan_foreground_path = vg::Path::new();
 
-        let current_tap = params.current_tap.load(Ordering::SeqCst);
+        let tap_counter = params.tap_counter.load(Ordering::SeqCst);
         let first_note = params.first_note.load(Ordering::SeqCst);
         let first_panning_center_value = params.taps.panning_center.value();
 
@@ -715,7 +715,7 @@ impl DelayGraph {
             let mut max = first_note.max(panning_center);
 
             // Iterate through notes to find min and max
-            for i in 0..current_tap {
+            for i in 0..tap_counter {
                 let loaded_note = params.notes[i].load(Ordering::SeqCst);
                 if loaded_note < min {
                     min = loaded_note;
@@ -803,7 +803,7 @@ impl DelayGraph {
             note_path.close();
         }
 
-        for i in 0..current_tap {
+        for i in 0..tap_counter {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst) as f32;
             let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
 
