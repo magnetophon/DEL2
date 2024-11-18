@@ -42,7 +42,6 @@ TODO: research choke event, possibly clear_taps()
 #![allow(clippy::type_complexity)]
 #![feature(portable_simd)]
 #![feature(get_mut_unchecked)]
-use array_init::array_init;
 use bit_mask_ring_buf::BMRingBuf;
 use default_boxed::DefaultBoxed;
 use nih_plug::params::persist::PersistentField;
@@ -89,13 +88,9 @@ struct Del2 {
     /// This is incremented by one each time a delay tap is created.
     next_internal_id: u64,
 
-    filter_params: [Arc<FilterParams>; NUM_TAPS],
-    ladders: [LadderFilter; NUM_TAPS],
-
     // delay write buffer
     delay_buffer: [BMRingBuf<f32>; 2],
     mute_in_delay_buffer: BMRingBuf<bool>,
-    mute_in_delayed: [Box<[bool]>; NUM_TAPS],
     mute_in_delay_temp_buffer: Box<[bool]>,
 
     // for the smoothers
@@ -104,8 +99,6 @@ struct Del2 {
     global_drive: Box<[f32]>,
     delay_tap_amp_envelope: Box<[f32]>,
 
-    // N counters to know where in the fade in we are: 0 is the start
-    amp_envelopes: [Smoother<f32>; NUM_TAPS],
     sample_rate: f32,
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
@@ -441,20 +434,15 @@ enum CountingState {
 
 impl Default for Del2 {
     fn default() -> Self {
-        let filter_params = array_init(|_| Arc::new(FilterParams::new()));
         let should_update_filter = Arc::new(AtomicBool::new(false));
         let learned_notes = Arc::new(AtomicByteArray::new(NO_LEARNED_NOTE));
         let last_learned_notes = Arc::new(AtomicByteArray::new(NO_LEARNED_NOTE));
         let enabled_actions = Arc::new(AtomicBoolArray::new());
-        let ladders: [LadderFilter; NUM_TAPS] =
-            array_init(|i| LadderFilter::new(filter_params[i].clone()));
-        let amp_envelopes = array_init::array_init(|_| Smoother::none());
 
         let tap_meters = AtomicF32Array(array_init::array_init(|_| {
             Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB))
         }))
         .into();
-        let mute_in_delayed = array_init(|_| vec![false; MAX_BLOCK_SIZE].into_boxed_slice());
 
         Self {
             params: Arc::new(Del2Params::new(
@@ -466,14 +454,11 @@ impl Default for Del2 {
             delay_taps: [0; NUM_TAPS].map(|_| None),
             next_internal_id: 0,
 
-            filter_params,
-            ladders,
             delay_buffer: [
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
                 BMRingBuf::<f32>::from_len(TOTAL_DELAY_SAMPLES),
             ],
             mute_in_delay_buffer: BMRingBuf::<bool>::from_len(TOTAL_DELAY_SAMPLES),
-            mute_in_delayed,
             mute_in_delay_temp_buffer: bool::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
             dry_wet: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
@@ -481,7 +466,6 @@ impl Default for Del2 {
             global_drive: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_amp_envelope: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
-            amp_envelopes,
             sample_rate: 1.0,
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
@@ -624,9 +608,9 @@ impl Plugin for Del2 {
     }
 
     fn reset(&mut self) {
-        for tap in 0..NUM_TAPS {
-            self.ladders[tap].s = [f32x4::splat(0.); 4];
-            self.amp_envelopes[tap].reset(0.0);
+        for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
+            delay_tap.ladders.s = [f32x4::splat(0.); 4];
+            delay_tap.amp_envelopes.reset(0.0);
         }
         self.delay_taps.fill(None);
 
@@ -716,9 +700,7 @@ impl Plugin for Del2 {
                 .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
                 .is_ok()
             {
-                for tap in 0..self.params.tap_counter.load(Ordering::SeqCst) {
-                    self.update_filter(tap);
-                }
+                self.update_filters();
             }
 
             self.set_mute_for_all_delay_taps(sample_rate);
@@ -773,9 +755,9 @@ impl Plugin for Del2 {
                 self.delay_buffer[0].read_into(&mut delay_tap.delayed_audio_l, read_index_l);
                 self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index_r);
 
-                let drive = self.filter_params[tap_index].clone().drive;
+                let drive = delay_tap.filter_params.clone().drive;
                 self.mute_in_delay_buffer.read_into(
-                    &mut self.mute_in_delayed[tap_index],
+                    &mut delay_tap.mute_in_delayed,
                     write_index - (delay_time - 1),
                 );
                 // This is a linear smoother repurposed as an AR envelope with values between
@@ -801,11 +783,11 @@ impl Plugin for Del2 {
                         delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
                     ]);
                     // most cpu intensive:
-                    // let processed = self.ladders[tap_index].tick_newton(frame);
+                    // let processed = delay_tap.ladders.tick_newton(frame);
                     // lightest non-linear filter
-                    let processed = self.ladders[tap_index].tick_pivotal(frame);
+                    let processed = delay_tap.ladders.tick_pivotal(frame);
                     // even lighter, but linear
-                    // let processed = self.ladders[tap_index].tick_linear(frame);
+                    // let processed = delay_tap.ladders.tick_linear(frame);
                     let frame_out = *processed.as_array();
                     delay_tap.delayed_audio_l[i] = frame_out[0];
                     delay_tap.delayed_audio_r[i] = frame_out[1];
@@ -1122,52 +1104,55 @@ impl Del2 {
         }
     }
 
-    fn update_filter(&mut self, tap: usize) {
-        // Load atomic values that are used outside computation steps
-        let velocity = self.params.velocities[tap].load(Ordering::SeqCst);
+    fn update_filters(&mut self) {
+        for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
+            // Load atomic values that are used outside computation steps
+            let velocity = delay_tap.velocity;
 
-        // Unsafe block to get a mutable reference to the filter parameters
-        let filter_params = unsafe { Arc::get_mut_unchecked(&mut self.filter_params[tap]) };
+            // Unsafe block to get a mutable reference to the filter parameters
+            let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
 
-        // Reference to velocity parameters
-        let velocity_params = &self.params.taps;
-        let low_params = &velocity_params.velocity_low;
-        let high_params = &velocity_params.velocity_high;
+            // Reference to velocity parameters
+            let velocity_params = &self.params.taps;
+            let low_params = &velocity_params.velocity_low;
+            let high_params = &velocity_params.velocity_high;
 
-        // Direct calculation using values needed for multiple operations
-        let res = Self::lerp(low_params.res.value(), high_params.res.value(), velocity);
+            // Direct calculation using values needed for multiple operations
+            let res = Self::lerp(low_params.res.value(), high_params.res.value(), velocity);
 
-        let velocity_cutoff = Self::log_interpolate(
-            low_params.cutoff.value(),
-            high_params.cutoff.value(),
-            velocity,
-        );
+            let velocity_cutoff = Self::log_interpolate(
+                low_params.cutoff.value(),
+                high_params.cutoff.value(),
+                velocity,
+            );
 
-        let note_cutoff = util::midi_note_to_freq(self.params.notes[tap].load(Ordering::SeqCst));
-        let cutoff = note_cutoff
-            .mul_add(
-                velocity_params.note_to_cutoff_amount.value(),
-                velocity_cutoff * velocity_params.velocity_to_cutoff_amount.value(),
-            )
-            .clamp(10.0, 20_000.0);
+            let note_cutoff = util::midi_note_to_freq(delay_tap.note);
+            let cutoff = note_cutoff
+                .mul_add(
+                    velocity_params.note_to_cutoff_amount.value(),
+                    velocity_cutoff * velocity_params.velocity_to_cutoff_amount.value(),
+                )
+                .clamp(10.0, 20_000.0);
 
-        let drive_db = Self::lerp(
-            util::gain_to_db(low_params.drive.value()),
-            util::gain_to_db(high_params.drive.value()),
-            velocity,
-        );
-        let drive = util::db_to_gain(drive_db);
+            let drive_db = Self::lerp(
+                util::gain_to_db(low_params.drive.value()),
+                util::gain_to_db(high_params.drive.value()),
+                velocity,
+            );
+            let drive = util::db_to_gain(drive_db);
 
-        let mode = MyLadderMode::lerp(low_params.mode.value(), high_params.mode.value(), velocity);
+            let mode =
+                MyLadderMode::lerp(low_params.mode.value(), high_params.mode.value(), velocity);
 
-        // Apply computed parameters
-        filter_params.set_resonance(res);
-        filter_params.set_frequency(cutoff);
-        filter_params.drive = drive;
-        filter_params.ladder_mode = mode;
+            // Apply computed parameters
+            filter_params.set_resonance(res);
+            filter_params.set_frequency(cutoff);
+            filter_params.drive = drive;
+            filter_params.ladder_mode = mode;
 
-        // Update filter mix mode
-        self.ladders[tap].set_mix(mode);
+            // Update filter mix mode
+            delay_tap.ladders.set_mix(mode);
+        }
     }
 
     fn lerp(a: f32, b: f32, x: f32) -> f32 {
@@ -1208,8 +1193,8 @@ impl Del2 {
     }
 
     fn initialize_filter_parameters(&mut self) {
-        for tap in 0..NUM_TAPS {
-            let filter_params = unsafe { Arc::get_mut_unchecked(&mut self.filter_params[tap]) };
+        for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
+            let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
             filter_params.set_sample_rate(self.sample_rate);
         }
     }
@@ -1369,9 +1354,15 @@ impl Del2 {
         delay_time: u32,
     ) -> &mut DelayTap {
         // Initialize new delay tap with the provided arguments
+        let filter_params = Arc::new(FilterParams::new());
         let new_delay_tap = DelayTap {
             delayed_audio_l: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
             delayed_audio_r: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
+
+            filter_params: filter_params.clone(),
+            ladders: LadderFilter::new(filter_params.clone()),
+            mute_in_delayed: vec![false; MAX_BLOCK_SIZE].into_boxed_slice(),
+            amp_envelopes: Smoother::none(),
             internal_id: self.next_internal_id,
             delay_time,
             channel,
@@ -1422,7 +1413,7 @@ impl Del2 {
 
         for delay_tap in self.delay_taps.iter_mut().flatten() {
             let is_toggle = self.params.global.mute_is_toggle.value();
-            let mute_in_delayed = self.mute_in_delayed[delay_tap.tap_index][0];
+            let mute_in_delayed = delay_tap.mute_in_delayed[0];
             let mute_out = self.enabled_actions.load(MUTE_OUT);
 
             let new_mute = if is_toggle {

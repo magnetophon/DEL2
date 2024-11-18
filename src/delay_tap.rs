@@ -1,9 +1,17 @@
 use nih_plug::prelude::*;
+use std::sync::Arc;
+use synfx_dsp::fh_va::FilterParams;
+use synfx_dsp::fh_va::LadderFilter;
 
 #[derive(Debug, Clone)]
 pub struct DelayTap {
     pub delayed_audio_l: Box<[f32]>,
     pub delayed_audio_r: Box<[f32]>,
+
+    pub filter_params: Arc<FilterParams>,
+    pub ladders: LadderFilter,
+    pub mute_in_delayed: Box<[bool]>,
+    pub amp_envelopes: Smoother<f32>,
 
     /// The delay taps internal ID. Each delay tap has an internal delay tap ID one higher than the previous
     /// delay tap. This is used to steal the last delay tap in case all 16 delay taps are in use.
