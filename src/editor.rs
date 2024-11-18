@@ -337,6 +337,7 @@ impl View for DelayGraph {
             &params.previous_time_scaling_factor,
             gui_decay_weight,
         );
+
         // Draw components
         Self::draw_background(canvas, bounds, background_color);
         Self::draw_delay_times_as_lines(
@@ -431,7 +432,7 @@ impl DelayGraph {
     ) -> f32 {
         // Load atomic values once
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
-        let current_time_value = params.current_time.load(Ordering::SeqCst);
+        let current_time = params.current_time.load(Ordering::SeqCst);
         let max_tap_samples = params.max_tap_samples.load(Ordering::SeqCst);
 
         // Calculate max delay time if necessary
@@ -441,10 +442,10 @@ impl DelayGraph {
             0
         };
 
-        let zoom_tap_samples = if current_time_value == max_delay_time && tap_counter == 1 {
+        let zoom_tap_samples = if current_time == max_delay_time && tap_counter == 1 {
             // one delay tap, put it in the middle
             max_delay_time as f32
-        } else if tap_counter == NUM_TAPS || current_time_value == max_delay_time {
+        } else if tap_counter == NUM_TAPS || current_time == max_delay_time {
             // time out, zoom in but leave a margin
             0.16 * max_delay_time as f32
         } else {
@@ -508,7 +509,7 @@ impl DelayGraph {
         }
 
         // Check if initial condition is met and initialize with the target value if so
-        if current_value == f32::MAX {
+        if current_value >= f32::MAX - 1.0 {
             atomic_value.store(target_value, Ordering::SeqCst);
             return target_value;
         }
@@ -585,7 +586,7 @@ impl DelayGraph {
             0
         };
 
-        if current_time > max_delay_time {
+        if current_time >= max_delay_time {
             // Compute offset using mul_add for precision and performance
             let x_offset = (current_time as f32).mul_add(time_scaling_factor, border_width * 0.5);
 

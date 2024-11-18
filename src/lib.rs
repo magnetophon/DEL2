@@ -1043,11 +1043,33 @@ impl Del2 {
         }
     }
     fn prepare_for_delay(&mut self, buffer_samples: usize) {
-        self.no_more_events(buffer_samples as u32);
-
         // Cache the current tap value to reduce atomic loads
         let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
         let samples_since_last_event = self.samples_since_last_event; // Cache to a local variable
+        match self.counting_state {
+            CountingState::TimeOut => {}
+            CountingState::CountingInBuffer => {
+                // Use saturating_sub to safely handle potential overflow
+                self.samples_since_last_event =
+                    (buffer_samples as u32).saturating_sub(self.timing_last_event);
+                self.counting_state = CountingState::CountingAcrossBuffer;
+            }
+            CountingState::CountingAcrossBuffer => {
+                self.samples_since_last_event += buffer_samples as u32;
+            }
+        }
+
+        if self.samples_since_last_event > self.params.max_tap_samples.load(Ordering::SeqCst) {
+            self.counting_state = CountingState::TimeOut;
+            self.timing_last_event = 0;
+            self.samples_since_last_event = 0;
+
+            if tap_counter == 0 {
+                self.params
+                    .first_note
+                    .store(NO_LEARNED_NOTE, Ordering::SeqCst);
+            }
+        }
 
         // Calculate the current time based on whether there are taps
         let current_time = if tap_counter > 0 {
@@ -1061,33 +1083,6 @@ impl Del2 {
         self.params
             .current_time
             .store(current_time, Ordering::SeqCst);
-    }
-
-    fn no_more_events(&mut self, buffer_samples: u32) {
-        match self.counting_state {
-            CountingState::TimeOut => {}
-            CountingState::CountingInBuffer => {
-                // Use saturating_sub to safely handle potential overflow
-                self.samples_since_last_event =
-                    buffer_samples.saturating_sub(self.timing_last_event);
-                self.counting_state = CountingState::CountingAcrossBuffer;
-            }
-            CountingState::CountingAcrossBuffer => {
-                self.samples_since_last_event += buffer_samples;
-            }
-        }
-
-        if self.samples_since_last_event > self.params.max_tap_samples.load(Ordering::SeqCst) {
-            self.counting_state = CountingState::TimeOut;
-            self.timing_last_event = 0;
-            self.samples_since_last_event = 0;
-
-            if self.params.tap_counter.load(Ordering::SeqCst) == 0 {
-                self.params
-                    .first_note
-                    .store(NO_LEARNED_NOTE, Ordering::SeqCst);
-            }
-        }
     }
 
     fn update_filters(&mut self) {
@@ -1328,7 +1323,6 @@ impl Del2 {
                 false
             }
         }) {
-            // Optionally update the velocity and any other parameters needed
             let tap = existing_tap.as_mut().unwrap();
             tap.velocity = velocity;
             tap.releasing = false;
