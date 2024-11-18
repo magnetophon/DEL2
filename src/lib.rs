@@ -610,12 +610,11 @@ impl Plugin for Del2 {
     fn reset(&mut self) {
         for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
-            delay_tap.amp_envelopes.reset(0.0);
         }
         self.delay_taps.fill(None);
 
         for i in 0..self.params.tap_counter.load(Ordering::SeqCst) {
-            self.load_and_configure_tap(self.sample_rate, 0, i + 1);
+            self.load_and_configure_tap(i);
         }
 
         self.counting_state = CountingState::TimeOut;
@@ -659,19 +658,14 @@ impl Plugin for Del2 {
                         match event {
                             NoteEvent::NoteOn {
                                 timing,
-                                channel,
                                 note,
                                 velocity,
                                 ..
                             } => {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
-                                if self.params.tap_counter.load(Ordering::SeqCst) > old_nr_taps {
-                                    self.load_and_configure_tap(
-                                        sample_rate,
-                                        // timing,
-                                        channel,
-                                        self.params.tap_counter.load(Ordering::SeqCst),
-                                    );
+                                let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
+                                if tap_counter > old_nr_taps {
+                                    self.load_and_configure_tap(tap_counter - 1);
                                 }
                             }
                             NoteEvent::NoteOff { note, .. } => {
@@ -1313,12 +1307,37 @@ impl Del2 {
         })
     }
 
-    fn load_and_configure_tap(&mut self, sample_rate: f32, channel: u8, tap_counter: usize) {
-        let new_index = tap_counter - 1;
+    fn load_and_configure_tap(&mut self, new_index: usize) {
+        let sample_rate = self.sample_rate;
+
         // Load atomic values corresponding to the tap index
         let delay_time = self.params.delay_times[new_index].load(Ordering::SeqCst);
         let note = self.params.notes[new_index].load(Ordering::SeqCst);
         let velocity = self.params.velocities[new_index].load(Ordering::SeqCst);
+
+        // Manage mute toggle state
+        if self.params.global.mute_is_toggle.value() {
+            self.enabled_actions.store(MUTE_OUT, false);
+        }
+
+        // Recycle an old tap if `delay_time` and `note` match
+        if let Some(existing_tap) = self.delay_taps.iter_mut().find(|tap_option| {
+            if let Some(tap) = tap_option {
+                tap.delay_time == delay_time && tap.note == note
+            } else {
+                false
+            }
+        }) {
+            // Optionally update the velocity and any other parameters needed
+            let tap = existing_tap.as_mut().unwrap();
+            tap.velocity = velocity;
+            tap.releasing = false;
+
+            tap.amp_envelope.style = SmoothingStyle::Linear(self.params.global.attack_ms.value());
+            tap.amp_envelope.set_target(sample_rate, 1.0);
+            // Other updates can be added here
+            return;
+        }
 
         // Create amplitude envelope
         let amp_envelope =
@@ -1326,54 +1345,32 @@ impl Del2 {
 
         // Conditionally reset and configure the amplitude envelope
         if self.params.global.mute_is_toggle.value() {
-            amp_envelope.reset(0.0);
+            // TODO: do we want this?
+            // amp_envelope.reset(0.0);
             amp_envelope.set_target(sample_rate, 1.0);
         }
 
-        // Start delay tap and configure its properties
-        let delay_tap = self.start_delay_tap(channel, note, velocity, delay_time);
-        delay_tap.amp_envelope = amp_envelope;
-        delay_tap.is_muted = false;
-    }
-    /// Start a new delay tap with the given delay tap ID. If all `delay_taps` are currently in use, the oldest
-    /// delay tap will be stolen. Returns a reference to the new delay tap.
-    fn start_delay_tap(
-        &mut self,
-        channel: u8,
-        note: u8,
-        velocity: f32,
-        delay_time: u32,
-    ) -> &mut DelayTap {
         // Initialize new delay tap with the provided arguments
         let filter_params = Arc::new(FilterParams::new());
         let new_delay_tap = DelayTap {
             delayed_audio_l: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
             delayed_audio_r: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
-
             filter_params: filter_params.clone(),
             ladders: LadderFilter::new(filter_params.clone()),
             mute_in_delayed: vec![false; MAX_BLOCK_SIZE].into_boxed_slice(),
-            amp_envelopes: Smoother::none(),
             internal_id: self.next_internal_id,
             delay_time,
-            channel,
             note,
-            velocity: 1.0,
+            velocity,
             releasing: false,
-            amp_envelope: Smoother::none(),
+            amp_envelope: amp_envelope.clone(),
             is_muted: false,
         };
         self.next_internal_id = self.next_internal_id.wrapping_add(1);
 
-        // Manage mute toggle state
-        if self.params.global.mute_is_toggle.value() {
-            self.enabled_actions.store(MUTE_OUT, false);
-        }
-
         // Find a free index or replace the oldest delay tap
         if let Some(free_idx) = self.delay_taps.iter().position(Option::is_none) {
             self.delay_taps[free_idx] = Some(new_delay_tap);
-            self.delay_taps[free_idx].as_mut().unwrap()
         } else {
             // Find, replace and return the oldest delay tap
             let oldest_delay_tap = self
@@ -1383,7 +1380,6 @@ impl Del2 {
                 .expect("At least one delay tap should exist");
 
             *oldest_delay_tap = Some(new_delay_tap);
-            oldest_delay_tap.as_mut().unwrap()
         }
     }
 

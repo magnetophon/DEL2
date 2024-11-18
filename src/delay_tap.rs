@@ -11,7 +11,6 @@ pub struct DelayTap {
     pub filter_params: Arc<FilterParams>,
     pub ladders: LadderFilter,
     pub mute_in_delayed: Box<[bool]>,
-    pub amp_envelopes: Smoother<f32>,
 
     /// The delay taps internal ID. Each delay tap has an internal delay tap ID one higher than the previous
     /// delay tap. This is used to steal the last delay tap in case all 16 delay taps are in use.
@@ -19,10 +18,6 @@ pub struct DelayTap {
     /// The taps delay time.
     /// A new tap will be created if the delay_time and note are not the same as one that is currently playing.
     pub delay_time: u32,
-    /// The note's channel, in `0..16`. Only used for the delay tap terminated event.
-    // TODO: include this in the decision whether to start a new tap
-    // TODO: make a channel select in the gui, where the default is: all
-    pub channel: u8,
     /// The note's key/note, in `0..128`. Only used for the delay tap terminated event.
     pub note: u8,
     /// The note's velocity. This is used to interpollate it's dsp parameters.
