@@ -35,6 +35,4 @@ pub struct DelayTap {
 
     /// Are we currently muting? To determine if we need to trigger the amp envelope,
     pub is_muted: bool,
-    /// Which of the `NUM_TAPS` taps is this.
-    pub tap_index: usize,
 }
