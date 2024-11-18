@@ -69,11 +69,6 @@ const CLEAR_TAPS: usize = 2;
 const LOCK_TAPS: usize = 3;
 const MAX_HAAS_MS: f32 = 5.0;
 
-// Polyphonic modulation works by assigning integer IDs to parameters. Pattern matching on these in
-// `PolyModulation` and `MonoAutomation` events makes it possible to easily link these events to the
-// correct parameter.
-const GAIN_POLY_MOD_ID: u32 = 0;
-
 struct Del2 {
     params: Arc<Del2Params>,
 
@@ -95,11 +90,9 @@ struct Del2 {
     mute_in_delay_temp_buffer: Box<[bool]>,
 
     // for the smoothers
-    gain: Box<[f32]>,
     dry_wet: Box<[f32]>,
     output_gain: Box<[f32]>,
     global_drive: Box<[f32]>,
-    per_tap_gain: Box<[f32]>,
     delay_tap_amp_envelope: Box<[f32]>,
 
     // N counters to know where in the fade in we are: 0 is the start
@@ -160,10 +153,6 @@ pub struct Del2Params {
     previous_pan_foreground_lengths: AtomicF32Array,
     previous_pan_background_lengths: AtomicF32Array,
     last_frame_time: AtomicU64,
-
-    /// A voice's gain. This can be polyphonically modulated.
-    #[id = "gain"]
-    gain: FloatParam,
 }
 
 /// Contains the global parameters.
@@ -487,11 +476,9 @@ impl Default for Del2 {
             mute_in_delayed,
             mute_in_delay_temp_buffer: bool::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
-            gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             dry_wet: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             output_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             global_drive: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            per_tap_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_amp_envelope: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
             amp_envelopes,
@@ -551,24 +538,6 @@ impl Del2Params {
                 Arc::new(AtomicF32::new(0.0))
             })),
             last_frame_time: AtomicU64::new(0),
-
-            gain: FloatParam::new(
-                "Gain",
-                util::db_to_gain(0.0),
-                // Because we're representing gain as decibels the range is already logarithmic
-                FloatRange::Linear {
-                    min: util::db_to_gain(-36.0),
-                    max: util::db_to_gain(0.0),
-                },
-            )
-            // This enables polyphonic mdoulation for this parameter by representing all related
-            // events with this ID. After enabling this, the plugin **must** start sending
-            // `VoiceTerminated` events to the host whenever a voice has ended.
-            .with_poly_modulation_id(GAIN_POLY_MOD_ID)
-            .with_smoother(SmoothingStyle::Logarithmic(5.0))
-            .with_unit(" dB")
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
         }
     }
 }
@@ -663,7 +632,7 @@ impl Plugin for Del2 {
         self.delay_taps.fill(None);
 
         for tap_index in 0..self.params.current_tap.load(Ordering::SeqCst) {
-            self.load_and_configure_tap(self.sample_rate, 0, None, tap_index);
+            self.load_and_configure_tap(self.sample_rate, 0, tap_index);
         }
 
         self.counting_state = CountingState::TimeOut;
@@ -699,25 +668,18 @@ impl Plugin for Del2 {
             let old_nr_taps = self.params.current_tap.load(Ordering::SeqCst);
 
             // First of all, handle all note events that happen at the start of the block, and cut
-            // the block short if another event happens before the end of it. To handle polyphonic
-            // modulation for new notes properly, we'll keep track of the next internal note index
-            // at the block's start. If we receive polyphonic modulation that matches a delay tap that
-            // has an internal note ID that's great than or equal to this one, then we should start
-            // the note's smoother at the new value instead of fading in from the global value.
-            let this_sample_internal_id_start = self.next_internal_id;
+            // the block short if another event happens before the end of it.
             'events: loop {
                 match next_event {
                     // If the event happens now, then we'll keep processing events
                     Some(event) if (event.timing() as usize) <= block_start => {
-                        // This synth doesn't support any of the polyphonic expression events. A
-                        // real synth plugin however will want to support those.
                         match event {
                             NoteEvent::NoteOn {
                                 timing,
-                                voice_id,
                                 channel,
                                 note,
                                 velocity,
+                                ..
                             } => {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
                                 if self.params.current_tap.load(Ordering::SeqCst) > old_nr_taps {
@@ -727,116 +689,20 @@ impl Plugin for Del2 {
                                         sample_rate,
                                         // timing,
                                         channel,
-                                        voice_id,
                                         tap_index,
                                     );
                                 }
                             }
-                            NoteEvent::NoteOff {
-                                timing: _,
-                                voice_id: _,
-                                channel: _,
-                                note,
-                                velocity: _,
-                            } => {
+                            NoteEvent::NoteOff { note, .. } => {
                                 self.store_note_off_in_delay_data(note);
                             }
                             NoteEvent::Choke {
-                                timing,
                                 voice_id,
                                 channel,
                                 note,
+                                ..
                             } => {
-                                self.choke_delay_taps(context, timing, voice_id, channel, note);
-                            }
-                            NoteEvent::PolyModulation {
-                                timing: _,
-                                voice_id,
-                                poly_modulation_id,
-                                normalized_offset,
-                            } => {
-                                // Polyphonic modulation events are matched to delay taps using the
-                                // delay tap ID, and to parameters using the poly modulation ID. The
-                                // host will probably send a modulation event every N samples. This
-                                // will happen before the delay tap is active, and of course also after
-                                // it has been terminated (because the host doesn't know that it
-                                // will be). Because of that, we won't print any assertion failures
-                                // when we can't find the delay tap index here.
-                                if let Some(idx) = self.get_idx(voice_id) {
-                                    let delay_tap = self.delay_taps[idx].as_mut().unwrap();
-
-                                    match poly_modulation_id {
-                                        GAIN_POLY_MOD_ID => {
-                                            // This should either create a smoother for this
-                                            // modulated parameter or update the existing one.
-                                            // Notice how this uses the parameter's unmodulated
-                                            // normalized value in combination with the normalized
-                                            // offset to create the target plain value
-                                            let target_plain_value = self
-                                                .params
-                                                .gain
-                                                .preview_modulated(normalized_offset);
-                                            let (_, smoother) =
-                                                delay_tap.per_tap_gain.get_or_insert_with(|| {
-                                                    (
-                                                        normalized_offset,
-                                                        self.params.gain.smoothed.clone(),
-                                                    )
-                                                });
-
-                                            // If this `PolyModulation` events happens on the
-                                            // same sample as a delay tap's `NoteOn` event, then it
-                                            // should immediately use the modulated value
-                                            // instead of slowly fading in
-                                            if delay_tap.internal_id
-                                                >= this_sample_internal_id_start
-                                            {
-                                                smoother.reset(target_plain_value);
-                                            } else {
-                                                smoother
-                                                    .set_target(sample_rate, target_plain_value);
-                                            }
-                                        }
-                                        n => nih_debug_assert_failure!(
-                                            "Polyphonic modulation sent for unknown poly \
-                                             modulation ID {}",
-                                            n
-                                        ),
-                                    }
-                                }
-                            }
-                            NoteEvent::MonoAutomation {
-                                timing: _,
-                                poly_modulation_id,
-                                normalized_value,
-                            } => {
-                                // Modulation always acts as an offset to the parameter's current
-                                // automated value. So if the host sends a new automation value for
-                                // a modulated parameter, the modulated values/smoothing targets
-                                // need to be updated for all polyphonically modulated delay taps.
-                                for delay_tap in
-                                    self.delay_taps.iter_mut().filter_map(|v| v.as_mut())
-                                {
-                                    match poly_modulation_id {
-                                        GAIN_POLY_MOD_ID => {
-                                            let Some((normalized_offset, smoother)) =
-                                                delay_tap.per_tap_gain.as_mut()
-                                            else {
-                                                continue;
-                                            };
-                                            let target_plain_value =
-                                                self.params.gain.preview_plain(
-                                                    normalized_value + *normalized_offset,
-                                                );
-                                            smoother.set_target(sample_rate, target_plain_value);
-                                        }
-                                        n => nih_debug_assert_failure!(
-                                            "Automation event sent for unknown poly modulation ID \
-                                             {}",
-                                            n
-                                        ),
-                                    }
-                                }
+                                self.choke_delay_taps(voice_id, channel, note);
                             }
                             _ => (),
                         };
@@ -870,18 +736,6 @@ impl Plugin for Del2 {
 
             let block_len = block_end - block_start;
 
-            // These are the smoothed global parameter values. These are used for delay taps that do not
-            // have polyphonic modulation applied to them. With a plugin as simple as this it would
-            // be possible to avoid this completely by simply always copying the smoother into the
-            // delay tap's struct, but that may not be realistic when the plugin has hundreds of
-            // parameters. The `delay_tap_*` arrays are scratch arrays that an individual delay tap can use.
-            // for poly modulation
-            self.params
-                .gain
-                .smoothed
-                .next_block(&mut self.gain, block_len);
-
-            // not poly:
             self.params
                 .global
                 .dry_wet
@@ -934,18 +788,7 @@ impl Plugin for Del2 {
                     &mut self.mute_in_delayed[tap_index],
                     write_index - (delay_time - 1),
                 );
-                // Depending on whether the delay tap has polyphonic modulation applied to it,
-                // either the global parameter values are used, or the delay tap's smoother is used
-                // to generate unique modulated values for that delay tap
-                let gain = match &delay_tap.per_tap_gain {
-                    Some((_, smoother)) => {
-                        smoother.next_block(&mut self.per_tap_gain, block_len);
-                        &self.per_tap_gain
-                    }
-                    None => &self.gain,
-                };
-
-                // This is an exponential smoother repurposed as an AR envelope with values between
+                // This is a linear smoother repurposed as an AR envelope with values between
                 // 0 and 1. When a note off event is received, this envelope will start fading out
                 // again. When it reaches 0, we will terminate the delay tap.
                 delay_tap
@@ -953,9 +796,8 @@ impl Plugin for Del2 {
                     .next_block(&mut self.delay_tap_amp_envelope, block_len);
 
                 for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                    let pre_filter_gain = self.global_drive[value_idx]
-                        * gain[value_idx]
-                        * self.delay_tap_amp_envelope[value_idx];
+                    let pre_filter_gain =
+                        self.global_drive[value_idx] * self.delay_tap_amp_envelope[value_idx];
 
                     self.delayed_audio_l[tap_index][sample_idx] *= pre_filter_gain;
                     self.delayed_audio_r[tap_index][sample_idx] *= pre_filter_gain;
@@ -1019,14 +861,6 @@ impl Plugin for Del2 {
             for delay_tap in &mut self.delay_taps {
                 match delay_tap {
                     Some(v) if v.releasing && v.amp_envelope.previous_value() == 0.0 => {
-                        // This event is very important, as it allows the host to manage its own modulation
-                        // delay taps
-                        context.send_event(NoteEvent::VoiceTerminated {
-                            timing: block_end as u32,
-                            voice_id: Some(v.id),
-                            channel: v.channel,
-                            note: v.note,
-                        });
                         *delay_tap = None;
                     }
                     _ => (),
@@ -1257,15 +1091,7 @@ impl Del2 {
                 .store(NO_LEARNED_NOTE, Ordering::SeqCst);
         }
     }
-    fn load_and_configure_tap(
-        &mut self,
-        sample_rate: f32,
-        // context: &mut (impl ProcessContext<Self> + nih_plug::prelude::ProcessContext<Self>),
-        // timing: u32,
-        channel: u8,
-        voice_id: Option<i32>,
-        tap_index: usize,
-    ) {
+    fn load_and_configure_tap(&mut self, sample_rate: f32, channel: u8, tap_index: usize) {
         // Load atomic values corresponding to the tap index
         let delay_time = self.params.delay_times[tap_index].load(Ordering::SeqCst);
         let note = self.params.notes[tap_index].load(Ordering::SeqCst);
@@ -1289,7 +1115,7 @@ impl Del2 {
         delay_tap.is_muted = false;
 
         // Set a unique identifier for the delay tap
-        delay_tap.id = voice_id.unwrap_or_else(|| compute_fallback_id(note, channel, delay_time));
+        delay_tap.id = compute_id(note, velocity, delay_time);
 
         // delay_tap
     }
@@ -1574,7 +1400,6 @@ impl Del2 {
             velocity: 1.0,
             releasing: false,
             amp_envelope: Smoother::none(),
-            per_tap_gain: None,
             is_muted: false,
             tap_index: NUM_TAPS, // Initial out-of-bounds safety index
         };
@@ -1644,17 +1469,9 @@ impl Del2 {
         }
     }
 
-    /// Immediately terminate one or more delay tap, removing it from the pool and informing the host
-    /// that the delay tap has ended. If `id` is not provided, then this will terminate all
-    /// matching `delay_taps`.
-    fn choke_delay_taps(
-        &mut self,
-        context: &mut impl ProcessContext<Self>,
-        sample_offset: u32,
-        id: Option<i32>,
-        channel: u8,
-        note: u8,
-    ) {
+    /// Immediately terminate one or more delay tap, removing it from the pool.
+    /// If `id` is not provided, then this will terminate all matching `delay_taps`.
+    fn choke_delay_taps(&mut self, id: Option<i32>, channel: u8, note: u8) {
         for delay_tap in &mut self.delay_taps {
             match delay_tap {
                 Some(DelayTap {
@@ -1665,13 +1482,6 @@ impl Del2 {
                 }) if id == Some(*candidate_id)
                     || (channel == *candidate_channel && note == *candidate_note) =>
                 {
-                    context.send_event(NoteEvent::VoiceTerminated {
-                        timing: sample_offset,
-                        // Notice how we always send the terminated delay tap ID here
-                        voice_id: Some(*candidate_id),
-                        channel,
-                        note,
-                    });
                     *delay_tap = None;
 
                     if id.is_some() {
@@ -1684,22 +1494,29 @@ impl Del2 {
     }
 }
 
-/// Compute a delay tap ID in case the host doesn't provide them. Polyphonic modulation will not work in
-/// this case, but playing notes will.
-const fn compute_fallback_id(note: u8, channel: u8, delay_time: u32) -> i32 {
+/// Compute a delay tap ID
+fn compute_id(note: u8, velocity: f32, delay_time: u32) -> i32 {
     // Ensure inputs are within their valid ranges
     assert!(note <= 127, "note must be between 0 and 127");
-    assert!(channel <= 15, "channel must be between 0 and 15");
-    // The delay_time uses 21 bits, allowing values from 0 to 2,097,151.
-    // At a sample rate of 48,000 samples per second (48 kHz), this translates to 2,097,151 / 48,000
-    // which results in a maximum delay time of approximately 43.69 seconds.
+    // Assume velocity can be mapped to an 8-bit value (0 to 255)
+    assert!(
+        velocity >= 0.0 && velocity <= 1.0,
+        "velocity must be between 0.0 and 1.0"
+    );
     assert!(
         delay_time <= 2_097_151,
         "delay_time exceeds maximum storable value with 21 bits"
     );
 
-    // Combine note, channel, and delay_time into a 32-bit integer
-    (note as i32) | ((channel as i32) << 7) | ((delay_time as i32 & 0x1F_FFFF) << 11)
+    // Map velocity from 0.0-1.0 to 0-255 (an 8-bit range)
+    let velocity_mapped = (velocity * 255.0).round() as i32 & 0xFF;
+
+    // Combine note, velocity, and delay_time into a 32-bit integer
+    // Encoding layout:
+    // - `note` takes up the least significant 7 bits (bits 0 to 6)
+    // - `velocity_mapped` takes up the next 8 bits (bits 7 to 14)
+    // - `delay_time` takes up the remaining 21 bits, but is shifted to occupy bits 15 to 31
+    (note as i32) | (velocity_mapped << 7) | ((delay_time as i32 & 0x1F_FFFF) << 15)
 }
 
 impl ClapPlugin for Del2 {

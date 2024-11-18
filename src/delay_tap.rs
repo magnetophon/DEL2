@@ -2,10 +2,8 @@ use nih_plug::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct DelayTap {
-    /// The identifier for this delay tap. Polyphonic modulation events are linked to a delay tap based on
-    /// these IDs. If the host doesn't provide these IDs, then this is computed through
-    /// `compute_fallback_id()`. In that case polyphonic modulation will not work, but the
-    /// basic note events will still have an effect.
+    /// The identifier for this delay tap. This is computed through `compute_id()`,
+    /// which takes into account the note, velocity and delay time
     pub id: i32,
     /// The note's channel, in `0..16`. Only used for the delay tap terminated event.
     pub channel: u8,
@@ -21,9 +19,6 @@ pub struct DelayTap {
     pub releasing: bool,
     /// Fades between 0 and 1 with timings based on the global attack and release settings.
     pub amp_envelope: Smoother<f32>,
-    /// If this delay tap has polyphonic gain modulation applied, then this contains the normalized
-    /// offset and a smoother.
-    pub per_tap_gain: Option<(f32, Smoother<f32>)>,
 
     /// Are we currently muting? To determine if we need to trigger the amp envelope,
     pub is_muted: bool,
