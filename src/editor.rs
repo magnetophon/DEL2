@@ -471,32 +471,31 @@ impl DelayGraph {
         (total_delay / denominator).recip()
     }
     fn calculate_gui_decay_weight(params: &Arc<Del2Params>) -> f32 {
-        let start = SystemTime::now();
-
-        // Get the duration since the UNIX EPOCH
-        let since_the_epoch = start
+        // Get current system time in nanoseconds since the UNIX epoch
+        let now_nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards");
+            .expect("System time should be after UNIX epoch")
+            .as_nanos() as u64;
 
-        // Convert current time to nanoseconds since the epoch
-        let now_nanos = since_the_epoch.as_nanos();
-
-        // Load the last frame time, ensuring it's within 64-bit range
+        // Load the last frame time
         let last_time_nanos = params.last_frame_time.load(Ordering::SeqCst);
 
-        // Calculate the frame duration using the lower 64 bits
-        let frame_duration: u64 = (now_nanos as u64) - last_time_nanos;
+        // Calculate the frame duration
+        let frame_duration_nanos = if now_nanos < last_time_nanos {
+            // Time went backwards; assume 60 FPS (16.67 ms per frame)
+            println!("Time went backwards, assuming 60 FPS");
+            (1_000_000_000 / 60) as u64 // 16,666,666.67 nanoseconds for 60 FPS
+        } else {
+            now_nanos - last_time_nanos
+        };
 
-        // Store the current time value inside the AtomicU64 by casting u128 to its lower 64 bits
-        params
-            .last_frame_time
-            .store((now_nanos & u64::MAX as u128) as u64, Ordering::SeqCst);
+        // Store the current time value inside the AtomicU64
+        params.last_frame_time.store(now_nanos, Ordering::SeqCst);
 
         // Calculate and return the GUI smoothing decay weight
-        f64::powf(
-            0.25,
-            (GUI_SMOOTHING_DECAY_MS * 1_000_000.0 / frame_duration as f64).recip(),
-        ) as f32
+        let decay_ms_per_frame =
+            (GUI_SMOOTHING_DECAY_MS * 1_000_000.0) / frame_duration_nanos as f64;
+        0.25f32.powf(decay_ms_per_frame.recip() as f32)
     }
 
     /// Smoothly updates the value stored within an `f32` based on a target value.
