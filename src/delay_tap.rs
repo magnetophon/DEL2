@@ -68,15 +68,14 @@ impl DelayTap {
         delay_time: u32,
         note: u8,
         velocity: f32,
-        releasing: bool,
-        is_muted: bool,
     ) {
         self.amp_envelope = amp_envelope;
         self.internal_id = internal_id;
         self.delay_time = delay_time;
         self.note = note;
         self.velocity = velocity;
-        self.releasing = releasing;
-        self.is_muted = is_muted;
+        self.releasing = false;
+        self.is_muted = false;
+        self.is_alive = false;
     }
 }

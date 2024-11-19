@@ -1361,11 +1361,8 @@ impl Del2 {
                     delay_time,
                     note,
                     velocity,
-                    false,
-                    false,
                 );
-                // It looks like we should break here, if we initialized a dead tap
-                break;
+                return;
             }
         }
 
@@ -1380,8 +1377,6 @@ impl Del2 {
                     delay_time,
                     note,
                     velocity,
-                    false,
-                    false,
                 );
             }
         }
