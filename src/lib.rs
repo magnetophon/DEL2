@@ -445,15 +445,7 @@ impl Default for Del2 {
     fn default() -> Self {
         let should_update_filter = Arc::new(AtomicBool::new(false));
         let learned_notes = Arc::new(AtomicByteArray::new(NO_LEARNED_NOTE));
-        let last_learned_notes = Arc::new(AtomicByteArray::new(NO_LEARNED_NOTE));
         let enabled_actions = Arc::new(AtomicBoolArray::new());
-
-        let filter_params = Arc::new(FilterParams::new());
-        let delay_taps = array_init(|_| DelayTap::new(filter_params.clone()));
-        let tap_meters = AtomicF32Array(array_init(|_| {
-            Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB))
-        }))
-        .into();
 
         Self {
             params: Arc::new(Del2Params::new(
@@ -462,7 +454,7 @@ impl Default for Del2 {
                 learned_notes.clone(),
             )),
 
-            delay_taps,
+            delay_taps: array_init(|_| DelayTap::new(Arc::new(FilterParams::new()))),
             next_internal_id: 0,
 
             delay_buffer: [
@@ -481,12 +473,15 @@ impl Default for Del2 {
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
             output_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
-            tap_meters,
+            tap_meters: AtomicF32Array(array_init(|_| {
+                Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB))
+            }))
+            .into(),
             delay_write_index: 0,
             is_learning: Arc::new(AtomicBool::new(false)),
             learning_index: Arc::new(AtomicUsize::new(0)),
             learned_notes,
-            last_learned_notes,
+            last_learned_notes: Arc::new(AtomicByteArray::new(NO_LEARNED_NOTE)),
             last_played_notes: Arc::new(LastPlayedNotes::new()),
             samples_since_last_event: 0,
             timing_last_event: 0,
