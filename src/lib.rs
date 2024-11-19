@@ -1307,15 +1307,20 @@ impl Del2 {
 
     fn load_and_configure_tap(&mut self, new_index: usize) {
         let sample_rate = self.sample_rate;
+        let global_params = &self.params.global;
 
-        // Load atomic values corresponding to the tap index
         let delay_time = self.params.delay_times[new_index].load(Ordering::SeqCst);
         let note = self.params.notes[new_index].load(Ordering::SeqCst);
         let velocity = self.params.velocities[new_index].load(Ordering::SeqCst);
 
-        // Manage mute toggle state
-        if self.params.global.mute_is_toggle.value() {
+        if global_params.mute_is_toggle.value() {
             self.enabled_actions.store(MUTE_OUT, false);
+        }
+
+        // Create and setup amplitude envelope, outside the loop for potential reuse.
+        let amp_envelope = Smoother::new(SmoothingStyle::Linear(global_params.attack_ms.value()));
+        if global_params.mute_is_toggle.value() {
+            amp_envelope.set_target(sample_rate, 1.0);
         }
 
         // Recycle an old tap if `delay_time` and `note` match
@@ -1331,47 +1336,30 @@ impl Del2 {
                 return;
             }
         }
-        // Create amplitude envelope
-        let amp_envelope =
-            Smoother::new(SmoothingStyle::Linear(self.params.global.attack_ms.value()));
-
-        // Conditionally reset and configure the amplitude envelope
-        if self.params.global.mute_is_toggle.value() {
-            // TODO: do we want this?
-            // amp_envelope.reset(0.0);
-            amp_envelope.set_target(sample_rate, 1.0);
+        // Try to find a non-alive tap to initialize.
+        if let Some(delay_tap) = self.delay_taps.iter_mut().find(|tap| !tap.is_alive) {
+            delay_tap.init(
+                amp_envelope,
+                self.next_internal_id,
+                delay_time,
+                note,
+                velocity,
+            );
+            self.next_internal_id = self.next_internal_id.wrapping_add(1);
+            return;
         }
 
-        // Find a free index or replace the oldest delay tap
-        for delay_tap in self.delay_taps.iter_mut() {
-            if !delay_tap.is_alive {
-                delay_tap.init(
-                    amp_envelope.clone(),
-                    self.next_internal_id,
-                    delay_time,
-                    note,
-                    velocity,
-                );
-                return;
-            }
-        }
-
-        // Find, replace and return the oldest delay tap if none are free
-        if self.delay_taps.iter().all(|tap| tap.is_alive) {
-            let oldest_delay_tap = self
-                .delay_taps
-                .iter_mut()
-                .min_by_key(|tap| tap.internal_id)
-                .expect("no oldest delay tap?");
+        // If needed, replace the oldest tap.
+        if let Some(oldest_delay_tap) = self.delay_taps.iter_mut().min_by_key(|tap| tap.internal_id)
+        {
             oldest_delay_tap.init(
-                amp_envelope.clone(),
+                amp_envelope,
                 self.next_internal_id,
                 delay_time,
                 note,
                 velocity,
             );
         }
-
         self.next_internal_id = self.next_internal_id.wrapping_add(1);
     }
 
