@@ -804,6 +804,10 @@ impl Plugin for Del2 {
                             amplitude += (left.abs() + right.abs()) * 0.5;
                         }
 
+                        if delay_tap.releasing && delay_tap.amp_envelope.previous_value() == 0.0 {
+                            delay_tap.is_alive = false;
+                        }
+
                         if self.params.editor_state.is_open() {
                             let weight = self.peak_meter_decay_weight * 0.91;
                             amplitude = (amplitude / block_len as f32).min(1.0);
@@ -819,15 +823,6 @@ impl Plugin for Del2 {
                         }
                     }
                 });
-            // Terminate inactive delay taps
-            for delay_tap in self.delay_taps.iter_mut() {
-                if delay_tap.is_alive
-                    && delay_tap.releasing
-                    && delay_tap.amp_envelope.previous_value() == 0.0
-                {
-                    delay_tap.is_alive = false;
-                }
-            }
 
             block_start = block_end;
             block_end = (block_start + MAX_BLOCK_SIZE).min(num_samples);
