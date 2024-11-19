@@ -1045,10 +1045,9 @@ impl Del2 {
                 .store(NO_LEARNED_NOTE, Ordering::SeqCst);
         }
     }
+
     fn prepare_for_delay(&mut self, buffer_samples: usize) {
-        // Cache the current tap value to reduce atomic loads
         let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
-        let samples_since_last_event = self.samples_since_last_event; // Cache to a local variable
         match self.counting_state {
             CountingState::TimeOut => {}
             CountingState::CountingInBuffer => {
@@ -1073,6 +1072,8 @@ impl Del2 {
                     .store(NO_LEARNED_NOTE, Ordering::SeqCst);
             }
         }
+
+        let samples_since_last_event = self.samples_since_last_event;
 
         // Calculate the current time based on whether there are taps
         let current_time = if tap_counter > 0 {
