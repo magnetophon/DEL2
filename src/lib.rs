@@ -611,7 +611,6 @@ impl Plugin for Del2 {
     fn reset(&mut self) {
         for delay_tap in self.delay_taps.iter_mut() {
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
-            delay_tap.is_alive = false;
         }
 
         for i in 0..self.params.tap_counter.load(Ordering::SeqCst) {
@@ -1086,52 +1085,54 @@ impl Del2 {
 
     fn update_filters(&mut self) {
         for delay_tap in self.delay_taps.iter_mut() {
-            // Load atomic values that are used outside computation steps
-            let velocity = delay_tap.velocity;
+            if delay_tap.is_alive {
+                // Load atomic values that are used outside computation steps
+                let velocity = delay_tap.velocity;
 
-            // Unsafe block to get a mutable reference to the filter parameters
-            let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
+                // Unsafe block to get a mutable reference to the filter parameters
+                let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
 
-            // Reference to velocity parameters
-            let velocity_params = &self.params.taps;
-            let low_params = &velocity_params.velocity_low;
-            let high_params = &velocity_params.velocity_high;
+                // Reference to velocity parameters
+                let velocity_params = &self.params.taps;
+                let low_params = &velocity_params.velocity_low;
+                let high_params = &velocity_params.velocity_high;
 
-            // Direct calculation using values needed for multiple operations
-            let res = Self::lerp(low_params.res.value(), high_params.res.value(), velocity);
+                // Direct calculation using values needed for multiple operations
+                let res = Self::lerp(low_params.res.value(), high_params.res.value(), velocity);
 
-            let velocity_cutoff = Self::log_interpolate(
-                low_params.cutoff.value(),
-                high_params.cutoff.value(),
-                velocity,
-            );
+                let velocity_cutoff = Self::log_interpolate(
+                    low_params.cutoff.value(),
+                    high_params.cutoff.value(),
+                    velocity,
+                );
 
-            let note_cutoff = util::midi_note_to_freq(delay_tap.note);
-            let cutoff = note_cutoff
-                .mul_add(
-                    velocity_params.note_to_cutoff_amount.value(),
-                    velocity_cutoff * velocity_params.velocity_to_cutoff_amount.value(),
-                )
-                .clamp(10.0, 20_000.0);
+                let note_cutoff = util::midi_note_to_freq(delay_tap.note);
+                let cutoff = note_cutoff
+                    .mul_add(
+                        velocity_params.note_to_cutoff_amount.value(),
+                        velocity_cutoff * velocity_params.velocity_to_cutoff_amount.value(),
+                    )
+                    .clamp(10.0, 20_000.0);
 
-            let drive_db = Self::lerp(
-                util::gain_to_db(low_params.drive.value()),
-                util::gain_to_db(high_params.drive.value()),
-                velocity,
-            );
-            let drive = util::db_to_gain(drive_db);
+                let drive_db = Self::lerp(
+                    util::gain_to_db(low_params.drive.value()),
+                    util::gain_to_db(high_params.drive.value()),
+                    velocity,
+                );
+                let drive = util::db_to_gain(drive_db);
 
-            let mode =
-                MyLadderMode::lerp(low_params.mode.value(), high_params.mode.value(), velocity);
+                let mode =
+                    MyLadderMode::lerp(low_params.mode.value(), high_params.mode.value(), velocity);
 
-            // Apply computed parameters
-            filter_params.set_resonance(res);
-            filter_params.set_frequency(cutoff);
-            filter_params.drive = drive;
-            filter_params.ladder_mode = mode;
+                // Apply computed parameters
+                filter_params.set_resonance(res);
+                filter_params.set_frequency(cutoff);
+                filter_params.drive = drive;
+                filter_params.ladder_mode = mode;
 
-            // Update filter mix mode
-            delay_tap.ladders.set_mix(mode);
+                // Update filter mix mode
+                delay_tap.ladders.set_mix(mode);
+            }
         }
     }
 
@@ -1313,20 +1314,6 @@ impl Del2 {
         if self.params.global.mute_is_toggle.value() {
             self.enabled_actions.store(MUTE_OUT, false);
         }
-
-        // if let Some(existing_tap) = self.delay_taps.iter_mut().find(|tap_option| {
-        //     tap_option.as_ref().map_or(false, |tap| {
-        //         tap.delay_time == delay_time && tap.note == note
-        //     })
-        // }) {
-        //     let tap = existing_tap.as_mut().unwrap();
-        //     tap.velocity = velocity;
-        //     tap.releasing = false;
-
-        //     tap.amp_envelope.style = SmoothingStyle::Linear(self.params.global.attack_ms.value());
-        //     tap.amp_envelope.set_target(sample_rate, 1.0);
-        //     return;
-        // }
 
         // Recycle an old tap if `delay_time` and `note` match
         for delay_tap in self.delay_taps.iter_mut() {
