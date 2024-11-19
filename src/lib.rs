@@ -321,7 +321,11 @@ impl TapsParams {
             )
             .with_unit(" %")
             .with_value_to_string(formatters::v2s_f32_percentage(0))
-            .with_string_to_value(formatters::s2v_f32_percentage()),
+            .with_string_to_value(formatters::s2v_f32_percentage())
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter.clone();
+                move |_| should_update_filter.store(true, Ordering::Release)
+            })),
             velocity_to_cutoff_amount: FloatParam::new(
                 "velocity -> cutoff",
                 1.0,
@@ -329,7 +333,11 @@ impl TapsParams {
             )
             .with_unit(" %")
             .with_value_to_string(formatters::v2s_f32_percentage(0))
-            .with_string_to_value(formatters::s2v_f32_percentage()),
+            .with_string_to_value(formatters::s2v_f32_percentage())
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter.clone();
+                move |_| should_update_filter.store(true, Ordering::Release)
+            })),
             velocity_low: Arc::new(FilterGuiParams::new(
                 VELOCITY_LOW_NAME_PREFIX,
                 should_update_filter.clone(),
