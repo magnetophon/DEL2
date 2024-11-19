@@ -705,7 +705,7 @@ impl Plugin for Del2 {
                 self.update_filters();
             }
 
-            self.set_mute_for_all_delay_taps(sample_rate);
+            self.set_mute_for_all_delay_taps();
 
             // Calculate dry mix and update gains
             let dry_wet = &mut self.dry_wet[..block_len];
@@ -1025,7 +1025,7 @@ impl Del2 {
             self.params.previous_pan_background_lengths[i].store(f32::MAX, Ordering::SeqCst);
         }
 
-        self.start_release_for_all_delay_taps(self.sample_rate);
+        self.start_release_for_all_delay_taps();
         if restart {
             if self.params.global.mute_is_toggle.value() {
                 self.enabled_actions.store(MUTE_IN, false);
@@ -1369,17 +1369,17 @@ impl Del2 {
     }
 
     /// Start the release process for all delay taps by changing their amplitude envelope.
-    fn start_release_for_all_delay_taps(&mut self, sample_rate: f32) {
+    fn start_release_for_all_delay_taps(&mut self) {
         for delay_tap in self.delay_taps.iter_mut() {
             delay_tap.releasing = true;
             delay_tap.amp_envelope.style =
                 SmoothingStyle::Linear(self.params.global.release_ms.value());
-            delay_tap.amp_envelope.set_target(sample_rate, 0.0);
+            delay_tap.amp_envelope.set_target(self.sample_rate, 0.0);
         }
     }
 
     /// Set mute for all delay taps by changing their amplitude envelope.
-    fn set_mute_for_all_delay_taps(&mut self, sample_rate: f32) {
+    fn set_mute_for_all_delay_taps(&mut self) {
         let is_playing_mute_out = self.is_playing_action(MUTE_OUT);
 
         for delay_tap in self.delay_taps.iter_mut() {
@@ -1399,11 +1399,11 @@ impl Del2 {
                 if new_mute {
                     delay_tap.amp_envelope.style =
                         SmoothingStyle::Linear(self.params.global.release_ms.value());
-                    delay_tap.amp_envelope.set_target(sample_rate, 0.0);
+                    delay_tap.amp_envelope.set_target(self.sample_rate, 0.0);
                 } else {
                     delay_tap.amp_envelope.style =
                         SmoothingStyle::Linear(self.params.global.attack_ms.value());
-                    delay_tap.amp_envelope.set_target(sample_rate, 1.0);
+                    delay_tap.amp_envelope.set_target(self.sample_rate, 1.0);
                 }
                 delay_tap.is_muted = new_mute;
             }
