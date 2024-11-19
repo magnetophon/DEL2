@@ -1095,7 +1095,7 @@ impl Del2 {
         let low_params = &velocity_params.velocity_low;
         let high_params = &velocity_params.velocity_high;
 
-        for delay_tap in self.delay_taps.iter_mut() {
+        self.delay_taps.iter_mut().for_each(|delay_tap| {
             if delay_tap.is_alive {
                 let velocity = delay_tap.velocity;
 
@@ -1103,6 +1103,7 @@ impl Del2 {
                 let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
 
                 let res = Self::lerp(low_params.res.value(), high_params.res.value(), velocity);
+
                 let velocity_cutoff = Self::log_interpolate(
                     low_params.cutoff.value(),
                     high_params.cutoff.value(),
@@ -1122,6 +1123,7 @@ impl Del2 {
                     util::gain_to_db(high_params.drive.value()),
                     velocity,
                 );
+
                 let drive = util::db_to_gain(drive_db);
 
                 let mode =
@@ -1136,7 +1138,7 @@ impl Del2 {
                 // Update filter mix mode
                 delay_tap.ladders.set_mix(mode);
             }
-        }
+        });
     }
 
     fn lerp(a: f32, b: f32, x: f32) -> f32 {
