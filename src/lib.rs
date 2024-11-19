@@ -1368,17 +1368,18 @@ impl Del2 {
 
         // Find, replace and return the oldest delay tap if none are free
         if self.delay_taps.iter().all(|tap| tap.is_alive) {
-            if let Some(oldest_delay_tap) =
-                self.delay_taps.iter_mut().min_by_key(|tap| tap.internal_id)
-            {
-                oldest_delay_tap.init(
-                    amp_envelope.clone(),
-                    self.next_internal_id,
-                    delay_time,
-                    note,
-                    velocity,
-                );
-            }
+            let oldest_delay_tap = self
+                .delay_taps
+                .iter_mut()
+                .min_by_key(|tap| tap.internal_id)
+                .expect("no oldest delay tap?");
+            oldest_delay_tap.init(
+                amp_envelope.clone(),
+                self.next_internal_id,
+                delay_time,
+                note,
+                velocity,
+            );
         }
 
         self.next_internal_id = self.next_internal_id.wrapping_add(1);
