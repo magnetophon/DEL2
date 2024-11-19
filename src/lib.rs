@@ -42,6 +42,7 @@ TODO: research choke event, possibly clear_taps()
 #![allow(clippy::type_complexity)]
 #![feature(portable_simd)]
 #![feature(get_mut_unchecked)]
+use array_init::array_init;
 use bit_mask_ring_buf::BMRingBuf;
 use default_boxed::DefaultBoxed;
 use nih_plug::params::persist::PersistentField;
@@ -51,7 +52,7 @@ use std::ops::Index;
 use std::simd::f32x4;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::Arc;
-use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode};
+use synfx_dsp::fh_va::{FilterParams, LadderMode};
 
 mod delay_tap;
 mod editor;
@@ -83,7 +84,7 @@ struct Del2 {
     params: Arc<Del2Params>,
 
     /// The effect's delay taps. Inactive delay taps will be set to `None` values.
-    delay_taps: [Option<DelayTap>; NUM_TAPS],
+    delay_taps: [DelayTap; NUM_TAPS],
     /// The next internal delay tap ID, used only to figure out the oldest delay tap for "voice stealing".
     /// This is incremented by one each time a delay tap is created.
     next_internal_id: u64,
@@ -439,7 +440,9 @@ impl Default for Del2 {
         let last_learned_notes = Arc::new(AtomicByteArray::new(NO_LEARNED_NOTE));
         let enabled_actions = Arc::new(AtomicBoolArray::new());
 
-        let tap_meters = AtomicF32Array(array_init::array_init(|_| {
+        let filter_params = Arc::new(FilterParams::new());
+        let delay_taps = array_init(|_| DelayTap::new(filter_params.clone()));
+        let tap_meters = AtomicF32Array(array_init(|_| {
             Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB))
         }))
         .into();
@@ -451,7 +454,7 @@ impl Default for Del2 {
                 learned_notes.clone(),
             )),
 
-            delay_taps: [0; NUM_TAPS].map(|_| None),
+            delay_taps,
             next_internal_id: 0,
 
             delay_buffer: [
@@ -502,22 +505,20 @@ impl Del2Params {
             enabled_actions: ArcAtomicBoolArray(enabled_actions),
 
             tap_counter: Arc::new(AtomicUsize::new(0)),
-            delay_times: AtomicU32Array(array_init::array_init(|_| Arc::new(AtomicU32::new(0)))),
-            velocities: AtomicF32Array(array_init::array_init(|_| Arc::new(AtomicF32::new(0.0)))),
-            notes: AtomicU8Array(array_init::array_init(|_| Arc::new(AtomicU8::new(0)))),
+            delay_times: AtomicU32Array(array_init(|_| Arc::new(AtomicU32::new(0)))),
+            velocities: AtomicF32Array(array_init(|_| Arc::new(AtomicF32::new(0.0)))),
+            notes: AtomicU8Array(array_init(|_| Arc::new(AtomicU8::new(0)))),
             current_time: Arc::new(AtomicU32::new(0)),
             max_tap_samples: Arc::new(AtomicU32::new(0)),
             first_note: Arc::new(AtomicU8::new(NO_LEARNED_NOTE)),
             previous_time_scaling_factor: Arc::new(AtomicF32::new(0.0)),
-            previous_note_heights: AtomicF32Array(array_init::array_init(|_| {
-                Arc::new(AtomicF32::new(0.0))
-            })),
+            previous_note_heights: AtomicF32Array(array_init(|_| Arc::new(AtomicF32::new(0.0)))),
             previous_first_note_height: Arc::new(AtomicF32::new(0.0)),
             previous_panning_center_height: Arc::new(AtomicF32::new(0.0)),
-            previous_pan_foreground_lengths: AtomicF32Array(array_init::array_init(|_| {
+            previous_pan_foreground_lengths: AtomicF32Array(array_init(|_| {
                 Arc::new(AtomicF32::new(0.0))
             })),
-            previous_pan_background_lengths: AtomicF32Array(array_init::array_init(|_| {
+            previous_pan_background_lengths: AtomicF32Array(array_init(|_| {
                 Arc::new(AtomicF32::new(0.0))
             })),
             last_frame_time: AtomicU64::new(0),
@@ -608,10 +609,10 @@ impl Plugin for Del2 {
     }
 
     fn reset(&mut self) {
-        for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
+        for delay_tap in self.delay_taps.iter_mut() {
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
+            delay_tap.is_alive = false;
         }
-        self.delay_taps.fill(None);
 
         for i in 0..self.params.tap_counter.load(Ordering::SeqCst) {
             self.load_and_configure_tap(i);
@@ -732,87 +733,88 @@ impl Plugin for Del2 {
             }
 
             for (tap_index, delay_tap) in self.delay_taps.iter_mut().enumerate() {
-                if let Some(v) = delay_tap.as_mut() {
-                    let pan =
-                        ((f32::from(v.note) - panning_center) * panning_amount).clamp(-1.0, 1.0);
+                let pan = ((f32::from(delay_tap.note) - panning_center) * panning_amount)
+                    .clamp(-1.0, 1.0);
 
-                    let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
+                let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
 
-                    let delay_time = v.delay_time as isize;
-                    let write_index = self.delay_write_index;
-                    // delay_time - 1 because we are processing 2 samples at once in process_audio
-                    let read_index_l = write_index - (delay_time - 1 + offset_l);
-                    let read_index_r = write_index - (delay_time - 1 + offset_r);
+                let delay_time = delay_tap.delay_time as isize;
+                let write_index = self.delay_write_index;
+                // delay_time - 1 because we are processing 2 samples at once in process_audio
+                let read_index_l = write_index - (delay_time - 1 + offset_l);
+                let read_index_r = write_index - (delay_time - 1 + offset_r);
 
-                    self.delay_buffer[0].read_into(&mut v.delayed_audio_l, read_index_l);
-                    self.delay_buffer[1].read_into(&mut v.delayed_audio_r, read_index_r);
+                self.delay_buffer[0].read_into(&mut delay_tap.delayed_audio_l, read_index_l);
+                self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index_r);
 
-                    let drive = v.filter_params.clone().drive;
-                    self.mute_in_delay_buffer
-                        .read_into(&mut v.mute_in_delayed, write_index - (delay_time - 1));
+                let drive = delay_tap.filter_params.clone().drive;
+                self.mute_in_delay_buffer.read_into(
+                    &mut delay_tap.mute_in_delayed,
+                    write_index - (delay_time - 1),
+                );
 
-                    v.amp_envelope
-                        .next_block(&mut self.delay_tap_amp_envelope, block_len);
+                delay_tap
+                    .amp_envelope
+                    .next_block(&mut self.delay_tap_amp_envelope, block_len);
 
-                    for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                        let pre_filter_gain =
-                            self.global_drive[value_idx] * self.delay_tap_amp_envelope[value_idx];
+                for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
+                    let pre_filter_gain =
+                        self.global_drive[value_idx] * self.delay_tap_amp_envelope[value_idx];
 
-                        v.delayed_audio_l[sample_idx] *= pre_filter_gain;
-                        v.delayed_audio_r[sample_idx] *= pre_filter_gain;
+                    delay_tap.delayed_audio_l[sample_idx] *= pre_filter_gain;
+                    delay_tap.delayed_audio_r[sample_idx] *= pre_filter_gain;
+                }
+
+                for i in (block_start..block_end).step_by(2) {
+                    let frame = f32x4::from_array([
+                        delay_tap.delayed_audio_l[i],
+                        delay_tap.delayed_audio_r[i],
+                        delay_tap.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
+                        delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
+                    ]);
+                    let frame_out = *delay_tap.ladders.tick_pivotal(frame).as_array();
+                    delay_tap.delayed_audio_l[i] = frame_out[0];
+                    delay_tap.delayed_audio_r[i] = frame_out[1];
+                    if i + 1 < block_end {
+                        delay_tap.delayed_audio_l[i + 1] = frame_out[2];
+                        delay_tap.delayed_audio_r[i + 1] = frame_out[3];
                     }
+                }
 
-                    for i in (block_start..block_end).step_by(2) {
-                        let frame = f32x4::from_array([
-                            v.delayed_audio_l[i],
-                            v.delayed_audio_r[i],
-                            v.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
-                            v.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
-                        ]);
-                        let frame_out = *v.ladders.tick_pivotal(frame).as_array();
-                        v.delayed_audio_l[i] = frame_out[0];
-                        v.delayed_audio_r[i] = frame_out[1];
-                        if i + 1 < block_end {
-                            v.delayed_audio_l[i + 1] = frame_out[2];
-                            v.delayed_audio_r[i + 1] = frame_out[3];
-                        }
-                    }
+                let mut amplitude = 0.0;
+                for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
+                    let post_filter_gain = self.dry_wet[value_idx] * self.output_gain[value_idx]
+                        / (drive * self.global_drive[value_idx]);
+                    let left = delay_tap.delayed_audio_l[sample_idx] * post_filter_gain;
+                    let right = delay_tap.delayed_audio_r[sample_idx] * post_filter_gain;
+                    output[0][sample_idx] += left;
+                    output[1][sample_idx] += right;
+                    amplitude += (left.abs() + right.abs()) * 0.5;
+                }
 
-                    let mut amplitude = 0.0;
-                    for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                        let post_filter_gain = self.dry_wet[value_idx]
-                            * self.output_gain[value_idx]
-                            / (drive * self.global_drive[value_idx]);
-                        let left = v.delayed_audio_l[sample_idx] * post_filter_gain;
-                        let right = v.delayed_audio_r[sample_idx] * post_filter_gain;
-                        output[0][sample_idx] += left;
-                        output[1][sample_idx] += right;
-                        amplitude += (left.abs() + right.abs()) * 0.5;
-                    }
+                if self.params.editor_state.is_open() {
+                    let weight = self.peak_meter_decay_weight * 0.91; // TODO: way too slow without this, why is that?
+                    amplitude = (amplitude / block_len as f32).min(1.0);
+                    let current_peak_meter = self.tap_meters[tap_index].load(Ordering::Relaxed);
+                    let new_peak_meter = if amplitude > current_peak_meter {
+                        amplitude
+                    } else {
+                        current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
+                    };
 
-                    if self.params.editor_state.is_open() {
-                        let weight = self.peak_meter_decay_weight * 0.91; // TODO: way too slow without this, why is that?
-                        amplitude = (amplitude / block_len as f32).min(1.0);
-                        let current_peak_meter = self.tap_meters[tap_index].load(Ordering::Relaxed);
-                        let new_peak_meter = if amplitude > current_peak_meter {
-                            amplitude
-                        } else {
-                            current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
-                        };
-
-                        self.tap_meters[tap_index].store(new_peak_meter, Ordering::Relaxed);
-                    }
+                    // TODO: can we put this in the delay_tap_so we don't need the index?
+                    self.tap_meters[tap_index].store(new_peak_meter, Ordering::Relaxed);
                 }
             }
 
             // Terminate delay taps whose release period has fully ended. This could be done as part of
             // the previous loop but this is simpler.
-            for delay_tap in &mut self.delay_taps {
-                match delay_tap {
-                    Some(v) if v.releasing && v.amp_envelope.previous_value() == 0.0 => {
-                        *delay_tap = None;
-                    }
-                    _ => (),
+            for delay_tap in self.delay_taps.iter_mut() {
+                if delay_tap.is_alive
+                    && delay_tap.releasing
+                    && delay_tap.amp_envelope.previous_value() == 0.0
+                {
+                    delay_tap.is_alive = false;
                 }
             }
 
@@ -1083,7 +1085,7 @@ impl Del2 {
     }
 
     fn update_filters(&mut self) {
-        for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
+        for delay_tap in self.delay_taps.iter_mut() {
             // Load atomic values that are used outside computation steps
             let velocity = delay_tap.velocity;
 
@@ -1171,7 +1173,7 @@ impl Del2 {
     }
 
     fn initialize_filter_parameters(&mut self) {
-        for delay_tap in self.delay_taps.iter_mut().filter_map(|v| v.as_mut()) {
+        for delay_tap in self.delay_taps.iter_mut() {
             let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
             filter_params.set_sample_rate(self.sample_rate);
         }
@@ -1312,22 +1314,33 @@ impl Del2 {
             self.enabled_actions.store(MUTE_OUT, false);
         }
 
+        // if let Some(existing_tap) = self.delay_taps.iter_mut().find(|tap_option| {
+        //     tap_option.as_ref().map_or(false, |tap| {
+        //         tap.delay_time == delay_time && tap.note == note
+        //     })
+        // }) {
+        //     let tap = existing_tap.as_mut().unwrap();
+        //     tap.velocity = velocity;
+        //     tap.releasing = false;
+
+        //     tap.amp_envelope.style = SmoothingStyle::Linear(self.params.global.attack_ms.value());
+        //     tap.amp_envelope.set_target(sample_rate, 1.0);
+        //     return;
+        // }
+
         // Recycle an old tap if `delay_time` and `note` match
-        if let Some(existing_tap) = self.delay_taps.iter_mut().find(|tap_option| {
-            tap_option.as_ref().map_or(false, |tap| {
-                tap.delay_time == delay_time && tap.note == note
-            })
-        }) {
-            let tap = existing_tap.as_mut().unwrap();
-            tap.velocity = velocity;
-            tap.releasing = false;
+        for delay_tap in self.delay_taps.iter_mut() {
+            if delay_tap.is_alive && delay_tap.delay_time == delay_time && delay_tap.note == note {
+                delay_tap.velocity = velocity;
+                delay_tap.releasing = false;
 
-            tap.amp_envelope.style = SmoothingStyle::Linear(self.params.global.attack_ms.value());
-            tap.amp_envelope.set_target(sample_rate, 1.0);
-            // Other updates can be added here
-            return;
+                delay_tap.amp_envelope.style =
+                    SmoothingStyle::Linear(self.params.global.attack_ms.value());
+                delay_tap.amp_envelope.set_target(sample_rate, 1.0);
+                // Other updates can be added here
+                return;
+            }
         }
-
         // Create amplitude envelope
         let amp_envelope =
             Smoother::new(SmoothingStyle::Linear(self.params.global.attack_ms.value()));
@@ -1339,42 +1352,46 @@ impl Del2 {
             amp_envelope.set_target(sample_rate, 1.0);
         }
 
-        // Initialize new delay tap with the provided arguments
-        let filter_params = Arc::new(FilterParams::new());
-        let new_delay_tap = DelayTap {
-            delayed_audio_l: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
-            delayed_audio_r: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
-            filter_params: filter_params.clone(),
-            ladders: LadderFilter::new(filter_params),
-            mute_in_delayed: vec![false; MAX_BLOCK_SIZE].into_boxed_slice(),
-            internal_id: self.next_internal_id,
-            delay_time,
-            note,
-            velocity,
-            releasing: false,
-            amp_envelope,
-            is_muted: false,
-        };
-        self.next_internal_id = self.next_internal_id.wrapping_add(1);
-
         // Find a free index or replace the oldest delay tap
-        if let Some(free_idx) = self.delay_taps.iter().position(Option::is_none) {
-            self.delay_taps[free_idx] = Some(new_delay_tap);
-        } else {
-            // Find, replace and return the oldest delay tap
-            let oldest_delay_tap = self
-                .delay_taps
-                .iter_mut()
-                .min_by_key(|t| t.as_ref().map_or(u64::MAX, |tap| tap.internal_id))
-                .expect("At least one delay tap should exist");
-
-            *oldest_delay_tap = Some(new_delay_tap);
+        for delay_tap in self.delay_taps.iter_mut() {
+            if !delay_tap.is_alive {
+                delay_tap.init(
+                    amp_envelope.clone(),
+                    self.next_internal_id,
+                    delay_time,
+                    note,
+                    velocity,
+                    false,
+                    false,
+                );
+                // It looks like we should break here, if we initialized a dead tap
+                break;
+            }
         }
+
+        // Find, replace and return the oldest delay tap if none are free
+        if self.delay_taps.iter().all(|tap| tap.is_alive) {
+            if let Some(oldest_delay_tap) =
+                self.delay_taps.iter_mut().min_by_key(|tap| tap.internal_id)
+            {
+                oldest_delay_tap.init(
+                    amp_envelope.clone(),
+                    self.next_internal_id,
+                    delay_time,
+                    note,
+                    velocity,
+                    false,
+                    false,
+                );
+            }
+        }
+
+        self.next_internal_id = self.next_internal_id.wrapping_add(1);
     }
 
     /// Start the release process for all delay taps by changing their amplitude envelope.
     fn start_release_for_all_delay_taps(&mut self, sample_rate: f32) {
-        for delay_tap in self.delay_taps.iter_mut().flatten() {
+        for delay_tap in self.delay_taps.iter_mut() {
             delay_tap.releasing = true;
             delay_tap.amp_envelope.style =
                 SmoothingStyle::Linear(self.params.global.release_ms.value());
@@ -1386,7 +1403,7 @@ impl Del2 {
     fn set_mute_for_all_delay_taps(&mut self, sample_rate: f32) {
         let is_playing_mute_out = self.is_playing_action(MUTE_OUT);
 
-        for delay_tap in self.delay_taps.iter_mut().flatten() {
+        for delay_tap in self.delay_taps.iter_mut() {
             let is_toggle = self.params.global.mute_is_toggle.value();
             let mute_in_delayed = delay_tap.mute_in_delayed[0];
             let mute_out = self.enabled_actions.load(MUTE_OUT);
