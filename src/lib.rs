@@ -641,7 +641,6 @@ impl Plugin for Del2 {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         self.update_peak_meter(buffer, &self.input_meter);
-
         self.update_min_max_tap_samples();
 
         let num_samples = buffer.samples();
@@ -651,8 +650,15 @@ impl Plugin for Del2 {
         let mut block_start: usize = 0;
         let mut block_end: usize = MAX_BLOCK_SIZE.min(num_samples);
 
-        // write the audio buffer into the delay
+        // Write the audio buffer into the delay
         self.write_into_delay(buffer);
+
+        let panning_center = if self.params.taps.panning_center.value() < 0 {
+            f32::from(self.params.first_note.load(Ordering::SeqCst))
+        } else {
+            self.params.taps.panning_center.value() as f32
+        };
+        let panning_amount = self.params.taps.panning_amount.value();
 
         while block_start < num_samples {
             let old_nr_taps = self.params.tap_counter.load(Ordering::SeqCst);
@@ -681,7 +687,6 @@ impl Plugin for Del2 {
                             }
                             _ => (),
                         };
-
                         next_event = context.next_event();
                     }
                     // If the event happens before the end of the block, then the block should be cut
@@ -690,12 +695,12 @@ impl Plugin for Del2 {
                         block_end = event.timing() as usize;
                         break 'events;
                     }
-                    _ => {
-                        break 'events;
-                    }
+                    _ => break 'events,
                 }
             }
-            self.prepare_for_delay(block_end - block_start);
+
+            let block_len = block_end - block_start;
+            self.prepare_for_delay(block_len);
 
             if self
                 .should_update_filter
@@ -707,54 +712,49 @@ impl Plugin for Del2 {
 
             self.set_mute_for_all_delay_taps(sample_rate);
 
-            let block_len = block_end - block_start;
+            // Calculate dry mix and update gains
+            let dry_wet = &mut self.dry_wet[..block_len];
+            let output_gain = &mut self.output_gain[..block_len];
+            let global_drive = &mut self.global_drive[..block_len];
 
             self.params
                 .global
                 .dry_wet
                 .smoothed
-                .next_block(&mut self.dry_wet, block_len);
+                .next_block(dry_wet, block_len);
             self.params
                 .global
                 .output_gain
                 .smoothed
-                .next_block(&mut self.output_gain, block_len);
+                .next_block(output_gain, block_len);
             self.params
                 .global
                 .global_drive
                 .smoothed
-                .next_block(&mut self.global_drive, block_len);
-
-            let panning_center = if self.params.taps.panning_center.value() < 0 {
-                f32::from(self.params.first_note.load(Ordering::SeqCst))
-            } else {
-                self.params.taps.panning_center.value() as f32
-            };
-            let panning_amount = self.params.taps.panning_amount.value();
+                .next_block(global_drive, block_len);
 
             let output = buffer.as_slice();
             for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                let dry = 1.0 - self.dry_wet[value_idx];
+                let dry = 1.0 - dry_wet[value_idx];
                 output[0][sample_idx] *= dry;
                 output[1][sample_idx] *= dry;
             }
 
-            for (tap_index, delay_tap) in self.delay_taps.iter_mut().enumerate() {
+            for tap_index in 0..self.delay_taps.len() {
+                let delay_tap = &mut self.delay_taps[tap_index];
                 let pan = ((f32::from(delay_tap.note) - panning_center) * panning_amount)
                     .clamp(-1.0, 1.0);
-
                 let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
 
                 let delay_time = delay_tap.delay_time as isize;
                 let write_index = self.delay_write_index;
-                // delay_time - 1 because we are processing 2 samples at once in process_audio
                 let read_index_l = write_index - (delay_time - 1 + offset_l);
                 let read_index_r = write_index - (delay_time - 1 + offset_r);
 
                 self.delay_buffer[0].read_into(&mut delay_tap.delayed_audio_l, read_index_l);
                 self.delay_buffer[1].read_into(&mut delay_tap.delayed_audio_r, read_index_r);
 
-                let drive = delay_tap.filter_params.clone().drive;
+                let drive = delay_tap.filter_params.drive;
                 self.mute_in_delay_buffer.read_into(
                     &mut delay_tap.mute_in_delayed,
                     write_index - (delay_time - 1),
@@ -766,8 +766,7 @@ impl Plugin for Del2 {
 
                 for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                     let pre_filter_gain =
-                        self.global_drive[value_idx] * self.delay_tap_amp_envelope[value_idx];
-
+                        global_drive[value_idx] * self.delay_tap_amp_envelope[value_idx];
                     delay_tap.delayed_audio_l[sample_idx] *= pre_filter_gain;
                     delay_tap.delayed_audio_r[sample_idx] *= pre_filter_gain;
                 }
@@ -788,10 +787,11 @@ impl Plugin for Del2 {
                     }
                 }
 
+                // Process the output and meter updates
                 let mut amplitude = 0.0;
                 for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                    let post_filter_gain = self.dry_wet[value_idx] * self.output_gain[value_idx]
-                        / (drive * self.global_drive[value_idx]);
+                    let post_filter_gain = dry_wet[value_idx] * output_gain[value_idx]
+                        / (drive * global_drive[value_idx]);
                     let left = delay_tap.delayed_audio_l[sample_idx] * post_filter_gain;
                     let right = delay_tap.delayed_audio_r[sample_idx] * post_filter_gain;
                     output[0][sample_idx] += left;
@@ -800,7 +800,7 @@ impl Plugin for Del2 {
                 }
 
                 if self.params.editor_state.is_open() {
-                    let weight = self.peak_meter_decay_weight * 0.91; // TODO: way too slow without this, why is that?
+                    let weight = self.peak_meter_decay_weight * 0.91;
                     amplitude = (amplitude / block_len as f32).min(1.0);
                     let current_peak_meter = self.tap_meters[tap_index].load(Ordering::Relaxed);
                     let new_peak_meter = if amplitude > current_peak_meter {
@@ -809,13 +809,11 @@ impl Plugin for Del2 {
                         current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
                     };
 
-                    // TODO: can we put this in the delay_tap_so we don't need the index?
                     self.tap_meters[tap_index].store(new_peak_meter, Ordering::Relaxed);
                 }
             }
 
-            // Terminate delay taps whose release period has fully ended. This could be done as part of
-            // the previous loop but this is simpler.
+            // Terminate inactive delay taps
             for delay_tap in self.delay_taps.iter_mut() {
                 if delay_tap.is_alive
                     && delay_tap.releasing
@@ -825,7 +823,6 @@ impl Plugin for Del2 {
                 }
             }
 
-            // And then just keep processing blocks until we've run out of buffer to fill
             block_start = block_end;
             block_end = (block_start + MAX_BLOCK_SIZE).min(num_samples);
         }
@@ -1092,22 +1089,18 @@ impl Del2 {
     }
 
     fn update_filters(&mut self) {
+        let velocity_params = &self.params.taps;
+        let low_params = &velocity_params.velocity_low;
+        let high_params = &velocity_params.velocity_high;
+
         for delay_tap in self.delay_taps.iter_mut() {
             if delay_tap.is_alive {
-                // Load atomic values that are used outside computation steps
                 let velocity = delay_tap.velocity;
 
                 // Unsafe block to get a mutable reference to the filter parameters
                 let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
 
-                // Reference to velocity parameters
-                let velocity_params = &self.params.taps;
-                let low_params = &velocity_params.velocity_low;
-                let high_params = &velocity_params.velocity_high;
-
-                // Direct calculation using values needed for multiple operations
                 let res = Self::lerp(low_params.res.value(), high_params.res.value(), velocity);
-
                 let velocity_cutoff = Self::log_interpolate(
                     low_params.cutoff.value(),
                     high_params.cutoff.value(),

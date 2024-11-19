@@ -591,7 +591,7 @@ impl DelayGraph {
             0
         };
 
-        if current_time >= max_delay_time {
+        if current_time > max_delay_time {
             // Compute offset using mul_add for precision and performance
             let x_offset = (current_time as f32).mul_add(time_scaling_factor, border_width * 0.5);
 
