@@ -103,6 +103,12 @@ delay-graph {
     top: 1s;
     bottom: 9px;
 }
+.tap-length-label {
+    left: 1s;
+    right: 13px;
+    top: 1px;
+    bottom: 9px;
+}
 
 action-trigger {
     width: 171px;

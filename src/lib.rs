@@ -100,7 +100,6 @@ struct Del2 {
     global_drive: Box<[f32]>,
     delay_tap_amp_envelope: Box<[f32]>,
 
-    sample_rate: f32,
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
     output_meter: Arc<AtomicF32>,
@@ -154,6 +153,7 @@ pub struct Del2Params {
     previous_pan_foreground_lengths: AtomicF32Array,
     previous_pan_background_lengths: AtomicF32Array,
     last_frame_time: AtomicU64,
+    sample_rate: AtomicF32,
 }
 
 /// Contains the global parameters.
@@ -469,7 +469,6 @@ impl Default for Del2 {
             global_drive: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_amp_envelope: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
-            sample_rate: 1.0,
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
             output_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
@@ -525,6 +524,7 @@ impl Del2Params {
                 Arc::new(AtomicF32::new(0.0))
             })),
             last_frame_time: AtomicU64::new(0),
+            sample_rate: 1.0.into(),
         }
     }
 }
@@ -595,13 +595,17 @@ impl Plugin for Del2 {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         // Set the sample rate from the buffer configuration
-        self.sample_rate = buffer_config.sample_rate;
+        self.params
+            .sample_rate
+            .store(buffer_config.sample_rate, Ordering::SeqCst);
 
         // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
         // have dropped by 12 dB
-        self.peak_meter_decay_weight = 0.25f64
-            .powf((f64::from(self.sample_rate) * PEAK_METER_DECAY_MS / 1000.0).recip())
-            as f32;
+        self.peak_meter_decay_weight = 0.25f64.powf(
+            (f64::from(self.params.sample_rate.load(Ordering::SeqCst)) * PEAK_METER_DECAY_MS
+                / 1000.0)
+                .recip(),
+        ) as f32;
         // Calculate and set the delay buffer size
         self.set_delay_buffer_size(buffer_config);
 
@@ -831,7 +835,7 @@ impl Plugin for Del2 {
 
 impl Del2 {
     fn update_min_max_tap_samples(&mut self) {
-        let sample_rate = self.sample_rate;
+        let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
         self.params.max_tap_samples.store(
             (sample_rate * self.params.global.max_tap_seconds.value()) as u32,
             Ordering::SeqCst,
@@ -1176,7 +1180,7 @@ impl Del2 {
     fn initialize_filter_parameters(&mut self) {
         for delay_tap in self.delay_taps.iter_mut() {
             let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
-            filter_params.set_sample_rate(self.sample_rate);
+            filter_params.set_sample_rate(self.params.sample_rate.load(Ordering::SeqCst));
         }
     }
 
@@ -1303,7 +1307,7 @@ impl Del2 {
     }
 
     fn load_and_configure_tap(&mut self, new_index: usize) {
-        let sample_rate = self.sample_rate;
+        let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
         let global_params = &self.params.global;
 
         let delay_time = self.params.delay_times[new_index].load(Ordering::SeqCst);
@@ -1374,7 +1378,9 @@ impl Del2 {
             delay_tap.releasing = true;
             delay_tap.amp_envelope.style =
                 SmoothingStyle::Linear(self.params.global.release_ms.value());
-            delay_tap.amp_envelope.set_target(self.sample_rate, 0.0);
+            delay_tap
+                .amp_envelope
+                .set_target(self.params.sample_rate.load(Ordering::SeqCst), 0.0);
         }
     }
 
@@ -1399,11 +1405,15 @@ impl Del2 {
                 if new_mute {
                     delay_tap.amp_envelope.style =
                         SmoothingStyle::Linear(self.params.global.release_ms.value());
-                    delay_tap.amp_envelope.set_target(self.sample_rate, 0.0);
+                    delay_tap
+                        .amp_envelope
+                        .set_target(self.params.sample_rate.load(Ordering::SeqCst), 0.0);
                 } else {
                     delay_tap.amp_envelope.style =
                         SmoothingStyle::Linear(self.params.global.attack_ms.value());
-                    delay_tap.amp_envelope.set_target(self.sample_rate, 1.0);
+                    delay_tap
+                        .amp_envelope
+                        .set_target(self.params.sample_rate.load(Ordering::SeqCst), 1.0);
                 }
                 delay_tap.is_muted = new_mute;
             }

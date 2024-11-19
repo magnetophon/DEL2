@@ -426,6 +426,37 @@ impl DelayGraph {
                 }),
             )
             .class("tap-nr-label");
+            Label::new(
+                cx,
+                params.map(move |params| {
+                    const TOTAL_DIGITS: usize = 3;
+                    let tap_counter = params.tap_counter.load(Ordering::SeqCst);
+                    // Determine the max delay time
+                    let max_delay_time = if tap_counter > 0 {
+                        params.delay_times[tap_counter - 1].load(Ordering::SeqCst) as f32
+                            / params.sample_rate.load(Ordering::SeqCst)
+                    } else {
+                        0.0
+                    };
+
+                    if max_delay_time < 0.001 {
+                        String::new()
+                    } else if max_delay_time < 1.0 {
+                        // Calculate the number of digits after the decimal to maintain a total of three digits
+                        let ms = max_delay_time * 1000.0;
+                        let digits_after_decimal = (TOTAL_DIGITS - ms.trunc().to_string().len())
+                            .max(0)
+                            .min(TOTAL_DIGITS - 1); // Ensure it's between 0 and 2
+                        format!("{ms:.digits_after_decimal$} ms")
+                    } else {
+                        // Same logic for seconds
+                        let digits_after_decimal =
+                            (TOTAL_DIGITS - max_delay_time.trunc().to_string().len()).max(0);
+                        format!("{max_delay_time:.digits_after_decimal$} s")
+                    }
+                }),
+            )
+            .class("tap-length-label");
         })
     }
 
@@ -452,7 +483,7 @@ impl DelayGraph {
             max_delay_time as f32
         } else if tap_counter == NUM_TAPS || current_time == max_delay_time {
             // time out, zoom in but leave a margin
-            0.16 * max_delay_time as f32
+            0.18 * max_delay_time as f32
         } else {
             max_tap_samples as f32
         };
