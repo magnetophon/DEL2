@@ -800,7 +800,7 @@ impl DelayGraph {
                 max
             };
 
-            let range_too_large = (min as i16 - max as i16).abs() > 24;
+            let range_too_large = (i16::from(min) - i16::from(max)).abs() > 24;
             let (final_min, final_max) = if range_too_large {
                 (min, max)
             } else {
@@ -816,9 +816,9 @@ impl DelayGraph {
 
         let get_normalized_value = |value: u8, min: f32, max: f32| -> f32 {
             if (max - min).abs() < 0.5 {
-                value as f32 / 127.0
+                f32::from(value) / 127.0
             } else {
-                (value as f32 - min) / (max - min)
+                (f32::from(value) - min) / (max - min)
             }
         };
         // Draw half a note for panning center
@@ -886,8 +886,8 @@ impl DelayGraph {
             note_path.line_to(note_center_x, note_center_y - note_half_size);
             note_path.close();
 
-            let pan_value =
-                ((note_value as f32 - panning_center as f32) * panning_amount).clamp(-1.0, 1.0);
+            let pan_value = ((f32::from(note_value) - f32::from(panning_center)) * panning_amount)
+                .clamp(-1.0, 1.0);
 
             let line_length = if pan_value.abs() > 1.0 / 50.0 {
                 50.0
