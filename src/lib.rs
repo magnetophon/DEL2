@@ -99,6 +99,7 @@ struct Del2 {
     input_meter: Arc<AtomicF32>,
     output_meter: Arc<AtomicF32>,
     tap_meters: Arc<AtomicF32Array>,
+    meter_indexes: Arc<AtomicUsizeArray>,
     delay_write_index: isize,
     is_learning: Arc<AtomicBool>,
     // for which control are we learning?
@@ -474,6 +475,7 @@ impl Default for Del2 {
                 Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB))
             }))
             .into(),
+            meter_indexes: AtomicUsizeArray(array_init(|_| Arc::new(AtomicUsize::new(0)))).into(),
             delay_write_index: 0,
             is_learning: Arc::new(AtomicBool::new(false)),
             learning_index: Arc::new(AtomicUsize::new(0)),
@@ -578,6 +580,7 @@ impl Plugin for Del2 {
                 input_meter: self.input_meter.clone(),
                 output_meter: self.output_meter.clone(),
                 tap_meters: self.tap_meters.clone(),
+                meter_indexes: self.meter_indexes.clone(),
                 is_learning: self.is_learning.clone(),
                 learning_index: self.learning_index.clone(),
                 learned_notes: self.learned_notes.clone(),
@@ -589,6 +592,8 @@ impl Plugin for Del2 {
         )
     }
 
+    // After this function [`reset()`][Self::reset()] will always be called. If you need to clear
+    // state, such as filters or envelopes, then you should do so in that function instead.
     fn initialize(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
@@ -620,7 +625,7 @@ impl Plugin for Del2 {
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
         }
 
-        for i in 0..self.params.tap_counter.load(Ordering::SeqCst) {
+        for i in 0..NUM_TAPS {
             self.load_and_configure_tap(i);
         }
 
@@ -753,7 +758,7 @@ impl Plugin for Del2 {
             self.delay_taps
                 .iter_mut()
                 .enumerate()
-                .for_each(|(tap_index, delay_tap)| {
+                .for_each(|(meter_index, delay_tap)| {
                     if delay_tap.is_alive {
                         let pan = ((f32::from(delay_tap.note) - panning_center) * panning_amount)
                             .clamp(-1.0, 1.0);
@@ -820,16 +825,19 @@ impl Plugin for Del2 {
 
                         if self.params.editor_state.is_open() {
                             let weight = self.peak_meter_decay_weight * 0.91;
+                            let gui_index = delay_tap.tap_index;
+
+                            self.meter_indexes[gui_index].store(meter_index, Ordering::Relaxed);
                             amplitude = (amplitude / block_len as f32).min(1.0);
                             let current_peak_meter =
-                                self.tap_meters[tap_index].load(Ordering::Relaxed);
+                                self.tap_meters[meter_index].load(Ordering::Relaxed);
                             let new_peak_meter = if amplitude > current_peak_meter {
                                 amplitude
                             } else {
                                 current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
                             };
 
-                            self.tap_meters[tap_index].store(new_peak_meter, Ordering::Relaxed);
+                            self.tap_meters[meter_index].store(new_peak_meter, Ordering::Relaxed);
                         }
                     }
                 });
@@ -1332,7 +1340,6 @@ impl Del2 {
             self.enabled_actions.store(MUTE_OUT, false);
         }
 
-        // Create and setup amplitude envelope, outside the loop for potential reuse.
         let amp_envelope = Smoother::new(SmoothingStyle::Linear(global_params.attack_ms.value()));
         if global_params.mute_is_toggle.value() {
             amp_envelope.set_target(sample_rate, 1.0);
@@ -1371,6 +1378,7 @@ impl Del2 {
                 delay_time,
                 note,
                 velocity,
+                new_index,
             );
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
         } else if let Some(oldest_delay_tap) = found_oldest {
@@ -1381,6 +1389,7 @@ impl Del2 {
                 delay_time,
                 note,
                 velocity,
+                new_index,
             );
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
         }
@@ -1692,6 +1701,7 @@ impl PersistentField<'_, u8> for ArcAtomicBoolArray {
     }
 }
 struct AtomicU8Array([Arc<AtomicU8>; NUM_TAPS]);
+pub struct AtomicUsizeArray([Arc<AtomicUsize>; NUM_TAPS]);
 struct AtomicU32Array([Arc<AtomicU32>; NUM_TAPS]);
 pub struct AtomicF32Array([Arc<AtomicF32>; NUM_TAPS]);
 
@@ -1777,6 +1787,7 @@ macro_rules! impl_index_for_atomic_array {
 
 // Apply the macro to different types
 impl_index_for_atomic_array!(AtomicU8Array, AtomicU8);
+impl_index_for_atomic_array!(AtomicUsizeArray, AtomicUsize);
 impl_index_for_atomic_array!(AtomicU32Array, AtomicU32);
 impl_index_for_atomic_array!(AtomicF32Array, AtomicF32);
 
