@@ -444,7 +444,7 @@ impl DelayGraph {
 
                     if tempo >= 0.0 && time_sig_numerator > 0 {
                         // Only proceed if tempo and time signature are valid (non-negative)
-                        let seconds_per_beat = 60.0 / tempo as f32;
+                        let seconds_per_beat = 60.0 / tempo;
                         let seconds_per_measure = seconds_per_beat * time_sig_numerator as f32;
 
                         let full_bars = (seconds / seconds_per_measure).floor() as i32;
@@ -453,33 +453,30 @@ impl DelayGraph {
                             (remaining_seconds / seconds_per_beat).round() as i32;
 
                         if full_bars > 1 {
-                            format!("{} bars", full_bars)
+                            format!("{full_bars} bars")
                         } else if full_bars > 0 {
-                            format!("{} bar", full_bars)
+                            format!("{full_bars} bar")
                         } else if additional_beats > 1 {
-                            format!("{} beats", additional_beats)
+                            format!("{additional_beats} beats")
                         } else if additional_beats > 0 {
-                            format!("{} beat", additional_beats)
+                            format!("{additional_beats} beat")
                         } else {
                             return String::new();
                         }
-                    } else {
-                        if seconds < 0.001 {
-                            String::new()
-                        } else if seconds < 1.0 {
-                            // Calculate the number of digits after the decimal to maintain a total of three digits
-                            let ms = seconds * 1000.0;
-                            let digits_after_decimal = (TOTAL_DIGITS
-                                - ms.trunc().to_string().len())
+                    } else if seconds < 0.001 {
+                        String::new()
+                    } else if seconds < 1.0 {
+                        // Calculate the number of digits after the decimal to maintain a total of three digits
+                        let ms = seconds * 1000.0;
+                        let digits_after_decimal = (TOTAL_DIGITS - ms.trunc().to_string().len())
                             .max(0)
                             .min(TOTAL_DIGITS - 1); // Ensure it's between 0 and 2
-                            format!("{ms:.digits_after_decimal$} ms")
-                        } else {
-                            // Same logic for seconds
-                            let digits_after_decimal =
-                                (TOTAL_DIGITS - seconds.trunc().to_string().len()).max(0);
-                            format!("{seconds:.digits_after_decimal$} s")
-                        }
+                        format!("{ms:.digits_after_decimal$} ms")
+                    } else {
+                        // Same logic for seconds
+                        let digits_after_decimal =
+                            (TOTAL_DIGITS - seconds.trunc().to_string().len()).max(0);
+                        format!("{seconds:.digits_after_decimal$} s")
                     }
                 }),
             )
@@ -1155,12 +1152,7 @@ impl ActionTrigger {
             .as_nanos() as u64;
 
         // Calculate the learning time duration
-        let learning_duration_nanos = if now_nanos < learning_start_time_nanos {
-            // Time went backwards
-            0
-        } else {
-            now_nanos - learning_start_time_nanos
-        };
+        let learning_duration_nanos = now_nanos.saturating_sub(learning_start_time_nanos);
         if learning_duration_nanos > MAX_LEARNING_NANOS {
             self.stop_learning();
         }

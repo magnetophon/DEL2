@@ -623,7 +623,7 @@ impl Plugin for Del2 {
     }
 
     fn reset(&mut self) {
-        for delay_tap in self.delay_taps.iter_mut() {
+        for delay_tap in &mut self.delay_taps {
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
         }
 
@@ -1196,7 +1196,7 @@ impl Del2 {
     }
 
     fn initialize_filter_parameters(&mut self) {
-        for delay_tap in self.delay_taps.iter_mut() {
+        for delay_tap in &mut self.delay_taps {
             let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
             filter_params.set_sample_rate(self.params.sample_rate.load(Ordering::SeqCst));
         }
@@ -1346,7 +1346,7 @@ impl Del2 {
         let mut found_oldest = None;
         let mut oldest_id = u64::MAX;
 
-        for delay_tap in self.delay_taps.iter_mut() {
+        for delay_tap in &mut self.delay_taps {
             if delay_tap.is_alive {
                 // Recycle an old tap if `delay_time` and `note` match
                 if delay_tap.delay_time == delay_time && delay_tap.note == note {
@@ -1392,7 +1392,7 @@ impl Del2 {
 
     /// Start the release process for all delay taps by changing their amplitude envelope.
     fn start_release_for_all_delay_taps(&mut self) {
-        for delay_tap in self.delay_taps.iter_mut() {
+        for delay_tap in &mut self.delay_taps {
             delay_tap.releasing = true;
             delay_tap.amp_envelope.style =
                 SmoothingStyle::Linear(self.params.global.release_ms.value());
@@ -1406,7 +1406,7 @@ impl Del2 {
     fn set_mute_for_all_delay_taps(&mut self) {
         let is_playing_mute_out = self.is_playing_action(MUTE_OUT);
 
-        for delay_tap in self.delay_taps.iter_mut() {
+        for delay_tap in &mut self.delay_taps {
             let is_toggle = self.params.global.mute_is_toggle.value();
             let mute_in_delayed = delay_tap.mute_in_delayed[0];
             let mute_out = self.enabled_actions.load(MUTE_OUT);
