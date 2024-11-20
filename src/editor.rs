@@ -25,6 +25,9 @@ const MIN_TICK: f32 = -60.0;
 /// The maximum decibel value that the meters display
 const MAX_TICK: f32 = 0.0;
 
+// warning still there. ¯\_(ツ)_/¯
+// seems like there shouldn't be a warning in the first place
+#[allow(clippy::expl_impl_clone_on_copy)]
 #[derive(Lens, Clone)]
 pub struct Data {
     pub params: Arc<Del2Params>,
