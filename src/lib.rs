@@ -177,8 +177,8 @@ struct GlobalParams {
     release_ms: FloatParam,
     #[id = "min_tap_milliseconds"]
     pub min_tap_milliseconds: FloatParam,
-    #[id = "max_tap_seconds"]
-    pub max_tap_seconds: FloatParam,
+    #[id = "max_tap_ms"]
+    pub max_tap_ms: FloatParam,
 }
 
 impl GlobalParams {
@@ -260,19 +260,19 @@ impl GlobalParams {
                     factor: FloatRange::skew_factor(-1.5),
                 },
             )
-            .with_step_size(0.1)
-            .with_unit(" ms"),
-            max_tap_seconds: FloatParam::new(
+            .with_value_to_string(Del2::v2s_f32_ms_then_s(3))
+            .with_string_to_value(Del2::s2v_f32_ms_then_s()),
+            max_tap_ms: FloatParam::new(
                 "max tap",
-                3.03,
+                3030.0,
                 FloatRange::Skewed {
-                    min: 0.5,
-                    max: MAX_TAP_SECONDS as f32,
+                    min: 500.0,
+                    max: (MAX_TAP_SECONDS * 1000) as f32,
                     factor: FloatRange::skew_factor(-0.8),
                 },
             )
-            .with_step_size(0.01)
-            .with_unit(" s"),
+            .with_value_to_string(Del2::v2s_f32_ms_then_s(3))
+            .with_string_to_value(Del2::s2v_f32_ms_then_s()),
         }
     }
 }
@@ -853,7 +853,7 @@ impl Del2 {
     fn update_min_max_tap_samples(&mut self) {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
         self.params.max_tap_samples.store(
-            (sample_rate * self.params.global.max_tap_seconds.value()) as u32,
+            (sample_rate * self.params.global.max_tap_ms.value() * 0.001) as u32,
             Ordering::SeqCst,
         );
         self.min_tap_samples =

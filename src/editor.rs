@@ -121,7 +121,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     .class("row");
                     HStack::new(cx, |cx| {
                         Label::new(cx, "max tap").class("slider-label");
-                        ParamSlider::new(cx, Data::params, |params| &params.global.max_tap_seconds)
+                        ParamSlider::new(cx, Data::params, |params| &params.global.max_tap_ms)
                             .set_style(ParamSliderStyle::FromLeft)
                             .class("widget");
                     })
