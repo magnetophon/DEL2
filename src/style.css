@@ -99,14 +99,14 @@ delay-graph {
 
 .tap-nr-label {
     left: 1s;
-    right: 13px;
+    right: 11px;
     top: 1s;
-    bottom: 9px;
+    bottom: 7px;
 }
 .tap-length-label {
     left: 1s;
-    right: 13px;
-    top: 1px;
+    right: 11px;
+    top: 0px;
     bottom: 9px;
 }
 

@@ -50,7 +50,9 @@ use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::ops::Index;
 use std::simd::f32x4;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{
+    AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering,
+};
 use std::sync::Arc;
 use synfx_dsp::fh_va::{FilterParams, LadderMode};
 
@@ -154,6 +156,8 @@ pub struct Del2Params {
     previous_pan_background_lengths: AtomicF32Array,
     last_frame_time: AtomicU64,
     sample_rate: AtomicF32,
+    tempo: AtomicF32,
+    time_sig_numerator: AtomicI32,
 }
 
 /// Contains the global parameters.
@@ -525,6 +529,8 @@ impl Del2Params {
             })),
             last_frame_time: AtomicU64::new(0),
             sample_rate: 1.0.into(),
+            tempo: (-1.0).into(),
+            time_sig_numerator: (-1).into(),
         }
     }
 }
@@ -598,7 +604,6 @@ impl Plugin for Del2 {
         self.params
             .sample_rate
             .store(buffer_config.sample_rate, Ordering::SeqCst);
-
         // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
         // have dropped by 12 dB
         self.peak_meter_decay_weight = 0.25f64.powf(
@@ -645,6 +650,17 @@ impl Plugin for Del2 {
         let num_samples = buffer.samples();
         let sample_rate = context.transport().sample_rate;
 
+        self.params
+            .sample_rate
+            .store(context.transport().sample_rate, Ordering::SeqCst);
+        self.params.tempo.store(
+            context.transport().tempo.unwrap_or(-1.0) as f32,
+            Ordering::SeqCst,
+        );
+        self.params.time_sig_numerator.store(
+            context.transport().time_sig_numerator.unwrap_or(-1),
+            Ordering::SeqCst,
+        );
         let mut next_event = context.next_event();
         let mut block_start: usize = 0;
         let mut block_end: usize = MAX_BLOCK_SIZE.min(num_samples);
