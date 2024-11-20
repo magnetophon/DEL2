@@ -623,10 +623,10 @@ impl Plugin for Del2 {
     fn reset(&mut self) {
         let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
 
-        self.start_release_for_all_delay_taps();
-        self.counting_state = CountingState::TimeOut;
-        self.timing_last_event = 0;
-        self.samples_since_last_event = 0;
+        // self.start_release_for_all_delay_taps();
+        // self.counting_state = CountingState::TimeOut;
+        // self.timing_last_event = 0;
+        // self.samples_since_last_event = 0;
         // self.params
         //         .first_note
         //         .store(NO_LEARNED_NOTE, Ordering::SeqCst);
@@ -642,10 +642,12 @@ impl Plugin for Del2 {
                     println!("reset: alive: tap_index: {tap_index}, tap_counter: {tap_counter}");
                     delay_tap.is_alive = true;
                     delay_tap.is_muted = false;
+                    delay_tap.releasing = false;
                 } else {
                     println!("reset: dead: tap_index: {tap_index}, tap_counter: {tap_counter}");
                     delay_tap.is_alive = false;
                     delay_tap.is_muted = true;
+                    delay_tap.releasing = true;
                 }
                 delay_tap.ladders.s = [f32x4::splat(0.); 4];
             });
@@ -1379,12 +1381,13 @@ impl Del2 {
             if delay_tap.is_alive {
                 // Recycle an old tap if `delay_time` and `note` match
                 if delay_tap.delay_time == delay_time && delay_tap.note == note {
-                    // delay_tap.velocity = velocity;
-                    // delay_tap.releasing = false;
-                    // delay_tap.amp_envelope.style =
-                    //     SmoothingStyle::Linear(self.params.global.attack_ms.value());
-                    // delay_tap.amp_envelope.set_target(sample_rate, 1.0);
-                    // return;
+                    delay_tap.velocity = velocity;
+                    delay_tap.releasing = false;
+                    delay_tap.amp_envelope.style =
+                        SmoothingStyle::Linear(self.params.global.attack_ms.value());
+                    delay_tap.amp_envelope.set_target(sample_rate, 1.0);
+                    delay_tap.tap_index = new_index;
+                    return;
                 } else if delay_tap.internal_id < oldest_id {
                     // Track the oldest active tap
                     oldest_id = delay_tap.internal_id;
@@ -1457,12 +1460,14 @@ impl Del2 {
                     delay_tap
                         .amp_envelope
                         .set_target(self.params.sample_rate.load(Ordering::SeqCst), 0.0);
+                    delay_tap.releasing = true;
                 } else {
                     delay_tap.amp_envelope.style =
                         SmoothingStyle::Linear(self.params.global.attack_ms.value());
                     delay_tap
                         .amp_envelope
                         .set_target(self.params.sample_rate.load(Ordering::SeqCst), 1.0);
+                    delay_tap.releasing = false;
                 }
                 delay_tap.is_muted = new_mute;
             }
