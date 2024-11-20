@@ -125,7 +125,7 @@ pub struct Del2Params {
     global: GlobalParams,
     #[nested(group = "taps")]
     pub taps: TapsParams,
-
+    // TODO:  why doesn't this persist?
     #[persist = "learned-notes"]
     learned_notes: ArcAtomicByteArray,
     #[persist = "enabled-actions"]
@@ -621,10 +621,34 @@ impl Plugin for Del2 {
     }
 
     fn reset(&mut self) {
-        for delay_tap in &mut self.delay_taps {
-            delay_tap.ladders.s = [f32x4::splat(0.); 4];
-        }
+        let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
 
+        self.start_release_for_all_delay_taps();
+        self.counting_state = CountingState::TimeOut;
+        self.timing_last_event = 0;
+        self.samples_since_last_event = 0;
+        // self.params
+        //         .first_note
+        //         .store(NO_LEARNED_NOTE, Ordering::SeqCst);
+
+        self.delay_taps
+            .iter_mut()
+            .enumerate()
+            .for_each(|(tap_index, delay_tap)| {
+                // .for_each(|delay_tap| {
+                // let tap_index = delay_tap.tap_index;
+                delay_tap.tap_index = tap_index;
+                if tap_counter > tap_index {
+                    println!("reset: alive: tap_index: {tap_index}, tap_counter: {tap_counter}");
+                    delay_tap.is_alive = true;
+                    delay_tap.is_muted = false;
+                } else {
+                    println!("reset: dead: tap_index: {tap_index}, tap_counter: {tap_counter}");
+                    delay_tap.is_alive = false;
+                    delay_tap.is_muted = true;
+                }
+                delay_tap.ladders.s = [f32x4::splat(0.); 4];
+            });
         for i in 0..NUM_TAPS {
             self.load_and_configure_tap(i);
         }
@@ -823,11 +847,11 @@ impl Plugin for Del2 {
                             delay_tap.is_alive = false;
                         }
 
+                        let gui_index = delay_tap.tap_index;
+                        self.meter_indexes[gui_index].store(meter_index, Ordering::Relaxed);
                         if self.params.editor_state.is_open() {
                             let weight = self.peak_meter_decay_weight * 0.91;
-                            let gui_index = delay_tap.tap_index;
 
-                            self.meter_indexes[gui_index].store(meter_index, Ordering::Relaxed);
                             amplitude = (amplitude / block_len as f32).min(1.0);
                             let current_peak_meter =
                                 self.tap_meters[meter_index].load(Ordering::Relaxed);
@@ -903,7 +927,9 @@ impl Del2 {
         let taps_unlocked = !self.enabled_actions.load(LOCK_TAPS);
         let min_tap_samples = self.min_tap_samples;
 
-        self.last_played_notes.note_on(note);
+        if !is_delay_note {
+            self.last_played_notes.note_on(note);
+        }
 
         if self.is_playing_action(LOCK_TAPS) {
             self.enabled_actions.toggle(LOCK_TAPS);
@@ -1353,12 +1379,12 @@ impl Del2 {
             if delay_tap.is_alive {
                 // Recycle an old tap if `delay_time` and `note` match
                 if delay_tap.delay_time == delay_time && delay_tap.note == note {
-                    delay_tap.velocity = velocity;
-                    delay_tap.releasing = false;
-                    delay_tap.amp_envelope.style =
-                        SmoothingStyle::Linear(self.params.global.attack_ms.value());
-                    delay_tap.amp_envelope.set_target(sample_rate, 1.0);
-                    return;
+                    // delay_tap.velocity = velocity;
+                    // delay_tap.releasing = false;
+                    // delay_tap.amp_envelope.style =
+                    //     SmoothingStyle::Linear(self.params.global.attack_ms.value());
+                    // delay_tap.amp_envelope.set_target(sample_rate, 1.0);
+                    // return;
                 } else if delay_tap.internal_id < oldest_id {
                     // Track the oldest active tap
                     oldest_id = delay_tap.internal_id;

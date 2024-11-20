@@ -40,12 +40,7 @@ pub struct DelayTap {
 }
 
 impl DelayTap {
-    pub fn new(
-        filter_params: Arc<FilterParams>,
-        // should_update_filter: Arc<AtomicBool>,
-        // enabled_actions: Arc<AtomicBoolArray>,
-        // learned_notes: Arc<AtomicByteArray>,
-    ) -> Self {
+    pub fn new(filter_params: Arc<FilterParams>) -> Self {
         Self {
             delayed_audio_l: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
             delayed_audio_r: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
