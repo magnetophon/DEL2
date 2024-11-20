@@ -37,7 +37,6 @@ TODO: research choke event, possibly clear_taps()
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::too_many_lines)]
 #![allow(clippy::too_many_arguments)]
-#![allow(clippy::cast_lossless)]
 #![allow(clippy::cognitive_complexity)]
 #![allow(clippy::type_complexity)]
 #![feature(portable_simd)]
