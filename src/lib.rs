@@ -158,6 +158,7 @@ pub struct Del2Params {
     sample_rate: AtomicF32,
     tempo: AtomicF32,
     time_sig_numerator: AtomicI32,
+    learning_start_time: AtomicU64,
 }
 
 /// Contains the global parameters.
@@ -531,6 +532,7 @@ impl Del2Params {
             sample_rate: 1.0.into(),
             tempo: (-1.0).into(),
             time_sig_numerator: (-1).into(),
+            learning_start_time: AtomicU64::new(0),
         }
     }
 }

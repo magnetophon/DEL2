@@ -18,6 +18,7 @@ use crate::{
 };
 
 const GUI_SMOOTHING_DECAY_MS: f64 = 240.0;
+const MAX_LEARNING_NANOS: u64 = 10_000_000_000; // 10 seconds
 
 /// The minimum decibel value that the meters display
 const MIN_TICK: f32 = -60.0;
@@ -540,7 +541,6 @@ impl DelayGraph {
         // Calculate the frame duration
         let frame_duration_nanos = if now_nanos < last_time_nanos {
             // Time went backwards; assume 60 FPS (16.67 ms per frame)
-            println!("Time went backwards, assuming 60 FPS");
             (1_000_000_000 / 60) as u64 // 16,666,666.67 nanoseconds for 60 FPS
         } else {
             now_nanos - last_time_nanos
@@ -1070,11 +1070,21 @@ impl ActionTrigger {
             .store(index, self.learned_notes.load(index));
         self.learned_notes.store(index, LEARNING);
         self.learning_index.store(index, Ordering::SeqCst);
+
+        // Get current system time in nanoseconds since the UNIX epoch
+        let now_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("System time should be after UNIX epoch")
+            .as_nanos() as u64;
+        self.params
+            .learning_start_time
+            .store(now_nanos, Ordering::SeqCst);
     }
     pub fn stop_learning(&self) {
         self.is_learning.store(false, Ordering::SeqCst);
         self.learned_notes
             .store(self.own_index, self.last_learned_notes.load(self.own_index));
+        self.params.learning_start_time.store(0, Ordering::SeqCst);
     }
 
     // Checks if learning is active for this trigger
@@ -1135,6 +1145,25 @@ impl ActionTrigger {
         let mut path = vg::Path::new();
         path.rect(x, y, w, h);
         path.close();
+
+        // Load the learning time
+        let learning_start_time_nanos = self.params.learning_start_time.load(Ordering::SeqCst);
+        // Get current system time in nanoseconds since the UNIX epoch
+        let now_nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("System time should be after UNIX epoch")
+            .as_nanos() as u64;
+
+        // Calculate the learning time duration
+        let learning_duration_nanos = if now_nanos < learning_start_time_nanos {
+            // Time went backwards
+            0
+        } else {
+            now_nanos - learning_start_time_nanos
+        };
+        if learning_duration_nanos > MAX_LEARNING_NANOS {
+            self.stop_learning();
+        }
 
         // Determine the paint color based on the state
         let paint = match (
