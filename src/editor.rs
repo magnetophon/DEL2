@@ -469,8 +469,7 @@ impl DelayGraph {
                         // Calculate the number of digits after the decimal to maintain a total of three digits
                         let ms = seconds * 1000.0;
                         let digits_after_decimal = (TOTAL_DIGITS - ms.trunc().to_string().len())
-                            .max(0)
-                            .min(TOTAL_DIGITS - 1); // Ensure it's between 0 and 2
+                            .clamp(0, TOTAL_DIGITS - 1); // Ensure it's between 0 and 2
                         format!("{ms:.digits_after_decimal$} ms")
                     } else {
                         // Same logic for seconds
@@ -1122,6 +1121,8 @@ impl ActionTrigger {
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //                       for drawing
     /////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    // clippy's suggestion doesn't work, cause we need the early exit
+    #[allow(clippy::match_same_arms)]
     fn draw_background(
         &self,
         canvas: &mut Canvas,
