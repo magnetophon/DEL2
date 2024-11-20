@@ -1,12 +1,6 @@
 /*
 TODO:
 
-- improve voice management:
-  - re-use the voice if the delay time and the note are the same
-    if the velocity is different, we smooth to it, using the attack and release times
-  - the params should have the delay_times, notes and velocities, so nih-plug can persist them
-  - the delay tap should also have delay_times and notes, so it can decide if a new voice should be started
-
 - smooth all dsp params (at the end of the interpolation?)
 
 - evaluate filters:
@@ -1235,6 +1229,9 @@ impl Del2 {
     }
 
     fn v2s_f32_ms_then_s(total_digits: usize) -> Arc<dyn Fn(f32) -> String + Send + Sync> {
+        Arc::new(move |value| format_time(value, total_digits))
+    }
+    fn _v2s_f32_ms_then_s(total_digits: usize) -> Arc<dyn Fn(f32) -> String + Send + Sync> {
         Arc::new(move |value| {
             if value < 1000.0 {
                 // Calculate the number of digits after the decimal to maintain a total of three digits
@@ -1905,5 +1902,17 @@ impl LastPlayedNotes {
     }
 }
 
+fn format_time(value: f32, total_digits: usize) -> String {
+    if value < 1000.0 {
+        let digits_after_decimal = (total_digits - value.trunc().to_string().len())
+            .max(0)
+            .min(total_digits - 1);
+        format!("{value:.digits_after_decimal$} ms")
+    } else {
+        let seconds = value / 1000.0;
+        let digits_after_decimal = (total_digits - seconds.trunc().to_string().len()).max(0);
+        format!("{seconds:.digits_after_decimal$} s")
+    }
+}
 nih_export_clap!(Del2);
 nih_export_vst3!(Del2);

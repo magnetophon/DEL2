@@ -13,8 +13,8 @@ use nih_plug_vizia::{
 };
 
 use crate::{
-    util, AtomicBoolArray, AtomicByteArray, AtomicF32, AtomicF32Array, Del2Params, LastPlayedNotes,
-    CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, NUM_TAPS,
+    format_time, util, AtomicBoolArray, AtomicByteArray, AtomicF32, AtomicF32Array, Del2Params,
+    LastPlayedNotes, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN, MUTE_OUT, NO_LEARNED_NOTE, NUM_TAPS,
 };
 
 const GUI_SMOOTHING_DECAY_MS: f64 = 240.0;
@@ -437,6 +437,7 @@ impl DelayGraph {
                     let tempo = params.tempo.load(Ordering::SeqCst);
                     let time_sig_numerator = params.time_sig_numerator.load(Ordering::SeqCst);
                     let tap_counter = params.tap_counter.load(Ordering::SeqCst);
+
                     // Determine the max delay time
                     let seconds = if tap_counter > 0 {
                         params.delay_times[tap_counter - 1].load(Ordering::SeqCst) as f32
@@ -446,7 +447,6 @@ impl DelayGraph {
                     };
 
                     if tempo >= 0.0 && time_sig_numerator > 0 {
-                        // Only proceed if tempo and time signature are valid (non-negative)
                         let seconds_per_beat = 60.0 / tempo;
                         let seconds_per_measure = seconds_per_beat * time_sig_numerator as f32;
 
@@ -464,21 +464,14 @@ impl DelayGraph {
                         } else if additional_beats > 0 {
                             format!("{additional_beats} beat")
                         } else {
-                            return String::new();
+                            String::new()
                         }
-                    } else if seconds < 0.001 {
-                        String::new()
-                    } else if seconds < 1.0 {
-                        // Calculate the number of digits after the decimal to maintain a total of three digits
-                        let ms = seconds * 1000.0;
-                        let digits_after_decimal = (TOTAL_DIGITS - ms.trunc().to_string().len())
-                            .clamp(0, TOTAL_DIGITS - 1); // Ensure it's between 0 and 2
-                        format!("{ms:.digits_after_decimal$} ms")
                     } else {
-                        // Same logic for seconds
-                        let digits_after_decimal =
-                            (TOTAL_DIGITS - seconds.trunc().to_string().len()).max(0);
-                        format!("{seconds:.digits_after_decimal$} s")
+                        if seconds < 0.001 {
+                            String::new()
+                        } else {
+                            format_time(seconds * 1000.0, TOTAL_DIGITS)
+                        }
                     }
                 }),
             )
