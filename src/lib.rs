@@ -1448,7 +1448,6 @@ impl Del2 {
                     delay_tap
                         .amp_envelope
                         .set_target(self.params.sample_rate.load(Ordering::SeqCst), 0.0);
-                    nih_log!("set target 0.0");
                     delay_tap.releasing = true;
                 } else {
                     delay_tap.amp_envelope.style =
@@ -1456,7 +1455,6 @@ impl Del2 {
                     delay_tap
                         .amp_envelope
                         .set_target(self.params.sample_rate.load(Ordering::SeqCst), 1.0);
-                    nih_log!("set target 1.0");
                     delay_tap.releasing = false;
                 }
                 delay_tap.is_muted = muted;
