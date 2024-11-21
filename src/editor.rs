@@ -13,7 +13,7 @@ use nih_plug_vizia::{
 };
 
 use crate::{
-    format_time, util, AtomicBoolArray, AtomicByteArray, AtomicF32, AtomicF32Array,
+    format_time, nih_log, util, AtomicBoolArray, AtomicByteArray, AtomicF32, AtomicF32Array,
     AtomicUsizeArray, Del2Params, LastPlayedNotes, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN,
     MUTE_OUT, NO_LEARNED_NOTE, NUM_TAPS,
 };
@@ -1146,18 +1146,20 @@ impl ActionTrigger {
         path.rect(x, y, w, h);
         path.close();
 
-        // Load the learning time
-        let learning_start_time_nanos = self.params.learning_start_time.load(Ordering::SeqCst);
-        // Get current system time in nanoseconds since the UNIX epoch
-        let now_nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("System time should be after UNIX epoch")
-            .as_nanos() as u64;
+        if self.is_learning() {
+            // Load the learning time
+            let learning_start_time_nanos = self.params.learning_start_time.load(Ordering::SeqCst);
+            // Get current system time in nanoseconds since the UNIX epoch
+            let now_nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("System time should be after UNIX epoch")
+                .as_nanos() as u64;
 
-        // Calculate the learning time duration
-        let learning_duration_nanos = now_nanos.saturating_sub(learning_start_time_nanos);
-        if learning_duration_nanos > MAX_LEARNING_NANOS {
-            self.stop_learning();
+            // Calculate the learning time duration
+            let learning_duration_nanos = now_nanos.saturating_sub(learning_start_time_nanos);
+            if learning_duration_nanos > MAX_LEARNING_NANOS {
+                self.stop_learning();
+            }
         }
 
         // Determine the paint color based on the state
