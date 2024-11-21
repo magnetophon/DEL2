@@ -629,18 +629,20 @@ impl Plugin for Del2 {
             .iter_mut()
             .enumerate()
             .for_each(|(tap_index, delay_tap)| {
-                delay_tap.meter_index = tap_index;
+                // delay_tap.meter_index = tap_index;
                 // first make room in the array
                 if tap_counter > tap_index {
                     delay_tap.is_alive = true;
                 } else {
                     delay_tap.is_alive = false;
                 }
+                delay_tap.releasing = false;
                 delay_tap.ladders.s = [f32x4::splat(0.); 4];
             });
 
         // then fill the array
         for i in 0..NUM_TAPS {
+            // self.meter_indexes[i].store(i, Ordering::Relaxed);
             if i < tap_counter {
                 self.load_and_configure_tap(i, true);
             } else {
@@ -851,8 +853,6 @@ impl Plugin for Del2 {
                             // nih_log!("killed");
                         }
 
-                        self.meter_indexes[delay_tap.meter_index]
-                            .store(meter_index, Ordering::Relaxed);
                         if self.params.editor_state.is_open() {
                             let weight = self.peak_meter_decay_weight * 0.91;
 
@@ -860,6 +860,10 @@ impl Plugin for Del2 {
                             let current_peak_meter =
                                 self.tap_meters[meter_index].load(Ordering::Relaxed);
                             let new_peak_meter = if amplitude > current_peak_meter {
+                                // nih_log!(
+                                // "process: self.meter_indexes[{meter_index}]: {}",
+                                // self.meter_indexes[meter_index].load(Ordering::Relaxed)
+                                // );
                                 amplitude
                             } else {
                                 current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
@@ -1378,8 +1382,10 @@ impl Del2 {
         let mut found_inactive = None;
         let mut found_oldest = None;
         let mut oldest_id = u64::MAX;
+        let mut found_inactive_index = None;
+        let mut found_oldest_index = None;
 
-        for delay_tap in &mut self.delay_taps {
+        for (index, delay_tap) in self.delay_taps.iter_mut().enumerate() {
             if delay_tap.is_alive {
                 // Recycle an old tap if `delay_time` and `note` match
                 // TODO: re enable
@@ -1397,10 +1403,12 @@ impl Del2 {
                     // Track the oldest active tap
                     oldest_id = delay_tap.internal_id;
                     found_oldest = Some(delay_tap);
+                    found_oldest_index = Some(index);
                 }
             } else if found_inactive.is_none() {
                 // Track the first non-active tap
                 found_inactive = Some(delay_tap);
+                found_inactive_index = Some(index);
                 // Stop iterating when we found an inactive tap
                 break;
             }
@@ -1418,6 +1426,7 @@ impl Del2 {
                 new_is_alive,
             );
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
+            self.meter_indexes[new_index].store(found_inactive_index.unwrap(), Ordering::Relaxed);
         } else if let Some(oldest_delay_tap) = found_oldest {
             // Replace the oldest tap if needed
             oldest_delay_tap.init(
@@ -1430,6 +1439,7 @@ impl Del2 {
                 new_is_alive,
             );
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
+            self.meter_indexes[new_index].store(found_oldest_index.unwrap(), Ordering::Relaxed);
         }
     }
 
@@ -1449,7 +1459,8 @@ impl Del2 {
     fn set_mute_for_all_delay_taps(&mut self) {
         let is_playing_mute_out = self.is_playing_action(MUTE_OUT);
 
-        for delay_tap in &mut self.delay_taps {
+        for (tap_index, delay_tap) in self.delay_taps.iter_mut().enumerate() {
+            // for delay_tap in &mut self.delay_taps {
             let is_toggle = self.params.global.mute_is_toggle.value();
             let mute_in_delayed = delay_tap.mute_in_delayed[0];
             let mute_out = self.enabled_actions.load(MUTE_OUT);
@@ -1470,6 +1481,7 @@ impl Del2 {
                     delay_tap
                         .amp_envelope
                         .set_target(self.params.sample_rate.load(Ordering::SeqCst), 0.0);
+                    // nih_log!("set target {tap_index} 0.0");
                     delay_tap.releasing = true;
                 } else {
                     delay_tap.amp_envelope.style =
@@ -1477,6 +1489,7 @@ impl Del2 {
                     delay_tap
                         .amp_envelope
                         .set_target(self.params.sample_rate.load(Ordering::SeqCst), 1.0);
+                    // nih_log!("set target {tap_index} 1.0");
                     delay_tap.releasing = false;
                 }
                 delay_tap.is_muted = muted;

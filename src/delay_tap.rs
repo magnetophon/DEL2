@@ -76,6 +76,6 @@ impl DelayTap {
         self.velocity = velocity;
         self.releasing = false;
         self.is_alive = new_is_alive;
-        self.meter_index = index;
+        // self.meter_index = index;
     }
 }

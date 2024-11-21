@@ -685,6 +685,7 @@ impl DelayGraph {
             let velocity_height = velocity_value.mul_add(bounds.h, -border_width);
 
             let meter_index = meter_indexes[i].load(Ordering::Relaxed);
+            // nih_log!("draw: meter_indexes[{i}]: {meter_index}");
             let meter_db = util::gain_to_db(tap_meters[meter_index].load(Ordering::Relaxed));
             let meter_height = {
                 let tick_fraction = (meter_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
