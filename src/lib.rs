@@ -624,7 +624,6 @@ impl Plugin for Del2 {
 
     fn reset(&mut self) {
         let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
-        let old_nr_taps = self.params.old_nr_taps.load(Ordering::SeqCst);
         self.delay_taps
             .iter_mut()
             .enumerate()
@@ -642,11 +641,10 @@ impl Plugin for Del2 {
 
         // then fill the array
         for i in 0..NUM_TAPS {
-            // self.meter_indexes[i].store(i, Ordering::Relaxed);
             if i < tap_counter {
-                self.load_and_configure_tap(i, true);
+                self.start_tap(i, true);
             } else {
-                self.load_and_configure_tap(i, false);
+                self.start_tap(i, false);
             }
         }
         // Indicate filter update needed
@@ -659,7 +657,7 @@ impl Plugin for Del2 {
         }
 
         // don't smooth the gui for the new taps
-        for i in (old_nr_taps + 1)..tap_counter {
+        for i in (self.params.old_nr_taps.load(Ordering::SeqCst) + 1)..tap_counter {
             self.params.previous_note_heights[i].store(f32::MAX, Ordering::SeqCst);
             self.params.previous_pan_foreground_lengths[i].store(f32::MAX, Ordering::SeqCst);
             self.params.previous_pan_background_lengths[i].store(f32::MAX, Ordering::SeqCst);
@@ -723,7 +721,7 @@ impl Plugin for Del2 {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
                                 let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
                                 if tap_counter > old_nr_taps {
-                                    self.load_and_configure_tap(tap_counter - 1, true);
+                                    self.start_tap(tap_counter - 1, true);
                                 }
                             }
                             NoteEvent::NoteOff { note, .. } => {
@@ -1362,7 +1360,7 @@ impl Del2 {
         })
     }
 
-    fn load_and_configure_tap(&mut self, new_index: usize, new_is_alive: bool) {
+    fn start_tap(&mut self, new_index: usize, new_is_alive: bool) {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
         let global_params = &self.params.global;
 
