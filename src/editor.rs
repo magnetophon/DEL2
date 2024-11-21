@@ -18,7 +18,7 @@ use crate::{
     MUTE_OUT, NO_LEARNED_NOTE, NUM_TAPS,
 };
 
-const GUI_SMOOTHING_DECAY_MS: f64 = 240.0;
+const GUI_SMOOTHING_DECAY_MS: f64 = 242.0;
 const MAX_LEARNING_NANOS: u64 = 10_000_000_000; // 10 seconds
 
 /// The minimum decibel value that the meters display

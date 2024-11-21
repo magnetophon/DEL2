@@ -138,6 +138,7 @@ pub struct Del2Params {
     notes: AtomicU8Array,
     #[persist = "tap-counter"]
     tap_counter: Arc<AtomicUsize>,
+    old_nr_taps: Arc<AtomicUsize>,
     current_time: Arc<AtomicU32>,
     max_tap_samples: Arc<AtomicU32>,
     #[persist = "first-note"]
@@ -507,6 +508,7 @@ impl Del2Params {
             enabled_actions: ArcAtomicBoolArray(enabled_actions),
 
             tap_counter: Arc::new(AtomicUsize::new(0)),
+            old_nr_taps: Arc::new(AtomicUsize::new(0)),
             delay_times: AtomicU32Array(array_init(|_| Arc::new(AtomicU32::new(0)))),
             velocities: AtomicF32Array(array_init(|_| Arc::new(AtomicF32::new(0.0)))),
             notes: AtomicU8Array(array_init(|_| Arc::new(AtomicU8::new(0)))),
@@ -622,6 +624,7 @@ impl Plugin for Del2 {
 
     fn reset(&mut self) {
         let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
+        let old_nr_taps = self.params.old_nr_taps.load(Ordering::SeqCst);
         self.delay_taps
             .iter_mut()
             .enumerate()
@@ -635,7 +638,7 @@ impl Plugin for Del2 {
                 delay_tap.ladders.s = [f32x4::splat(0.); 4];
             });
 
-        for i in 0..tap_counter {
+        for i in 0..NUM_TAPS {
             self.load_and_configure_tap(i);
         }
 
@@ -644,6 +647,13 @@ impl Plugin for Del2 {
         self.samples_since_last_event = 0;
         // Indicate filter update needed
         self.should_update_filter.store(true, Ordering::Release);
+
+        // don't smooth the gui for the new taps
+        for i in (old_nr_taps + 1)..tap_counter {
+            self.params.previous_note_heights[i].store(f32::MAX, Ordering::SeqCst);
+            self.params.previous_pan_foreground_lengths[i].store(f32::MAX, Ordering::SeqCst);
+            self.params.previous_pan_background_lengths[i].store(f32::MAX, Ordering::SeqCst);
+        }
     }
 
     fn process(
@@ -686,6 +696,7 @@ impl Plugin for Del2 {
         while block_start < num_samples {
             let old_nr_taps = self.params.tap_counter.load(Ordering::SeqCst);
 
+            self.params.old_nr_taps.store(old_nr_taps, Ordering::SeqCst);
             // First of all, handle all note events that happen at the start of the block, and cut
             // the block short if another event happens before the end of it.
             'events: loop {
