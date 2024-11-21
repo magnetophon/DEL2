@@ -630,6 +630,7 @@ impl Plugin for Del2 {
             .enumerate()
             .for_each(|(tap_index, delay_tap)| {
                 delay_tap.meter_index = tap_index;
+                // first make room in the array
                 if tap_counter > tap_index {
                     delay_tap.is_alive = true;
                 } else {
@@ -638,13 +639,14 @@ impl Plugin for Del2 {
                 delay_tap.ladders.s = [f32x4::splat(0.); 4];
             });
 
+        // then fill the array
         for i in 0..NUM_TAPS {
-            self.load_and_configure_tap(i);
+            if i < tap_counter {
+                self.load_and_configure_tap(i, true);
+            } else {
+                self.load_and_configure_tap(i, false);
+            }
         }
-
-        self.counting_state = CountingState::TimeOut;
-        self.timing_last_event = 0;
-        self.samples_since_last_event = 0;
         // Indicate filter update needed
         self.should_update_filter.store(true, Ordering::Release);
         // reset learning system
@@ -719,7 +721,7 @@ impl Plugin for Del2 {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
                                 let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
                                 if tap_counter > old_nr_taps {
-                                    self.load_and_configure_tap(tap_counter - 1);
+                                    self.load_and_configure_tap(tap_counter - 1, true);
                                 }
                             }
                             NoteEvent::NoteOff { note, .. } => {
@@ -846,10 +848,11 @@ impl Plugin for Del2 {
 
                         if delay_tap.releasing && delay_tap.amp_envelope.previous_value() == 0.0 {
                             delay_tap.is_alive = false;
+                            // nih_log!("killed");
                         }
 
-                        let gui_index = delay_tap.meter_index;
-                        self.meter_indexes[gui_index].store(meter_index, Ordering::Relaxed);
+                        self.meter_indexes[delay_tap.meter_index]
+                            .store(meter_index, Ordering::Relaxed);
                         if self.params.editor_state.is_open() {
                             let weight = self.peak_meter_decay_weight * 0.91;
 
@@ -1355,7 +1358,7 @@ impl Del2 {
         })
     }
 
-    fn load_and_configure_tap(&mut self, new_index: usize) {
+    fn load_and_configure_tap(&mut self, new_index: usize, new_is_alive: bool) {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
         let global_params = &self.params.global;
 
@@ -1412,6 +1415,7 @@ impl Del2 {
                 note,
                 velocity,
                 new_index,
+                new_is_alive,
             );
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
         } else if let Some(oldest_delay_tap) = found_oldest {
@@ -1423,6 +1427,7 @@ impl Del2 {
                 note,
                 velocity,
                 new_index,
+                new_is_alive,
             );
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
         }

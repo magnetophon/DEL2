@@ -67,6 +67,7 @@ impl DelayTap {
         note: u8,
         velocity: f32,
         index: usize,
+        new_is_alive: bool,
     ) {
         self.amp_envelope = amp_envelope;
         self.internal_id = internal_id;
@@ -74,7 +75,7 @@ impl DelayTap {
         self.note = note;
         self.velocity = velocity;
         self.releasing = false;
-        self.is_alive = true;
+        self.is_alive = new_is_alive;
         self.meter_index = index;
     }
 }
