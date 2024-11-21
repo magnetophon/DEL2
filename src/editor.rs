@@ -788,13 +788,11 @@ impl DelayGraph {
                 }
             }
 
-            // Zoom minimum logic
             let zoom_min = if first_note < min + 12 {
                 first_note.saturating_sub(12)
             } else {
                 min
             };
-            // Zoom maximum logic
             let zoom_max = if max < first_note + 12 {
                 first_note.saturating_add(12)
             } else {

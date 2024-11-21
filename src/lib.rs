@@ -622,36 +622,20 @@ impl Plugin for Del2 {
 
     fn reset(&mut self) {
         let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
-
-        // self.start_release_for_all_delay_taps();
-        // self.counting_state = CountingState::TimeOut;
-        // self.timing_last_event = 0;
-        // self.samples_since_last_event = 0;
-        // self.params
-        //         .first_note
-        //         .store(NO_LEARNED_NOTE, Ordering::SeqCst);
-
         self.delay_taps
             .iter_mut()
             .enumerate()
             .for_each(|(tap_index, delay_tap)| {
-                // .for_each(|delay_tap| {
-                // let tap_index = delay_tap.tap_index;
-                delay_tap.tap_index = tap_index;
+                delay_tap.meter_index = tap_index;
                 if tap_counter > tap_index {
-                    println!("reset: alive: tap_index: {tap_index}, tap_counter: {tap_counter}");
                     delay_tap.is_alive = true;
-                    delay_tap.is_muted = false;
-                    delay_tap.releasing = false;
                 } else {
-                    println!("reset: dead: tap_index: {tap_index}, tap_counter: {tap_counter}");
                     delay_tap.is_alive = false;
-                    delay_tap.is_muted = true;
-                    delay_tap.releasing = true;
                 }
                 delay_tap.ladders.s = [f32x4::splat(0.); 4];
             });
-        for i in 0..NUM_TAPS {
+
+        for i in 0..tap_counter {
             self.load_and_configure_tap(i);
         }
 
@@ -660,8 +644,6 @@ impl Plugin for Del2 {
         self.samples_since_last_event = 0;
         // Indicate filter update needed
         self.should_update_filter.store(true, Ordering::Release);
-        // Reset buffers and envelopes here. This can be called from the audio thread and may not
-        // allocate. You can remove this function if you do not need it.
     }
 
     fn process(
@@ -849,7 +831,7 @@ impl Plugin for Del2 {
                             delay_tap.is_alive = false;
                         }
 
-                        let gui_index = delay_tap.tap_index;
+                        let gui_index = delay_tap.meter_index;
                         self.meter_indexes[gui_index].store(meter_index, Ordering::Relaxed);
                         if self.params.editor_state.is_open() {
                             let weight = self.peak_meter_decay_weight * 0.91;
@@ -1380,15 +1362,18 @@ impl Del2 {
         for delay_tap in &mut self.delay_taps {
             if delay_tap.is_alive {
                 // Recycle an old tap if `delay_time` and `note` match
-                if delay_tap.delay_time == delay_time && delay_tap.note == note {
-                    delay_tap.velocity = velocity;
-                    delay_tap.releasing = false;
-                    delay_tap.amp_envelope.style =
-                        SmoothingStyle::Linear(self.params.global.attack_ms.value());
-                    delay_tap.amp_envelope.set_target(sample_rate, 1.0);
-                    delay_tap.tap_index = new_index;
-                    return;
-                } else if delay_tap.internal_id < oldest_id {
+                // TODO: re enable
+                // if delay_tap.delay_time == delay_time && delay_tap.note == note {
+                //     delay_tap.velocity = velocity;
+                //     delay_tap.releasing = false;
+                //     delay_tap.amp_envelope.style =
+                //         SmoothingStyle::Linear(self.params.global.attack_ms.value());
+                //     delay_tap.amp_envelope.set_target(sample_rate, 1.0);
+                //     // delay_tap.meter_index = new_index;
+                //     return;
+                // } else
+
+                if delay_tap.internal_id < oldest_id {
                     // Track the oldest active tap
                     oldest_id = delay_tap.internal_id;
                     found_oldest = Some(delay_tap);
@@ -1396,6 +1381,8 @@ impl Del2 {
             } else if found_inactive.is_none() {
                 // Track the first non-active tap
                 found_inactive = Some(delay_tap);
+                // Stop iterating when we found an inactive tap
+                break;
             }
         }
 
@@ -1452,14 +1439,16 @@ impl Del2 {
             } else {
                 mute_in_delayed
             };
-
-            if delay_tap.is_muted != new_mute {
-                if new_mute {
+            let muted = new_mute || !delay_tap.is_alive;
+            let needs_toggle = delay_tap.is_muted != muted;
+            if needs_toggle {
+                if muted {
                     delay_tap.amp_envelope.style =
                         SmoothingStyle::Linear(self.params.global.release_ms.value());
                     delay_tap
                         .amp_envelope
                         .set_target(self.params.sample_rate.load(Ordering::SeqCst), 0.0);
+                    nih_log!("set target 0.0");
                     delay_tap.releasing = true;
                 } else {
                     delay_tap.amp_envelope.style =
@@ -1467,9 +1456,10 @@ impl Del2 {
                     delay_tap
                         .amp_envelope
                         .set_target(self.params.sample_rate.load(Ordering::SeqCst), 1.0);
+                    nih_log!("set target 1.0");
                     delay_tap.releasing = false;
                 }
-                delay_tap.is_muted = new_mute;
+                delay_tap.is_muted = muted;
             }
         }
     }
