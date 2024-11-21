@@ -647,6 +647,12 @@ impl Plugin for Del2 {
         self.samples_since_last_event = 0;
         // Indicate filter update needed
         self.should_update_filter.store(true, Ordering::Release);
+        // reset learning system
+        self.is_learning.store(false, Ordering::SeqCst);
+        self.params.learning_start_time.store(0, Ordering::SeqCst);
+        for i in 0..8 {
+            self.last_learned_notes.store(i, self.learned_notes.load(i));
+        }
 
         // don't smooth the gui for the new taps
         for i in (old_nr_taps + 1)..tap_counter {
