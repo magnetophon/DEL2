@@ -321,33 +321,16 @@ impl View for DelayGraph {
 
     fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
         let params = self.params.clone();
-        let bounds = draw_context.bounds();
 
-        let background_color: vg::Color = draw_context.background_color().into();
-        let border_color: vg::Color = draw_context.border_color().into();
-        let outline_color: vg::Color = draw_context.outline_color().into();
-        let selection_color: vg::Color = draw_context.selection_color().into();
-        let font_color: vg::Color = draw_context.font_color().into();
-        let border_width = draw_context.border_width();
-        let outline_width = draw_context.outline_width();
-        let tap_meters = self.tap_meters.clone();
+        let tap_counter = params.tap_counter.load(Ordering::SeqCst);
         let input_meter = self.input_meter.clone();
         let output_meter = self.output_meter.clone();
-
-        // Compute the time scaling factor
-        let target_time_scaling_factor =
-            Self::compute_time_scaling_factor(&params, bounds.w, border_width, outline_width);
-
-        let gui_decay_weight = Self::calculate_gui_decay_weight(&params);
-
-        let time_scaling_factor = Self::gui_smooth(
-            target_time_scaling_factor,
-            &params.previous_time_scaling_factor,
-            gui_decay_weight,
-        );
-
+        let bounds = draw_context.bounds();
+        let border_color: vg::Color = draw_context.border_color().into();
+        let outline_width = draw_context.outline_width();
+        let border_width = draw_context.border_width();
+        let background_color: vg::Color = draw_context.background_color().into();
         let first_note = params.first_note.load(Ordering::SeqCst);
-        let meter_indexes = self.meter_indexes.clone();
 
         // Draw components
         Self::draw_background(canvas, bounds, background_color);
@@ -361,26 +344,46 @@ impl View for DelayGraph {
             outline_width,
         );
         if first_note != NO_LEARNED_NOTE {
-            Self::draw_delay_times_as_lines(
-                canvas,
-                &params,
-                bounds,
-                border_color,
-                border_width,
-                time_scaling_factor,
+            let outline_color: vg::Color = draw_context.outline_color().into();
+            let selection_color: vg::Color = draw_context.selection_color().into();
+            let font_color: vg::Color = draw_context.font_color().into();
+            let tap_meters = self.tap_meters.clone();
+            let meter_indexes = self.meter_indexes.clone();
+            let current_time = params.current_time.load(Ordering::SeqCst);
+            // Compute the time scaling factor
+            let target_time_scaling_factor =
+                Self::compute_time_scaling_factor(&params, bounds.w, border_width, outline_width);
+
+            let gui_decay_weight = Self::calculate_gui_decay_weight(&params);
+
+            let time_scaling_factor = Self::gui_smooth(
+                target_time_scaling_factor,
+                &params.previous_time_scaling_factor,
+                gui_decay_weight,
             );
-            Self::draw_tap_velocities_and_meters(
-                canvas,
-                &params,
-                &tap_meters,
-                &meter_indexes,
-                bounds,
-                outline_color,
-                border_color,
-                outline_width,
-                time_scaling_factor,
-                border_width,
-            );
+
+            if tap_counter > 0 {
+                Self::draw_delay_times_as_lines(
+                    canvas,
+                    &params,
+                    bounds,
+                    border_color,
+                    border_width,
+                    time_scaling_factor,
+                );
+                Self::draw_tap_velocities_and_meters(
+                    canvas,
+                    &params,
+                    &tap_meters,
+                    &meter_indexes,
+                    bounds,
+                    outline_color,
+                    border_color,
+                    outline_width,
+                    time_scaling_factor,
+                    border_width,
+                );
+            }
             Self::draw_tap_notes_and_pans(
                 canvas,
                 &params,
@@ -394,7 +397,6 @@ impl View for DelayGraph {
                 border_color,
                 background_color,
             );
-            let current_time = params.current_time.load(Ordering::SeqCst);
             if current_time > 0 {
                 Self::draw_time_line(
                     canvas,
