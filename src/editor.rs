@@ -484,12 +484,10 @@ impl DelayGraph {
                         } else {
                             String::new()
                         }
+                    } else if seconds < 0.001 {
+                        String::new()
                     } else {
-                        if seconds < 0.001 {
-                            String::new()
-                        } else {
-                            format_time(seconds * 1000.0, TOTAL_DIGITS)
-                        }
+                        format_time(seconds * 1000.0, TOTAL_DIGITS)
                     }
                 }),
             )
