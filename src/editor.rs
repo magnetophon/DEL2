@@ -86,8 +86,8 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                 .class("param-group");
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
-                        Label::new(cx, "dry gain").class("slider-label");
-                        ParamSlider::new(cx, Data::params, |params| &params.global.output_gain)
+                        Label::new(cx, "wet gain").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.wet_gain)
                             .class("widget");
                     })
                     .class("row");

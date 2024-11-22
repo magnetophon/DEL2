@@ -91,7 +91,7 @@ struct Del2 {
 
     // for the smoothers
     dry_wet: Box<[f32]>,
-    output_gain: Box<[f32]>,
+    wet_gain: Box<[f32]>,
     global_drive: Box<[f32]>,
     delay_tap_amp_envelope: Box<[f32]>,
 
@@ -161,8 +161,8 @@ pub struct Del2Params {
 struct GlobalParams {
     #[id = "dry_wet"]
     dry_wet: FloatParam,
-    #[id = "output_gain"]
-    pub output_gain: FloatParam,
+    #[id = "wet_gain"]
+    pub wet_gain: FloatParam,
     #[id = "global_drive"]
     pub global_drive: FloatParam,
     #[id = "mute_is_toggle"]
@@ -185,7 +185,7 @@ impl GlobalParams {
                 .with_smoother(SmoothingStyle::Linear(15.0))
                 .with_value_to_string(formatters::v2s_f32_percentage(0))
                 .with_string_to_value(formatters::s2v_f32_percentage()),
-            output_gain: FloatParam::new(
+            wet_gain: FloatParam::new(
                 "out gain",
                 util::db_to_gain(0.0),
                 FloatRange::Skewed {
@@ -465,7 +465,7 @@ impl Default for Del2 {
             mute_in_delay_temp_buffer: bool::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
             dry_wet: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            output_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            wet_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             global_drive: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_amp_envelope: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
@@ -752,7 +752,7 @@ impl Plugin for Del2 {
 
             // Calculate dry mix and update gains
             let dry_wet = &mut self.dry_wet[..block_len];
-            let output_gain = &mut self.output_gain[..block_len];
+            let wet_gain = &mut self.wet_gain[..block_len];
             let global_drive = &mut self.global_drive[..block_len];
 
             self.params
@@ -762,9 +762,9 @@ impl Plugin for Del2 {
                 .next_block(dry_wet, block_len);
             self.params
                 .global
-                .output_gain
+                .wet_gain
                 .smoothed
-                .next_block(output_gain, block_len);
+                .next_block(wet_gain, block_len);
             self.params
                 .global
                 .global_drive
@@ -833,7 +833,7 @@ impl Plugin for Del2 {
                         // Process the output and meter updates
                         let mut amplitude = 0.0;
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                            let post_filter_gain = dry_wet[value_idx] * output_gain[value_idx]
+                            let post_filter_gain = dry_wet[value_idx] * wet_gain[value_idx]
                                 / (drive * global_drive[value_idx]);
                             let left = delay_tap.delayed_audio_l[sample_idx] * post_filter_gain;
                             let right = delay_tap.delayed_audio_r[sample_idx] * post_filter_gain;
