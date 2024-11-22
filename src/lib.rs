@@ -624,29 +624,24 @@ impl Plugin for Del2 {
 
     fn reset(&mut self) {
         let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
-        self.delay_taps
-            .iter_mut()
-            .enumerate()
-            .for_each(|(tap_index, delay_tap)| {
-                // delay_tap.meter_index = tap_index;
-                // first make room in the array
-                if tap_counter > tap_index {
-                    delay_tap.is_alive = true;
-                } else {
-                    delay_tap.is_alive = false;
-                }
-                delay_tap.releasing = false;
-                delay_tap.ladders.s = [f32x4::splat(0.); 4];
-            });
+        self.delay_taps.iter_mut().for_each(|delay_tap| {
+            // first make room in the array
+            delay_tap.is_alive = false;
+            delay_tap.amp_envelope.reset(0.0);
+            // delay_tap.releasing = true;
+            delay_tap.ladders.s = [f32x4::splat(0.); 4];
+        });
 
         // then fill the array
-        for i in 0..NUM_TAPS {
-            if i < tap_counter {
-                self.start_tap(i, true);
-            } else {
-                self.start_tap(i, false);
+        for tap_index in 0..NUM_TAPS {
+            if tap_index < tap_counter {
+                self.start_tap(tap_index, true);
             }
         }
+        self.counting_state = CountingState::TimeOut;
+        self.timing_last_event = 0;
+        self.samples_since_last_event = 0;
+
         // Indicate filter update needed
         self.should_update_filter.store(true, Ordering::Release);
         // reset learning system
@@ -721,6 +716,7 @@ impl Plugin for Del2 {
                                 self.store_note_on_in_delay_data(timing, note, velocity);
                                 let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
                                 if tap_counter > old_nr_taps {
+                                    // nih_log!("process: added a tap: {} > {old_nr_taps}", tap_counter);
                                     self.start_tap(tap_counter - 1, true);
                                 }
                             }
@@ -1414,18 +1410,19 @@ impl Del2 {
 
         if let Some(delay_tap) = found_inactive {
             // Initialize the non-active tap
+            // nih_log!("start_tap: inactive tap: {}", found_inactive_index.unwrap());
             delay_tap.init(
                 amp_envelope,
                 self.next_internal_id,
                 delay_time,
                 note,
                 velocity,
-                new_index,
                 new_is_alive,
             );
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
             self.meter_indexes[new_index].store(found_inactive_index.unwrap(), Ordering::Relaxed);
         } else if let Some(oldest_delay_tap) = found_oldest {
+            // nih_log!("start_tap: oldest tap: {}", found_oldest_index.unwrap());
             // Replace the oldest tap if needed
             oldest_delay_tap.init(
                 amp_envelope,
@@ -1433,7 +1430,6 @@ impl Del2 {
                 delay_time,
                 note,
                 velocity,
-                new_index,
                 new_is_alive,
             );
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
@@ -1472,6 +1468,8 @@ impl Del2 {
             };
             let muted = new_mute || !delay_tap.is_alive;
             let needs_toggle = delay_tap.is_muted != muted;
+
+            // nih_log!("delay_tap.is_alive: {}, {tap_index}", delay_tap.is_alive);
             if needs_toggle {
                 if muted {
                     delay_tap.amp_envelope.style =

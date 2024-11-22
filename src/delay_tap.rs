@@ -35,8 +35,6 @@ pub struct DelayTap {
     /// Is set to true when the tap is created and false  is created
     /// and false when the amplitude envelope hits 0 while the note is releasing.
     pub is_alive: bool,
-    /// Only used for indexing into tap_meters
-    pub meter_index: usize,
 }
 
 impl DelayTap {
@@ -55,7 +53,6 @@ impl DelayTap {
             releasing: false,
             is_muted: true,
             is_alive: false,
-            meter_index: 0,
         }
     }
 
@@ -66,7 +63,6 @@ impl DelayTap {
         delay_time: u32,
         note: u8,
         velocity: f32,
-        index: usize,
         new_is_alive: bool,
     ) {
         self.amp_envelope = amp_envelope;
@@ -76,6 +72,5 @@ impl DelayTap {
         self.velocity = velocity;
         self.releasing = false;
         self.is_alive = new_is_alive;
-        // self.meter_index = index;
     }
 }
