@@ -1214,9 +1214,11 @@ impl Del2 {
         });
     }
 
+    #[inline]
     fn lerp(a: f32, b: f32, x: f32) -> f32 {
         (b - a).mul_add(x, a)
     }
+    #[inline]
     fn log_interpolate(a: f32, b: f32, x: f32) -> f32 {
         a * (b / a).powf(x)
     }
@@ -1224,6 +1226,7 @@ impl Del2 {
     // Takes a pan value and gives a delay offset, in samples
     // instead of adding delay, it subtracts delay from the other channel,
     // so we stay under the maximum delay value
+    #[inline]
     fn pan_to_haas_samples(pan: f32, sample_rate: f32) -> (isize, isize) {
         let delay_samples = (pan.abs() * (MAX_HAAS_MS / 1000.0) * sample_rate) as isize;
         if pan > 0.0 {
@@ -1234,6 +1237,7 @@ impl Del2 {
     }
 
     // for fn initialize():
+    #[inline]
     fn calculate_buffer_size(buffer_size: u32) -> u32 {
         ((TOTAL_DELAY_SAMPLES as f64 / f64::from(buffer_size)).ceil() as u32 * buffer_size)
             .next_power_of_two()
@@ -1288,6 +1292,7 @@ impl Del2 {
         }
     }
 
+    #[inline]
     fn is_playing_action(&self, index: usize) -> bool {
         self.last_played_notes
             .is_playing(self.learned_notes.load(index))
