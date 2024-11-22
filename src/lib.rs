@@ -149,7 +149,12 @@ pub struct Del2Params {
     previous_pan_foreground_lengths: AtomicF32Array,
     previous_pan_background_lengths: AtomicF32Array,
     last_frame_time: AtomicU64,
+    // the rate we are nunning at now
     sample_rate: AtomicF32,
+    // the rate the preset was saved with
+    #[persist = "preset-sample-rate"]
+    preset_sample_rate: AtomicF32,
+    // TODO: persist and use for conversions
     tempo: AtomicF32,
     time_sig_numerator: AtomicI32,
     learning_start_time: AtomicU64,
@@ -526,6 +531,7 @@ impl Del2Params {
             })),
             last_frame_time: AtomicU64::new(0),
             sample_rate: 1.0.into(),
+            preset_sample_rate: 1.0.into(),
             tempo: (-1.0).into(),
             time_sig_numerator: (-1).into(),
             learning_start_time: AtomicU64::new(0),
@@ -607,11 +613,9 @@ impl Plugin for Del2 {
             .store(buffer_config.sample_rate, Ordering::SeqCst);
         // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
         // have dropped by 12 dB
-        self.peak_meter_decay_weight = 0.25f64.powf(
-            (f64::from(self.params.sample_rate.load(Ordering::SeqCst)) * PEAK_METER_DECAY_MS
-                / 1000.0)
-                .recip(),
-        ) as f32;
+        self.peak_meter_decay_weight = 0.25f64
+            .powf((f64::from(buffer_config.sample_rate) * PEAK_METER_DECAY_MS / 1000.0).recip())
+            as f32;
         // Calculate and set the delay buffer size
         self.set_delay_buffer_size(buffer_config);
 
@@ -623,6 +627,27 @@ impl Plugin for Del2 {
 
     fn reset(&mut self) {
         let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
+        let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
+        let preset_sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
+        let needs_conversion = sample_rate != preset_sample_rate;
+        if needs_conversion {
+            // if preset_sample_rate is not the initial value
+            // convert the delay times for the new SR
+            if preset_sample_rate > 1.0 {
+                let sr_conversion_factor = sample_rate / preset_sample_rate;
+                for tap_index in 0..NUM_TAPS {
+                    let new_delay_time = (sr_conversion_factor
+                        * self.params.delay_times[tap_index].load(Ordering::SeqCst) as f32)
+                        as u32;
+                    self.params.delay_times[tap_index].store(new_delay_time, Ordering::SeqCst);
+                }
+            }
+            // store the actual sr, in case the user makes a new preset
+            self.params
+                .preset_sample_rate
+                .store(sample_rate, Ordering::SeqCst);
+        }
+
         // first make room in the array
         self.delay_taps.iter_mut().for_each(|delay_tap| {
             delay_tap.is_alive = false;
@@ -1224,6 +1249,8 @@ impl Del2 {
         self.delay_buffer
             .iter_mut()
             .for_each(|buffer| buffer.clear_set_len(self.delay_buffer_size as usize));
+        self.mute_in_delay_buffer
+            .clear_set_len(self.delay_buffer_size as usize);
     }
 
     fn initialize_filter_parameters(&mut self) {
