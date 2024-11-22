@@ -73,6 +73,7 @@ const MUTE_OUT: usize = 1;
 const CLEAR_TAPS: usize = 2;
 const LOCK_TAPS: usize = 3;
 const MAX_HAAS_MS: f32 = 5.0;
+const NO_GUI_SMOOTHING: f32 = f32::MAX;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -650,9 +651,11 @@ impl Plugin for Del2 {
 
         // don't smooth the gui for the new taps
         for i in (self.params.old_nr_taps.load(Ordering::SeqCst) + 1)..tap_counter {
-            self.params.previous_note_heights[i].store(f32::MAX, Ordering::SeqCst);
-            self.params.previous_pan_foreground_lengths[i].store(f32::MAX, Ordering::SeqCst);
-            self.params.previous_pan_background_lengths[i].store(f32::MAX, Ordering::SeqCst);
+            self.params.previous_note_heights[i].store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+            self.params.previous_pan_foreground_lengths[i]
+                .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+            self.params.previous_pan_background_lengths[i]
+                .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
         }
     }
 
@@ -1058,17 +1061,19 @@ impl Del2 {
 
         self.params
             .previous_time_scaling_factor
-            .store(f32::MAX, Ordering::SeqCst);
+            .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
         self.params
             .previous_first_note_height
-            .store(f32::MAX, Ordering::SeqCst);
+            .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
         self.params
             .previous_panning_center_height
-            .store(f32::MAX, Ordering::SeqCst);
+            .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
         for i in 0..NUM_TAPS {
-            self.params.previous_note_heights[i].store(f32::MAX, Ordering::SeqCst);
-            self.params.previous_pan_foreground_lengths[i].store(f32::MAX, Ordering::SeqCst);
-            self.params.previous_pan_background_lengths[i].store(f32::MAX, Ordering::SeqCst);
+            self.params.previous_note_heights[i].store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+            self.params.previous_pan_foreground_lengths[i]
+                .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+            self.params.previous_pan_background_lengths[i]
+                .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
         }
 
         self.start_release_for_all_delay_taps();

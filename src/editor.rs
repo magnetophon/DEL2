@@ -15,7 +15,7 @@ use nih_plug_vizia::{
 use crate::{
     format_time, util, AtomicBoolArray, AtomicByteArray, AtomicF32, AtomicF32Array,
     AtomicUsizeArray, Del2Params, LastPlayedNotes, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN,
-    MUTE_OUT, NO_LEARNED_NOTE, NUM_TAPS,
+    MUTE_OUT, NO_GUI_SMOOTHING, NO_LEARNED_NOTE, NUM_TAPS,
 };
 
 #[allow(unused_imports)]
@@ -586,7 +586,7 @@ impl DelayGraph {
     }
 
     /// Smoothly updates the value stored within an `f32` based on a target value.
-    /// If the current value is `f32::MAX`, it initializes with the target value.
+    /// If the current value is `NO_GUI_SMOOTHING`, it initializes with the target value.
     fn gui_smooth(target_value: f32, atomic_value: &AtomicF32, gui_decay_weight: f32) -> f32 {
         // Define the threshold relative to the target value
         let threshold = 0.001 * target_value.abs();
@@ -600,7 +600,7 @@ impl DelayGraph {
         }
 
         // Check if initial condition is met and initialize with the target value if so
-        if current_value >= f32::MAX - 1.0 {
+        if current_value >= NO_GUI_SMOOTHING - 1.0 {
             atomic_value.store(target_value, Ordering::SeqCst);
             return target_value;
         }
