@@ -22,6 +22,9 @@ pub struct DelayTap {
     /// The taps delay time.
     /// A new tap will be created if the `delay_time` and note are not the same as one that is currently playing.
     pub delay_time: u32,
+    // for modulated delay times from panning
+    pub smoothed_offset_l: Smoother<f32>,
+    pub smoothed_offset_r: Smoother<f32>,
     /// The note's key/note, in `0..128`. Only used for the delay tap terminated event.
     pub note: u8,
     /// The note's velocity. This is used to interpollate it's dsp parameters.
@@ -48,6 +51,8 @@ impl DelayTap {
             amp_envelope: Smoother::new(SmoothingStyle::Linear(13.0)),
             internal_id: 0,
             delay_time: 0,
+            smoothed_offset_l: Smoother::new(SmoothingStyle::Linear(77.0)),
+            smoothed_offset_r: Smoother::new(SmoothingStyle::Linear(77.0)),
             note: NO_LEARNED_NOTE,
             velocity: 0.0,
             releasing: false,

@@ -652,6 +652,8 @@ impl Plugin for Del2 {
         self.delay_taps.iter_mut().for_each(|delay_tap| {
             delay_tap.is_alive = false;
             delay_tap.amp_envelope.reset(0.0);
+            delay_tap.smoothed_offset_l.reset(0.0);
+            delay_tap.smoothed_offset_r.reset(0.0);
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
         });
 
@@ -811,16 +813,15 @@ impl Plugin for Del2 {
                         let pan = ((f32::from(delay_tap.note) - panning_center) * panning_amount)
                             .clamp(-1.0, 1.0);
                         let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
+                        delay_tap
+                            .smoothed_offset_l
+                            .set_target(sample_rate, offset_l);
+                        delay_tap
+                            .smoothed_offset_r
+                            .set_target(sample_rate, offset_r);
 
                         let delay_time = delay_tap.delay_time as isize;
                         let write_index = self.delay_write_index;
-                        let read_index_l = write_index - (delay_time - 1 + offset_l);
-                        let read_index_r = write_index - (delay_time - 1 + offset_r);
-
-                        self.delay_buffer[0]
-                            .read_into(&mut delay_tap.delayed_audio_l, read_index_l);
-                        self.delay_buffer[1]
-                            .read_into(&mut delay_tap.delayed_audio_r, read_index_r);
 
                         let drive = delay_tap.filter_params.drive;
                         self.mute_in_delay_buffer.read_into(
@@ -828,6 +829,7 @@ impl Plugin for Del2 {
                             write_index - (delay_time - 1),
                         );
 
+                        let read_index = (write_index - (delay_time - 1)) as f32;
                         delay_tap
                             .amp_envelope
                             .next_block(&mut self.delay_tap_amp_envelope, block_len);
@@ -835,8 +837,16 @@ impl Plugin for Del2 {
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                             let pre_filter_gain =
                                 global_drive[value_idx] * self.delay_tap_amp_envelope[value_idx];
-                            delay_tap.delayed_audio_l[sample_idx] *= pre_filter_gain;
-                            delay_tap.delayed_audio_r[sample_idx] *= pre_filter_gain;
+                            delay_tap.delayed_audio_l[sample_idx] =
+                                self.delay_buffer[0].lin_interp_f32(
+                                    read_index - delay_tap.smoothed_offset_l.next()
+                                        + value_idx as f32,
+                                ) * pre_filter_gain;
+                            delay_tap.delayed_audio_r[sample_idx] =
+                                self.delay_buffer[1].lin_interp_f32(
+                                    read_index - delay_tap.smoothed_offset_r.next()
+                                        + value_idx as f32,
+                                ) * pre_filter_gain;
                         }
 
                         for i in (block_start..block_end).step_by(2) {
@@ -1227,12 +1237,12 @@ impl Del2 {
     // instead of adding delay, it subtracts delay from the other channel,
     // so we stay under the maximum delay value
     #[inline]
-    fn pan_to_haas_samples(pan: f32, sample_rate: f32) -> (isize, isize) {
-        let delay_samples = (pan.abs() * (MAX_HAAS_MS / 1000.0) * sample_rate) as isize;
+    fn pan_to_haas_samples(pan: f32, sample_rate: f32) -> (f32, f32) {
+        let delay_samples = pan.abs() * (MAX_HAAS_MS * 0.001) * sample_rate;
         if pan > 0.0 {
-            (0, -delay_samples) // Pan right: delay left
+            (0.0, -delay_samples) // Pan right: delay left
         } else {
-            (-delay_samples, 0) // Pan left: delay right
+            (-delay_samples, 0.0) // Pan left: delay right
         }
     }
 
