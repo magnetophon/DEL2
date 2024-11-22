@@ -352,6 +352,14 @@ impl View for DelayGraph {
         // Draw components
         Self::draw_background(canvas, bounds, background_color);
 
+        Self::draw_in_out_meters(
+            canvas,
+            &input_meter,
+            &output_meter,
+            bounds,
+            border_color,
+            outline_width,
+        );
         if first_note != NO_LEARNED_NOTE {
             Self::draw_delay_times_as_lines(
                 canvas,
@@ -361,13 +369,11 @@ impl View for DelayGraph {
                 border_width,
                 time_scaling_factor,
             );
-            Self::draw_tap_velocities(
+            Self::draw_tap_velocities_and_meters(
                 canvas,
                 &params,
                 &tap_meters,
                 &meter_indexes,
-                &input_meter,
-                &output_meter,
                 bounds,
                 outline_color,
                 border_color,
@@ -658,13 +664,49 @@ impl DelayGraph {
         canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
     }
 
-    fn draw_tap_velocities(
+    fn draw_in_out_meters(
+        canvas: &mut Canvas,
+        input_meter: &Arc<AtomicF32>,
+        output_meter: &Arc<AtomicF32>,
+        bounds: BoundingBox,
+        meter_color: vg::Color,
+        line_width: f32,
+    ) {
+        // Calculate and draw input meter
+        let input_db = util::gain_to_db(input_meter.load(Ordering::Relaxed));
+        let input_height = {
+            let tick_fraction = (input_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
+            (tick_fraction * bounds.h).max(0.0)
+        };
+        let mut path = vg::Path::new();
+        let x_val = line_width.mul_add(0.75, bounds.x);
+        path.move_to(x_val, bounds.y + bounds.h - input_height);
+        path.line_to(x_val, bounds.y + bounds.h);
+        canvas.stroke_path(
+            &path,
+            &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
+        );
+
+        // Calculate and draw output meter
+        let output_db = util::gain_to_db(output_meter.load(Ordering::Relaxed));
+        let output_height = {
+            let tick_fraction = (output_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
+            (tick_fraction * bounds.h).max(0.0)
+        };
+        path = vg::Path::new();
+        let x_val = line_width.mul_add(-0.75, bounds.x + bounds.w);
+        path.move_to(x_val, bounds.y + bounds.h - output_height);
+        path.line_to(x_val, bounds.y + bounds.h);
+        canvas.stroke_path(
+            &path,
+            &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
+        );
+    }
+    fn draw_tap_velocities_and_meters(
         canvas: &mut Canvas,
         params: &Arc<Del2Params>,
         tap_meters: &Arc<AtomicF32Array>,
         meter_indexes: &Arc<AtomicUsizeArray>,
-        input_meter: &Arc<AtomicF32>,
-        output_meter: &Arc<AtomicF32>,
         bounds: BoundingBox,
         velocity_color: vg::Color,
         meter_color: vg::Color,
@@ -709,36 +751,6 @@ impl DelayGraph {
                 &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
             );
         }
-
-        // Calculate and draw input meter
-        let input_db = util::gain_to_db(input_meter.load(Ordering::Relaxed));
-        let input_height = {
-            let tick_fraction = (input_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
-            (tick_fraction * bounds.h).max(0.0)
-        };
-        let mut path = vg::Path::new();
-        let x_val = line_width.mul_add(0.75, bounds.x);
-        path.move_to(x_val, bounds.y + bounds.h - input_height);
-        path.line_to(x_val, bounds.y + bounds.h);
-        canvas.stroke_path(
-            &path,
-            &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
-        );
-
-        // Calculate and draw output meter
-        let output_db = util::gain_to_db(output_meter.load(Ordering::Relaxed));
-        let output_height = {
-            let tick_fraction = (output_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
-            (tick_fraction * bounds.h).max(0.0)
-        };
-        path = vg::Path::new();
-        let x_val = line_width.mul_add(-0.75, bounds.x + bounds.w);
-        path.move_to(x_val, bounds.y + bounds.h - output_height);
-        path.line_to(x_val, bounds.y + bounds.h);
-        canvas.stroke_path(
-            &path,
-            &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
-        );
     }
 
     fn draw_tap_notes_and_pans(
