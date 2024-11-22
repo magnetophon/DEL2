@@ -1238,14 +1238,20 @@ impl Del2 {
 
     // for fn initialize():
     #[inline]
-    fn calculate_buffer_size(buffer_size: u32) -> u32 {
-        ((TOTAL_DELAY_SAMPLES as f64 / f64::from(buffer_size)).ceil() as u32 * buffer_size)
+    fn calculate_buffer_size(buffer_size: u32, total_delay_samples: f64) -> u32 {
+        ((total_delay_samples / f64::from(buffer_size)).ceil() as u32 * buffer_size)
             .next_power_of_two()
     }
 
     fn set_delay_buffer_size(&mut self, buffer_config: &BufferConfig) {
-        let min_size = Self::calculate_buffer_size(buffer_config.min_buffer_size.unwrap_or(1));
-        let max_size = Self::calculate_buffer_size(buffer_config.max_buffer_size);
+        let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
+        let total_delay_samples = sample_rate as f64 * TOTAL_DELAY_SECONDS as f64;
+        let min_size = Self::calculate_buffer_size(
+            buffer_config.min_buffer_size.unwrap_or(1),
+            total_delay_samples,
+        );
+        let max_size =
+            Self::calculate_buffer_size(buffer_config.max_buffer_size, total_delay_samples);
 
         self.delay_buffer_size = u32::max(min_size, max_size);
 
