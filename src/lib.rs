@@ -1123,7 +1123,9 @@ impl Del2 {
         let samples_since_last_event = self.samples_since_last_event;
 
         // Calculate the current time based on whether there are taps
-        let current_time = if tap_counter > 0 {
+        let current_time = if self.counting_state == CountingState::TimeOut {
+            0
+        } else if tap_counter > 0 {
             let last_delay_time = self.params.delay_times[tap_counter - 1].load(Ordering::SeqCst);
             last_delay_time + samples_since_last_event
         } else {
@@ -1453,8 +1455,8 @@ impl Del2 {
     fn set_mute_for_all_delay_taps(&mut self) {
         let is_playing_mute_out = self.is_playing_action(MUTE_OUT);
 
-        for (tap_index, delay_tap) in self.delay_taps.iter_mut().enumerate() {
-            // for delay_tap in &mut self.delay_taps {
+        // for (tap_index, delay_tap) in self.delay_taps.iter_mut().enumerate() {
+        for delay_tap in &mut self.delay_taps {
             let is_toggle = self.params.global.mute_is_toggle.value();
             let mute_in_delayed = delay_tap.mute_in_delayed[0];
             let mute_out = self.enabled_actions.load(MUTE_OUT);

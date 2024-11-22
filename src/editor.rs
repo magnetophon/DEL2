@@ -13,10 +13,13 @@ use nih_plug_vizia::{
 };
 
 use crate::{
-    format_time, nih_log, util, AtomicBoolArray, AtomicByteArray, AtomicF32, AtomicF32Array,
+    format_time, util, AtomicBoolArray, AtomicByteArray, AtomicF32, AtomicF32Array,
     AtomicUsizeArray, Del2Params, LastPlayedNotes, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN,
     MUTE_OUT, NO_LEARNED_NOTE, NUM_TAPS,
 };
+
+#[allow(unused_imports)]
+use crate::nih_log;
 
 const GUI_SMOOTHING_DECAY_MS: f64 = 242.0;
 const MAX_LEARNING_NANOS: u64 = 10_000_000_000; // 10 seconds
@@ -385,15 +388,18 @@ impl View for DelayGraph {
                 border_color,
                 background_color,
             );
-            Self::draw_time_line(
-                canvas,
-                &params,
-                bounds,
-                selection_color,
-                outline_width,
-                time_scaling_factor,
-                border_width,
-            );
+            let current_time = params.current_time.load(Ordering::SeqCst);
+            if current_time > 0 {
+                Self::draw_time_line(
+                    canvas,
+                    &params,
+                    bounds,
+                    selection_color,
+                    outline_width,
+                    time_scaling_factor,
+                    border_width,
+                );
+            }
         }
         Self::draw_bounding_outline(canvas, bounds, border_color, border_width);
     }
@@ -503,10 +509,10 @@ impl DelayGraph {
             0
         };
 
-        let zoom_tap_samples = if current_time == max_delay_time && tap_counter == 1 {
+        let zoom_tap_samples = if current_time == 0 && tap_counter == 1 {
             // one delay tap, put it in the middle
             max_delay_time as f32
-        } else if tap_counter == NUM_TAPS || current_time == max_delay_time {
+        } else if tap_counter == NUM_TAPS || current_time == 0 {
             // time out, zoom in but leave a margin
             0.18 * max_delay_time as f32
         } else {
@@ -632,33 +638,24 @@ impl DelayGraph {
         border_width: f32,
     ) {
         // Load the values once
+        let current_time = params.current_time.load(Ordering::SeqCst);
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
         if tap_counter == NUM_TAPS {
             return;
         };
-        let current_time = params.current_time.load(Ordering::SeqCst);
 
-        // Determine the max delay time
-        let max_delay_time = if tap_counter > 0 {
-            params.delay_times[tap_counter - 1].load(Ordering::SeqCst)
-        } else {
-            0
-        };
+        // Compute offset using mul_add for precision and performance
+        let x_offset = (current_time as f32).mul_add(time_scaling_factor, border_width * 0.5);
 
-        if current_time > max_delay_time {
-            // Compute offset using mul_add for precision and performance
-            let x_offset = (current_time as f32).mul_add(time_scaling_factor, border_width * 0.5);
+        // Calculate y_move using mul_add
+        let y_move = border_width.mul_add(-0.5, bounds.y + bounds.h);
 
-            // Calculate y_move using mul_add
-            let y_move = border_width.mul_add(-0.5, bounds.y + bounds.h);
+        let mut path = vg::Path::new();
+        path.move_to(bounds.x + x_offset, y_move);
+        path.line_to(bounds.x + x_offset, bounds.y);
+        path.close();
 
-            let mut path = vg::Path::new();
-            path.move_to(bounds.x + x_offset, y_move);
-            path.line_to(bounds.x + x_offset, bounds.y);
-            path.close();
-
-            canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
-        }
+        canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
     }
 
     fn draw_tap_velocities(
