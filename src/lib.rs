@@ -14,7 +14,6 @@ https://github.com/neodsp/simper-filter
 - optional: live-mode / daw-mode switch
   - compensate for host latency by adjusting the delay read index
 
-TODO: check why it doesn't load any presets before we manually make taps
 TODO: research choke event, possibly clear_taps()
 
 
@@ -125,7 +124,6 @@ pub struct Del2Params {
     global: GlobalParams,
     #[nested(group = "taps")]
     pub taps: TapsParams,
-    // TODO:  why doesn't this persist?
     #[persist = "learned-notes"]
     learned_notes: ArcAtomicByteArray,
     #[persist = "enabled-actions"]
@@ -624,11 +622,10 @@ impl Plugin for Del2 {
 
     fn reset(&mut self) {
         let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
+        // first make room in the array
         self.delay_taps.iter_mut().for_each(|delay_tap| {
-            // first make room in the array
             delay_tap.is_alive = false;
             delay_tap.amp_envelope.reset(0.0);
-            // delay_tap.releasing = true;
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
         });
 
@@ -892,8 +889,6 @@ impl Del2 {
     fn write_into_delay(&mut self, buffer: &mut Buffer) {
         for (_, block) in buffer.iter_blocks(buffer.samples()) {
             let block_len = block.samples();
-            // TODO: assert needed?
-            // assert!(block_len <= MAX_BLOCK_SIZE);
             let mut block_channels = block.into_iter();
 
             let out_l = block_channels.next().expect("Left output channel missing");
@@ -1384,7 +1379,7 @@ impl Del2 {
         for (index, delay_tap) in self.delay_taps.iter_mut().enumerate() {
             if delay_tap.is_alive {
                 // Recycle an old tap if `delay_time` and `note` match
-                // TODO: re enable
+                // TODO: re enable ?
                 // if delay_tap.delay_time == delay_time && delay_tap.note == note {
                 //     delay_tap.velocity = velocity;
                 //     delay_tap.releasing = false;
@@ -1502,7 +1497,6 @@ impl ClapPlugin for Del2 {
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
 
-    // TODO: Don't forget to change these features
     const CLAP_FEATURES: &'static [ClapFeature] = &[
         ClapFeature::AudioEffect,
         ClapFeature::Delay,
