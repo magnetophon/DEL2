@@ -24,6 +24,7 @@ nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git" }
 synfx-dsp     = { version = "0.5.6" }
 array-init = "2.1.0"
 default-boxed = { version = "0.2.0" }
+simple-eq = { git = "https://github.com/m-hilgendorf/simple-eq.git" }
 
 [profile.release]
 lto = "thin"

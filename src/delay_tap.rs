@@ -3,7 +3,7 @@ use std::sync::Arc;
 use synfx_dsp::fh_va::FilterParams;
 use synfx_dsp::fh_va::LadderFilter;
 
-use crate::{MAX_BLOCK_SIZE, NO_LEARNED_NOTE};
+use crate::{Equalizer, MAX_BLOCK_SIZE, NO_LEARNED_NOTE};
 
 #[derive(Debug, Clone)]
 pub struct DelayTap {
@@ -12,6 +12,8 @@ pub struct DelayTap {
 
     pub filter_params: Arc<FilterParams>,
     pub ladders: LadderFilter,
+    pub eq_l: Equalizer<f32>,
+    pub eq_r: Equalizer<f32>,
     pub mute_in_delayed: Box<[bool]>,
     /// Fades between 0 and 1 with timings based on the global attack and release settings.
     pub amp_envelope: Smoother<f32>,
@@ -25,6 +27,7 @@ pub struct DelayTap {
     // for modulated delay times from panning
     pub smoothed_offset_l: Smoother<f32>,
     pub smoothed_offset_r: Smoother<f32>,
+    pub eq_gain: Smoother<f32>,
     /// The note's key/note, in `0..128`. Only used for the delay tap terminated event.
     pub note: u8,
     /// The note's velocity. This is used to interpollate it's dsp parameters.
@@ -47,12 +50,15 @@ impl DelayTap {
             delayed_audio_r: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
             filter_params: filter_params.clone(),
             ladders: LadderFilter::new(filter_params),
+            eq_l: Equalizer::new(0.0),
+            eq_r: Equalizer::new(0.0),
             mute_in_delayed: vec![false; MAX_BLOCK_SIZE].into_boxed_slice(),
             amp_envelope: Smoother::new(SmoothingStyle::Linear(13.0)),
             internal_id: 0,
             delay_time: 0,
             smoothed_offset_l: Smoother::new(SmoothingStyle::Linear(77.0)),
             smoothed_offset_r: Smoother::new(SmoothingStyle::Linear(77.0)),
+            eq_gain: Smoother::new(SmoothingStyle::Linear(77.0)),
             note: NO_LEARNED_NOTE,
             velocity: 0.0,
             releasing: false,

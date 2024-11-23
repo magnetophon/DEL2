@@ -40,6 +40,8 @@ use default_boxed::DefaultBoxed;
 use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
+use simple_eq::design::Curve;
+use simple_eq::Equalizer;
 use std::ops::Index;
 use std::simd::f32x4;
 use std::sync::atomic::{
@@ -74,6 +76,7 @@ const CLEAR_TAPS: usize = 2;
 const LOCK_TAPS: usize = 3;
 const MAX_HAAS_MS: f32 = 5.0;
 const NO_GUI_SMOOTHING: f32 = f32::MAX;
+const MIN_EQ_GAIN: f32 = -17.0;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -311,7 +314,7 @@ impl TapsParams {
                 FloatRange::SymmetricalSkewed {
                     min: -1.0,
                     max: 1.0,
-                    factor: FloatRange::skew_factor(-1.3),
+                    factor: FloatRange::skew_factor(-1.42),
                     center: 0.0,
                 },
             )
@@ -608,19 +611,22 @@ impl Plugin for Del2 {
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         // Set the sample rate from the buffer configuration
-        self.params
-            .sample_rate
-            .store(buffer_config.sample_rate, Ordering::SeqCst);
+        let sample_rate = buffer_config.sample_rate;
+        self.params.sample_rate.store(sample_rate, Ordering::SeqCst);
         // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
         // have dropped by 12 dB
-        self.peak_meter_decay_weight = 0.25f64
-            .powf((f64::from(buffer_config.sample_rate) * PEAK_METER_DECAY_MS / 1000.0).recip())
-            as f32;
+        self.peak_meter_decay_weight =
+            0.25f64.powf((f64::from(sample_rate) * PEAK_METER_DECAY_MS / 1000.0).recip()) as f32;
         // Calculate and set the delay buffer size
         self.set_delay_buffer_size(buffer_config);
 
         // Initialize filter parameters for each tap
         self.initialize_filter_parameters();
+
+        for delay_tap in &mut self.delay_taps {
+            delay_tap.eq_l.set_sample_rate(sample_rate);
+            delay_tap.eq_r.set_sample_rate(sample_rate);
+        }
 
         true
     }
@@ -820,6 +826,9 @@ impl Plugin for Del2 {
                             .smoothed_offset_r
                             .set_target(sample_rate, offset_r);
 
+                        let eq_gain_target = MIN_EQ_GAIN * pan;
+                        delay_tap.eq_gain.set_target(sample_rate, eq_gain_target);
+
                         let delay_time = delay_tap.delay_time as isize;
                         let write_index = self.delay_write_index;
 
@@ -870,8 +879,23 @@ impl Plugin for Del2 {
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                             let post_filter_gain = dry_wet[value_idx] * wet_gain[value_idx]
                                 / (drive * global_drive[value_idx]);
-                            let left = delay_tap.delayed_audio_l[sample_idx] * post_filter_gain;
-                            let right = delay_tap.delayed_audio_r[sample_idx] * post_filter_gain;
+                            let eq_gain = delay_tap.eq_gain.next();
+                            delay_tap
+                                .eq_l
+                                .set(0, Curve::Peak, 18_000.0, 0.3, eq_gain.min(0.0));
+                            delay_tap.eq_r.set(
+                                0,
+                                Curve::Peak,
+                                18_000.0,
+                                0.3,
+                                (eq_gain * -1.0).min(0.0),
+                            );
+                            let left = delay_tap
+                                .eq_l
+                                .process(delay_tap.delayed_audio_l[sample_idx] * post_filter_gain);
+                            let right = delay_tap
+                                .eq_r
+                                .process(delay_tap.delayed_audio_r[sample_idx] * post_filter_gain);
                             output[0][sample_idx] += left;
                             output[1][sample_idx] += right;
                             amplitude += (left.abs() + right.abs()) * 0.5;
