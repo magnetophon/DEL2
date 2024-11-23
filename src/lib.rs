@@ -76,7 +76,8 @@ const CLEAR_TAPS: usize = 2;
 const LOCK_TAPS: usize = 3;
 const MAX_HAAS_MS: f32 = 5.0;
 const NO_GUI_SMOOTHING: f32 = f32::MAX;
-const MIN_EQ_GAIN: f32 = -17.0;
+const MIN_EQ_GAIN: f32 = -13.0;
+const MIN_PAN_GAIN: f32 = -4.2;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -828,6 +829,8 @@ impl Plugin for Del2 {
 
                         let eq_gain_target = MIN_EQ_GAIN * pan;
                         delay_tap.eq_gain.set_target(sample_rate, eq_gain_target);
+                        let pan_gain_target = MIN_PAN_GAIN * pan;
+                        delay_tap.pan_gain.set_target(sample_rate, pan_gain_target);
 
                         let delay_time = delay_tap.delay_time as isize;
                         let write_index = self.delay_write_index;
@@ -880,22 +883,27 @@ impl Plugin for Del2 {
                             let post_filter_gain = dry_wet[value_idx] * wet_gain[value_idx]
                                 / (drive * global_drive[value_idx]);
                             let eq_gain = delay_tap.eq_gain.next();
+                            let pan_gain = delay_tap.pan_gain.next();
                             delay_tap
                                 .eq_l
-                                .set(0, Curve::Peak, 18_000.0, 0.3, eq_gain.min(0.0));
+                                .set(0, Curve::Peak, 18_000.0, 0.42, eq_gain.min(0.0));
                             delay_tap.eq_r.set(
                                 0,
                                 Curve::Peak,
                                 18_000.0,
-                                0.3,
+                                0.42,
                                 (eq_gain * -1.0).min(0.0),
                             );
-                            let left = delay_tap
-                                .eq_l
-                                .process(delay_tap.delayed_audio_l[sample_idx] * post_filter_gain);
-                            let right = delay_tap
-                                .eq_r
-                                .process(delay_tap.delayed_audio_r[sample_idx] * post_filter_gain);
+                            let left = delay_tap.eq_l.process(
+                                delay_tap.delayed_audio_l[sample_idx]
+                                    * post_filter_gain
+                                    * util::db_to_gain_fast(pan_gain.min(0.0)),
+                            );
+                            let right = delay_tap.eq_r.process(
+                                delay_tap.delayed_audio_r[sample_idx]
+                                    * post_filter_gain
+                                    * util::db_to_gain_fast((pan_gain * -1.0).min(0.0)),
+                            );
                             output[0][sample_idx] += left;
                             output[1][sample_idx] += right;
                             amplitude += (left.abs() + right.abs()) * 0.5;
