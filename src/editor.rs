@@ -459,64 +459,68 @@ impl DelayGraph {
 
             Label::new(
                 cx,
-                params.map(move |params| {
-                    const TOTAL_DIGITS: usize = 3;
-                    let tap_counter = params.tap_counter.load(Ordering::SeqCst);
-                    let current_time = params.current_time.load(Ordering::SeqCst);
-                    let tempo = params.current_tempo.load(Ordering::SeqCst);
-                    let time_sig_numerator = params.time_sig_numerator.load(Ordering::SeqCst);
-                    // Determine the max delay time
-                    let seconds = if current_time > 0 {
-                        current_time as f32 / params.sample_rate.load(Ordering::SeqCst)
-                    } else if tap_counter > 0 {
-                        params.delay_times[tap_counter - 1].load(Ordering::SeqCst) as f32
-                            / params.sample_rate.load(Ordering::SeqCst)
-                    } else {
-                        0.0 // Default value in case both conditions fail
-                    };
-                    if current_time == 0 && tap_counter == 0 {
-                        // String::from("tap a rhythm!")
-                        String::new()
-                    } else if tempo > 0.0 && time_sig_numerator > 0 {
-                        let seconds_per_beat = 60.0 / tempo;
-                        let seconds_per_measure = seconds_per_beat * time_sig_numerator as f32;
-                        let full_bars = (seconds / seconds_per_measure).floor() as i32;
-                        let remaining_seconds = seconds % seconds_per_measure;
-                        let additional_beats =
-                            (remaining_seconds / seconds_per_beat).floor() as i32;
-                        if full_bars > 0 {
-                            let bar_str = if current_time > 0 || full_bars > 1 {
-                                "bars"
-                            } else {
-                                "bar"
-                            };
-                            if current_time > 0 || additional_beats > 0 {
-                                let beat_str = if current_time > 0 || additional_beats != 1 {
-                                    "beats"
-                                } else {
-                                    "beat"
-                                };
-                                format!("{full_bars} {bar_str}, {additional_beats} {beat_str}")
-                            } else {
-                                format!("{full_bars} {bar_str}")
-                            }
-                        } else {
-                            let beat_str = if current_time > 0 || additional_beats != 1 {
-                                "beats"
-                            } else {
-                                "beat"
-                            };
-                            format!("{additional_beats} {beat_str}")
-                        }
-                    } else {
-                        format_time(seconds * 1000.0, TOTAL_DIGITS)
-                    }
-                }),
+                params.map(move |params| Self::create_tap_length_text(&params)),
             )
             .class("tap-length-label");
         })
     }
+    fn create_tap_length_text(params: &Arc<Del2Params>) -> String {
+        const TOTAL_DIGITS: usize = 3;
 
+        let tap_counter = params.tap_counter.load(Ordering::SeqCst);
+        let current_time = params.current_time.load(Ordering::SeqCst);
+        let tempo = params.current_tempo.load(Ordering::SeqCst);
+        let time_sig_numerator = params.time_sig_numerator.load(Ordering::SeqCst);
+
+        let seconds = if current_time > 0 {
+            current_time as f32 / params.sample_rate.load(Ordering::SeqCst)
+        } else if tap_counter > 0 {
+            params.delay_times[tap_counter - 1].load(Ordering::SeqCst) as f32
+                / params.sample_rate.load(Ordering::SeqCst)
+        } else {
+            0.0 // Default value in case both conditions fail
+        };
+
+        if current_time == 0 && tap_counter == 0 {
+            // return String::from("tap a rhythm!");
+            return String::new();
+        }
+
+        if tempo > 0.0 && time_sig_numerator > 0 {
+            let seconds_per_beat = 60.0 / tempo;
+            let seconds_per_measure = seconds_per_beat * time_sig_numerator as f32;
+            let full_bars = (seconds / seconds_per_measure).floor() as i32;
+            let remaining_seconds = seconds % seconds_per_measure;
+            let additional_beats = (remaining_seconds / seconds_per_beat).floor() as i32;
+
+            if full_bars > 0 {
+                let bar_str = if current_time > 0 || full_bars > 1 {
+                    "bars"
+                } else {
+                    "bar"
+                };
+                if current_time > 0 || additional_beats > 0 {
+                    let beat_str = if current_time > 0 || additional_beats != 1 {
+                        "beats"
+                    } else {
+                        "beat"
+                    };
+                    format!("{full_bars} {bar_str}, {additional_beats} {beat_str}")
+                } else {
+                    format!("{full_bars} {bar_str}")
+                }
+            } else {
+                let beat_str = if current_time > 0 || additional_beats != 1 {
+                    "beats"
+                } else {
+                    "beat"
+                };
+                format!("{additional_beats} {beat_str}")
+            }
+        } else {
+            format_time(seconds * 1000.0, TOTAL_DIGITS)
+        }
+    }
     fn compute_time_scaling_factor(
         params: &Arc<Del2Params>,
         rect_width: f32,
@@ -558,6 +562,7 @@ impl DelayGraph {
         // Use recip for reciprocal calculation
         (total_delay / denominator).recip()
     }
+
     fn calculate_gui_decay_weight(params: &Arc<Del2Params>) -> f32 {
         // Get current system time in nanoseconds since the UNIX epoch
         let now_nanos = SystemTime::now()
