@@ -159,7 +159,9 @@ pub struct Del2Params {
     #[persist = "preset-sample-rate"]
     preset_sample_rate: AtomicF32,
     // TODO: persist and use for conversions
-    tempo: AtomicF32,
+    current_tempo: AtomicF32,
+    #[persist = "preset-tempo"]
+    preset_tempo: AtomicF32,
     time_sig_numerator: AtomicI32,
     learning_start_time: AtomicU64,
 }
@@ -536,7 +538,8 @@ impl Del2Params {
             last_frame_time: AtomicU64::new(0),
             sample_rate: 1.0.into(),
             preset_sample_rate: 1.0.into(),
-            tempo: (-1.0).into(),
+            preset_tempo: (-1.0).into(),
+            current_tempo: (-1.0).into(),
             time_sig_numerator: (-1).into(),
             learning_start_time: AtomicU64::new(0),
         }
@@ -634,16 +637,23 @@ impl Plugin for Del2 {
 
     fn reset(&mut self) {
         let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
+
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
-        let preset_sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
-        let needs_conversion = sample_rate != preset_sample_rate;
-        if needs_conversion {
+        let preset_sample_rate = self.params.preset_sample_rate.load(Ordering::SeqCst);
+
+        if sample_rate != preset_sample_rate {
             // if preset_sample_rate is not the initial value
             // convert the delay times for the new SR
-            if preset_sample_rate > 1.0 {
-                let sr_conversion_factor = sample_rate / preset_sample_rate;
+            // we do this in reset() and not in process(),
+            // because if the user is changing the at runtime,
+            // we want the delay time to change along with the audio speed.
+            if preset_sample_rate > 0.0 {
+                self.params
+                    .previous_time_scaling_factor
+                    .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+                let conversion_factor = sample_rate / preset_sample_rate;
                 for tap_index in 0..NUM_TAPS {
-                    let new_delay_time = (sr_conversion_factor
+                    let new_delay_time = (conversion_factor
                         * self.params.delay_times[tap_index].load(Ordering::SeqCst) as f32)
                         as u32;
                     self.params.delay_times[tap_index].store(new_delay_time, Ordering::SeqCst);
@@ -654,7 +664,6 @@ impl Plugin for Del2 {
                 .preset_sample_rate
                 .store(sample_rate, Ordering::SeqCst);
         }
-
         // first make room in the array
         self.delay_taps.iter_mut().for_each(|delay_tap| {
             delay_tap.is_alive = false;
@@ -703,15 +712,54 @@ impl Plugin for Del2 {
         self.update_min_max_tap_samples();
 
         let num_samples = buffer.samples();
+
         let sample_rate = context.transport().sample_rate;
+
+        let current_tempo = context.transport().tempo.unwrap_or(-1.0) as f32;
+        let preset_tempo = self.params.preset_tempo.load(Ordering::SeqCst);
+
+        if current_tempo > 0.0 && current_tempo != preset_tempo {
+            if preset_tempo > 0.0 {
+                // if preset_tempo is not the initial value
+                // convert the delay times for the new tempo
+                // we do this in  process() and not in reset(),
+                // because if the user changes the tempo in the song,
+                // we want the delay time to change with it.
+
+                // the graph should remain stationary after the recalculation
+                self.params
+                    .previous_time_scaling_factor
+                    .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+
+                let conversion_factor = preset_tempo / current_tempo;
+                let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
+
+                // first start fading out the current delay taps
+                self.start_release_for_all_delay_taps();
+                for tap_index in 0..NUM_TAPS {
+                    let new_delay_time = (conversion_factor
+                        * self.params.delay_times[tap_index].load(Ordering::SeqCst) as f32)
+                        as u32;
+                    self.params.delay_times[tap_index].store(new_delay_time, Ordering::SeqCst);
+
+                    if tap_index < tap_counter {
+                        // find a free delay_tap to run the new delay time
+                        self.start_tap(tap_index, true);
+                    }
+                }
+            }
+            // store the actual tempo, in case the user makes a new preset
+            self.params
+                .preset_tempo
+                .store(current_tempo, Ordering::SeqCst);
+        }
 
         self.params
             .sample_rate
             .store(context.transport().sample_rate, Ordering::SeqCst);
-        self.params.tempo.store(
-            context.transport().tempo.unwrap_or(-1.0) as f32,
-            Ordering::SeqCst,
-        );
+        self.params
+            .current_tempo
+            .store(current_tempo, Ordering::SeqCst);
         self.params.time_sig_numerator.store(
             context.transport().time_sig_numerator.unwrap_or(-1),
             Ordering::SeqCst,

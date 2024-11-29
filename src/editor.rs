@@ -463,7 +463,7 @@ impl DelayGraph {
                     const TOTAL_DIGITS: usize = 3;
                     let tap_counter = params.tap_counter.load(Ordering::SeqCst);
                     let current_time = params.current_time.load(Ordering::SeqCst);
-                    let tempo = params.tempo.load(Ordering::SeqCst);
+                    let tempo = params.current_tempo.load(Ordering::SeqCst);
                     let time_sig_numerator = params.time_sig_numerator.load(Ordering::SeqCst);
                     // Determine the max delay time
                     let seconds = if current_time > 0 {
@@ -477,7 +477,7 @@ impl DelayGraph {
                     if current_time == 0 && tap_counter == 0 {
                         // String::from("tap a rhythm!")
                         String::new()
-                    } else if tempo >= 0.0 && time_sig_numerator > 0 {
+                    } else if tempo > 0.0 && time_sig_numerator > 0 {
                         let seconds_per_beat = 60.0 / tempo;
                         let seconds_per_measure = seconds_per_beat * time_sig_numerator as f32;
                         let full_bars = (seconds / seconds_per_measure).floor() as i32;
