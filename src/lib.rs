@@ -77,6 +77,8 @@ const LOCK_TAPS: usize = 3;
 const MAX_HAAS_MS: f32 = 5.0;
 const NO_GUI_SMOOTHING: f32 = f32::MAX;
 const MIN_EQ_GAIN: f32 = -13.0;
+const PANNER_EQ_FREQ: f32 = 18_000.0;
+const PANNER_EQ_Q: f32 = 0.42;
 const MIN_PAN_GAIN: f32 = -4.2;
 
 struct Del2 {
@@ -626,10 +628,17 @@ impl Plugin for Del2 {
 
         // Initialize filter parameters for each tap
         self.initialize_filter_parameters();
-        nih_log!("sample_rate: {sample_rate}");
         for delay_tap in &mut self.delay_taps {
             delay_tap.eq_l.set_sample_rate(sample_rate);
             delay_tap.eq_r.set_sample_rate(sample_rate);
+            // workaround for comment from upstream:
+            // this will do weird things if you change sample rates, eg setting to 1kHz at 48k then going to 44.1kHz will give you a frequency parameter of about 1088Hz for the filter
+            delay_tap
+                .eq_l
+                .set(0, Curve::Peak, PANNER_EQ_FREQ, PANNER_EQ_Q, 0.0);
+            delay_tap
+                .eq_r
+                .set(0, Curve::Peak, PANNER_EQ_FREQ, PANNER_EQ_Q, 0.0);
         }
 
         true
@@ -648,7 +657,6 @@ impl Plugin for Del2 {
             // because if the user is changing the at runtime,
             // we want the delay time to change along with the audio speed.
             if preset_sample_rate > 0.0 {
-                nih_log!("sr change from {preset_sample_rate} to {sample_rate}");
                 self.params
                     .previous_time_scaling_factor
                     .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
@@ -720,7 +728,6 @@ impl Plugin for Del2 {
         let preset_tempo = self.params.preset_tempo.load(Ordering::SeqCst);
 
         if current_tempo > 0.0 && current_tempo != preset_tempo {
-            nih_log!("tempo change from {preset_tempo} to {current_tempo}");
             if preset_tempo > 0.0 {
                 // if preset_tempo is not the initial value
                 // convert the delay times for the new tempo
@@ -739,11 +746,6 @@ impl Plugin for Del2 {
                 // first start fading out the current delay taps
                 self.start_release_for_all_delay_taps();
                 for tap_index in 0..NUM_TAPS {
-                    nih_log!("tap nr {tap_index}");
-                    nih_log!(
-                        "old time: {}",
-                        self.params.delay_times[tap_index].load(Ordering::SeqCst)
-                    );
                     let new_delay_time = conversion_factor
                         * self.params.delay_times[tap_index].load(Ordering::SeqCst);
                     self.params.delay_times[tap_index].store(new_delay_time, Ordering::SeqCst);
@@ -752,10 +754,6 @@ impl Plugin for Del2 {
                         // find a free delay_tap to run the new delay time
                         self.start_tap(tap_index, true);
                     }
-                    nih_log!(
-                        "new time: {}",
-                        self.params.delay_times[tap_index].load(Ordering::SeqCst)
-                    );
                 }
             }
             // store the actual tempo, in case the user makes a new preset
@@ -942,15 +940,18 @@ impl Plugin for Del2 {
                                 / (drive * global_drive[value_idx]);
                             let eq_gain = delay_tap.eq_gain.next();
                             let pan_gain = delay_tap.pan_gain.next();
-                            nih_log!("proc sample_rate: {sample_rate}");
-                            delay_tap
-                                .eq_l
-                                .set(0, Curve::Peak, 18_001.0, 0.42, eq_gain.min(0.0));
+                            delay_tap.eq_l.set(
+                                0,
+                                Curve::Peak,
+                                PANNER_EQ_FREQ,
+                                PANNER_EQ_Q,
+                                eq_gain.min(0.0),
+                            );
                             delay_tap.eq_r.set(
                                 0,
                                 Curve::Peak,
-                                18_001.0,
-                                0.42,
+                                PANNER_EQ_FREQ,
+                                PANNER_EQ_Q,
                                 (eq_gain * -1.0).min(0.0),
                             );
                             let left = delay_tap.eq_l.process(
@@ -2116,10 +2117,9 @@ impl LastPlayedNotes {
         println!();
     }
 }
-
 fn format_time(seconds: f32, total_digits: usize) -> String {
     if seconds < 1.0 {
-        let milliseconds = seconds / 1000.0;
+        let milliseconds = seconds * 1000.0;
         let digits_after_decimal = (total_digits - milliseconds.trunc().to_string().len())
             .max(0)
             .min(total_digits - 1);
@@ -2129,5 +2129,6 @@ fn format_time(seconds: f32, total_digits: usize) -> String {
         format!("{seconds:.digits_after_decimal$} s")
     }
 }
+
 nih_export_clap!(Del2);
 nih_export_vst3!(Del2);
