@@ -80,6 +80,7 @@ const MIN_EQ_GAIN: f32 = -13.0;
 const PANNER_EQ_FREQ: f32 = 18_000.0;
 const PANNER_EQ_Q: f32 = 0.42;
 const MIN_PAN_GAIN: f32 = -4.2;
+const DEFAULT_TEMPO: f32 = 60.0;
 
 struct Del2 {
     params: Arc<Del2Params>,
@@ -120,6 +121,9 @@ struct Del2 {
     counting_state: CountingState,
     should_update_filter: Arc<AtomicBool>,
     enabled_actions: Arc<AtomicBoolArray>,
+    last_tempo: f32,
+    base_tempo: f32,
+    first_process_after_reset: bool,
 }
 
 /// All the parameters
@@ -157,13 +161,8 @@ pub struct Del2Params {
     last_frame_time: AtomicU64,
     // the rate we are nunning at now
     sample_rate: AtomicF32,
-    // the rate the preset was saved with
-    #[persist = "preset-sample-rate"]
-    preset_sample_rate: AtomicF32,
     // TODO: persist and use for conversions
     current_tempo: AtomicF32,
-    #[persist = "preset-tempo"]
-    preset_tempo: AtomicF32,
     time_sig_numerator: AtomicI32,
     learning_start_time: AtomicU64,
 }
@@ -502,6 +501,9 @@ impl Default for Del2 {
             counting_state: CountingState::TimeOut,
             should_update_filter,
             enabled_actions,
+            last_tempo: DEFAULT_TEMPO,
+            base_tempo: DEFAULT_TEMPO,
+            first_process_after_reset: true,
         }
     }
 }
@@ -539,8 +541,6 @@ impl Del2Params {
             })),
             last_frame_time: AtomicU64::new(0),
             sample_rate: 1.0.into(),
-            preset_sample_rate: (-1.0).into(),
-            preset_tempo: (-1.0).into(),
             current_tempo: (-1.0).into(),
             time_sig_numerator: (-1).into(),
             learning_start_time: AtomicU64::new(0),
@@ -647,31 +647,6 @@ impl Plugin for Del2 {
     fn reset(&mut self) {
         let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
 
-        let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
-        let preset_sample_rate = self.params.preset_sample_rate.load(Ordering::SeqCst);
-
-        if sample_rate != preset_sample_rate {
-            // if preset_sample_rate is not the initial value
-            // convert the delay times for the new SR
-            // we do this in reset() and not in process(),
-            // because if the user is changing the at runtime,
-            // we want the delay time to change along with the audio speed.
-            if preset_sample_rate > 0.0 {
-                self.params
-                    .previous_time_scaling_factor
-                    .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
-                let conversion_factor = sample_rate / preset_sample_rate;
-                for tap_index in 0..NUM_TAPS {
-                    let new_delay_time = conversion_factor
-                        * self.params.delay_times[tap_index].load(Ordering::SeqCst);
-                    self.params.delay_times[tap_index].store(new_delay_time, Ordering::SeqCst);
-                }
-            }
-            // store the actual sr, in case the user makes a new preset
-            self.params
-                .preset_sample_rate
-                .store(sample_rate, Ordering::SeqCst);
-        }
         // first make room in the array
         self.delay_taps.iter_mut().for_each(|delay_tap| {
             delay_tap.is_alive = false;
@@ -684,9 +659,10 @@ impl Plugin for Del2 {
         // then fill the array
         for tap_index in 0..NUM_TAPS {
             if tap_index < tap_counter {
-                self.start_tap(tap_index, true);
+                self.start_tap(tap_index, self.base_tempo);
             }
         }
+        self.first_process_after_reset = true;
         self.counting_state = CountingState::TimeOut;
         self.timing_last_event = 0;
         self.samples_since_last_event = 0;
@@ -724,42 +700,38 @@ impl Plugin for Del2 {
         // let sample_rate = context.transport().sample_rate;
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
 
-        let current_tempo = context.transport().tempo.unwrap_or(-1.0) as f32;
-        let preset_tempo = self.params.preset_tempo.load(Ordering::SeqCst);
+        let current_tempo = context.transport().tempo.unwrap_or(DEFAULT_TEMPO as f64) as f32;
 
-        if current_tempo > 0.0 && current_tempo != preset_tempo {
-            if preset_tempo > 0.0 {
-                // if preset_tempo is not the initial value
-                // convert the delay times for the new tempo
-                // we do this in  process() and not in reset(),
-                // because if the user changes the tempo in the song,
-                // we want the delay time to change with it.
+        if self.first_process_after_reset {
+            self.last_tempo = current_tempo;
+            self.base_tempo = current_tempo;
+            self.first_process_after_reset = false;
+            // nih_log!("first proc after reset: {}", self.last_tempo);
+        }
+        if current_tempo != DEFAULT_TEMPO && current_tempo != self.last_tempo {
+            // nih_log!("tempo change from {} to {current_tempo}", self.last_tempo);
+            self.last_tempo = current_tempo;
 
-                // the graph should remain stationary after the recalculation
-                self.params
-                    .previous_time_scaling_factor
-                    .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+            // convert the delay times for the new tempo
+            // we do this in  process() and not in reset(),
+            // because if the user changes the tempo in the song,
+            // we want the delay time to change with it.
 
-                let conversion_factor = preset_tempo / current_tempo;
-                let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
+            // the graph should remain stationary after the recalculation
+            self.params
+                .previous_time_scaling_factor
+                .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
 
-                // first start fading out the current delay taps
-                self.start_release_for_all_delay_taps();
-                for tap_index in 0..NUM_TAPS {
-                    let new_delay_time = conversion_factor
-                        * self.params.delay_times[tap_index].load(Ordering::SeqCst);
-                    self.params.delay_times[tap_index].store(new_delay_time, Ordering::SeqCst);
+            let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
 
-                    if tap_index < tap_counter {
-                        // find a free delay_tap to run the new delay time
-                        self.start_tap(tap_index, true);
-                    }
+            // first start fading out the current delay taps
+            self.start_release_for_all_delay_taps();
+            for tap_index in 0..NUM_TAPS {
+                if tap_index < tap_counter {
+                    // find a free delay_tap to run the new delay time
+                    self.start_tap(tap_index, current_tempo);
                 }
             }
-            // store the actual tempo, in case the user makes a new preset
-            self.params
-                .preset_tempo
-                .store(current_tempo, Ordering::SeqCst);
         }
 
         self.params
@@ -807,7 +779,7 @@ impl Plugin for Del2 {
                                 let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
                                 if tap_counter > old_nr_taps {
                                     // nih_log!("process: added a tap: {} > {old_nr_taps}", tap_counter);
-                                    self.start_tap(tap_counter - 1, true);
+                                    self.start_tap(tap_counter - 1, current_tempo);
                                 }
                             }
                             NoteEvent::NoteOff { note, .. } => {
@@ -1510,12 +1482,15 @@ impl Del2 {
         })
     }
 
-    fn start_tap(&mut self, new_index: usize, new_is_alive: bool) {
+    fn start_tap(&mut self, new_index: usize, tempo: f32) {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
         let global_params = &self.params.global;
 
-        let delay_time =
-            (self.params.delay_times[new_index].load(Ordering::SeqCst) * sample_rate) as u32;
+        let conversion_factor = self.base_tempo / tempo;
+        // nih_log!("conversion_factor: {conversion_factor}");
+        let delay_samples = (self.params.delay_times[new_index].load(Ordering::SeqCst)
+            * sample_rate
+            * conversion_factor) as u32;
         let note = self.params.notes[new_index].load(Ordering::SeqCst);
         let velocity = self.params.velocities[new_index].load(Ordering::SeqCst);
 
@@ -1536,9 +1511,9 @@ impl Del2 {
 
         for (index, delay_tap) in self.delay_taps.iter_mut().enumerate() {
             if delay_tap.is_alive {
-                // Recycle an old tap if `delay_time` and `note` match
+                // Recycle an old tap if `delay_samples` and `note` match
                 // TODO: re enable ?
-                // if delay_tap.delay_time == delay_time && delay_tap.note == note {
+                // if delay_tap.delay_samples == delay_samples && delay_tap.note == note {
                 //     delay_tap.velocity = velocity;
                 //     delay_tap.releasing = false;
                 //     delay_tap.amp_envelope.style =
@@ -1569,10 +1544,9 @@ impl Del2 {
             delay_tap.init(
                 amp_envelope,
                 self.next_internal_id,
-                delay_time,
+                delay_samples,
                 note,
                 velocity,
-                new_is_alive,
             );
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
             self.meter_indexes[new_index].store(found_inactive_index.unwrap(), Ordering::Relaxed);
@@ -1582,10 +1556,9 @@ impl Del2 {
             oldest_delay_tap.init(
                 amp_envelope,
                 self.next_internal_id,
-                delay_time,
+                delay_samples,
                 note,
                 velocity,
-                new_is_alive,
             );
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
             self.meter_indexes[new_index].store(found_oldest_index.unwrap(), Ordering::Relaxed);
