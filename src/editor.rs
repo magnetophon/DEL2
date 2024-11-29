@@ -398,7 +398,7 @@ impl View for DelayGraph {
                 border_color,
                 background_color,
             );
-            if current_time > 0 {
+            if current_time > 0.0 {
                 Self::draw_time_line(
                     canvas,
                     &params,
@@ -445,7 +445,7 @@ impl DelayGraph {
                     let current_time = params.current_time.load(Ordering::SeqCst);
                     match tap_counter {
                         0 => {
-                            if current_time > 0 {
+                            if current_time > 0.0 {
                                 String::from("no taps")
                             } else {
                                 String::new()
@@ -458,11 +458,7 @@ impl DelayGraph {
             )
             .class("tap-nr-label");
 
-            Label::new(
-                cx,
-                params.map(move |params| Self::create_tap_length_text(&params)),
-            )
-            .class("tap-length-label");
+            Label::new(cx, params.map(Self::create_tap_length_text)).class("tap-length-label");
         })
     }
     fn create_tap_length_text(params: &Arc<Del2Params>) -> String {
@@ -473,16 +469,15 @@ impl DelayGraph {
         let tempo = params.current_tempo.load(Ordering::SeqCst);
         let time_sig_numerator = params.time_sig_numerator.load(Ordering::SeqCst);
 
-        let seconds = if current_time > 0 {
-            current_time as f32 / params.sample_rate.load(Ordering::SeqCst)
+        let seconds = if current_time > 0.0 {
+            current_time
         } else if tap_counter > 0 {
-            params.delay_times[tap_counter - 1].load(Ordering::SeqCst) as f32
-                / params.sample_rate.load(Ordering::SeqCst)
+            params.delay_times[tap_counter - 1].load(Ordering::SeqCst)
         } else {
             0.0 // Default value in case both conditions fail
         };
 
-        if current_time == 0 && tap_counter == 0 {
+        if current_time == 0.0 && tap_counter == 0 {
             // return String::from("tap a rhythm!");
             return String::new();
         }
@@ -495,13 +490,13 @@ impl DelayGraph {
             let additional_beats = (remaining_seconds / seconds_per_beat).floor() as i32;
 
             if full_bars > 0 {
-                let bar_str = if current_time > 0 || full_bars > 1 {
+                let bar_str = if current_time > 0.0 || full_bars > 1 {
                     "bars"
                 } else {
                     "bar"
                 };
-                if current_time > 0 || additional_beats > 0 {
-                    let beat_str = if current_time > 0 || additional_beats != 1 {
+                if current_time > 0.0 || additional_beats > 0 {
+                    let beat_str = if current_time > 0.0 || additional_beats != 1 {
                         "beats"
                     } else {
                         "beat"
@@ -511,7 +506,7 @@ impl DelayGraph {
                     format!("{full_bars} {bar_str}")
                 }
             } else {
-                let beat_str = if current_time > 0 || additional_beats != 1 {
+                let beat_str = if current_time > 0.0 || additional_beats != 1 {
                     "beats"
                 } else {
                     "beat"
@@ -519,7 +514,7 @@ impl DelayGraph {
                 format!("{additional_beats} {beat_str}")
             }
         } else {
-            format_time(seconds * 1000.0, TOTAL_DIGITS)
+            format_time(seconds, TOTAL_DIGITS)
         }
     }
     fn compute_time_scaling_factor(
@@ -531,30 +526,30 @@ impl DelayGraph {
         // Load atomic values once
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
         let current_time = params.current_time.load(Ordering::SeqCst);
-        let max_tap_samples = params.max_tap_samples.load(Ordering::SeqCst);
+        let max_tap_time = params.max_tap_time.load(Ordering::SeqCst);
 
         // Calculate max delay time if necessary
         let max_delay_time = if tap_counter > 0 {
             params.delay_times[tap_counter - 1].load(Ordering::SeqCst)
         } else {
-            0
+            0.0
         };
 
-        let zoom_tap_samples = if current_time == 0 && tap_counter == 1 {
+        let zoom_tap_samples = if current_time == 0.0 && tap_counter == 1 {
             // one delay tap, put it in the middle
-            max_delay_time as f32
-        } else if tap_counter == NUM_TAPS || current_time == 0 {
+            max_delay_time
+        } else if tap_counter == NUM_TAPS || current_time == 0.0 {
             // time out, zoom in but leave a margin
-            0.18 * max_delay_time as f32
+            0.18 * max_delay_time
         } else {
-            max_tap_samples as f32
+            max_tap_time
         };
 
         // Use mul_add for efficient denominator calculation
         let denominator = outline_width.mul_add(-0.5, rect_width - border_width);
 
         // Calculate scaling factor
-        let total_delay = max_delay_time as f32 + zoom_tap_samples;
+        let total_delay = max_delay_time + zoom_tap_samples;
         if denominator == 0.0 {
             // Handle potential division by zero
             return f32::INFINITY;
@@ -637,7 +632,7 @@ impl DelayGraph {
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
 
         for i in 0..tap_counter {
-            let delay_time_value = params.delay_times[i].load(Ordering::SeqCst) as f32;
+            let delay_time_value = params.delay_times[i].load(Ordering::SeqCst);
             let x_offset = delay_time_value.mul_add(time_scaling_factor, border_width * 0.5);
 
             let start_y = border_width.mul_add(-0.5, bounds.y + bounds.h);
@@ -673,7 +668,7 @@ impl DelayGraph {
         let current_time = params.current_time.load(Ordering::SeqCst);
 
         // Compute offset using mul_add for precision and performance
-        let x_offset = (current_time as f32).mul_add(time_scaling_factor, border_width * 0.5);
+        let x_offset = current_time.mul_add(time_scaling_factor, border_width * 0.5);
 
         // Calculate y_move using mul_add
         let y_move = border_width.mul_add(-0.5, bounds.y + bounds.h);
@@ -739,7 +734,7 @@ impl DelayGraph {
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
 
         for i in 0..tap_counter {
-            let delay_time = params.delay_times[i].load(Ordering::SeqCst) as f32;
+            let delay_time = params.delay_times[i].load(Ordering::SeqCst);
             let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
 
             let velocity_value = params.velocities[i].load(Ordering::SeqCst);
@@ -894,7 +889,7 @@ impl DelayGraph {
         note_path.close();
 
         for i in 0..tap_counter {
-            let delay_time = params.delay_times[i].load(Ordering::SeqCst) as f32;
+            let delay_time = params.delay_times[i].load(Ordering::SeqCst);
             let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
 
             let note_value = params.notes[i].load(Ordering::SeqCst);

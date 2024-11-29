@@ -134,7 +134,7 @@ pub struct Del2Params {
     #[persist = "enabled-actions"]
     enabled_actions: ArcAtomicBoolArray,
     #[persist = "delay-times"]
-    delay_times: AtomicU32Array,
+    delay_times: AtomicF32Array,
     #[persist = "velocities"]
     velocities: AtomicF32Array,
     #[persist = "notes"]
@@ -142,8 +142,8 @@ pub struct Del2Params {
     #[persist = "tap-counter"]
     tap_counter: Arc<AtomicUsize>,
     old_nr_taps: Arc<AtomicUsize>,
-    current_time: Arc<AtomicU32>,
-    max_tap_samples: Arc<AtomicU32>,
+    current_time: Arc<AtomicF32>,
+    max_tap_time: Arc<AtomicF32>,
     #[persist = "first-note"]
     first_note: Arc<AtomicU8>,
     previous_time_scaling_factor: Arc<AtomicF32>,
@@ -519,11 +519,11 @@ impl Del2Params {
 
             tap_counter: Arc::new(AtomicUsize::new(0)),
             old_nr_taps: Arc::new(AtomicUsize::new(0)),
-            delay_times: AtomicU32Array(array_init(|_| Arc::new(AtomicU32::new(0)))),
+            delay_times: AtomicF32Array(array_init(|_| Arc::new(AtomicF32::new(0.0)))),
             velocities: AtomicF32Array(array_init(|_| Arc::new(AtomicF32::new(0.0)))),
             notes: AtomicU8Array(array_init(|_| Arc::new(AtomicU8::new(0)))),
-            current_time: Arc::new(AtomicU32::new(0)),
-            max_tap_samples: Arc::new(AtomicU32::new(0)),
+            current_time: Arc::new(AtomicF32::new(0.0)),
+            max_tap_time: Arc::new(AtomicF32::new(0.0)),
             first_note: Arc::new(AtomicU8::new(NO_LEARNED_NOTE)),
             previous_time_scaling_factor: Arc::new(AtomicF32::new(0.0)),
             previous_note_heights: AtomicF32Array(array_init(|_| Arc::new(AtomicF32::new(0.0)))),
@@ -537,7 +537,7 @@ impl Del2Params {
             })),
             last_frame_time: AtomicU64::new(0),
             sample_rate: 1.0.into(),
-            preset_sample_rate: 1.0.into(),
+            preset_sample_rate: (-1.0).into(),
             preset_tempo: (-1.0).into(),
             current_tempo: (-1.0).into(),
             time_sig_numerator: (-1).into(),
@@ -626,7 +626,7 @@ impl Plugin for Del2 {
 
         // Initialize filter parameters for each tap
         self.initialize_filter_parameters();
-
+        nih_log!("sample_rate: {sample_rate}");
         for delay_tap in &mut self.delay_taps {
             delay_tap.eq_l.set_sample_rate(sample_rate);
             delay_tap.eq_r.set_sample_rate(sample_rate);
@@ -648,14 +648,14 @@ impl Plugin for Del2 {
             // because if the user is changing the at runtime,
             // we want the delay time to change along with the audio speed.
             if preset_sample_rate > 0.0 {
+                nih_log!("sr change from {preset_sample_rate} to {sample_rate}");
                 self.params
                     .previous_time_scaling_factor
                     .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
                 let conversion_factor = sample_rate / preset_sample_rate;
                 for tap_index in 0..NUM_TAPS {
-                    let new_delay_time = (conversion_factor
-                        * self.params.delay_times[tap_index].load(Ordering::SeqCst) as f32)
-                        as u32;
+                    let new_delay_time = conversion_factor
+                        * self.params.delay_times[tap_index].load(Ordering::SeqCst);
                     self.params.delay_times[tap_index].store(new_delay_time, Ordering::SeqCst);
                 }
             }
@@ -709,16 +709,18 @@ impl Plugin for Del2 {
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         self.update_peak_meter(buffer, &self.input_meter);
-        self.update_min_max_tap_samples();
+        self.update_min_max_tap_time();
 
         let num_samples = buffer.samples();
 
-        let sample_rate = context.transport().sample_rate;
+        // let sample_rate = context.transport().sample_rate;
+        let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
 
         let current_tempo = context.transport().tempo.unwrap_or(-1.0) as f32;
         let preset_tempo = self.params.preset_tempo.load(Ordering::SeqCst);
 
         if current_tempo > 0.0 && current_tempo != preset_tempo {
+            nih_log!("tempo change from {preset_tempo} to {current_tempo}");
             if preset_tempo > 0.0 {
                 // if preset_tempo is not the initial value
                 // convert the delay times for the new tempo
@@ -737,15 +739,23 @@ impl Plugin for Del2 {
                 // first start fading out the current delay taps
                 self.start_release_for_all_delay_taps();
                 for tap_index in 0..NUM_TAPS {
-                    let new_delay_time = (conversion_factor
-                        * self.params.delay_times[tap_index].load(Ordering::SeqCst) as f32)
-                        as u32;
+                    nih_log!("tap nr {tap_index}");
+                    nih_log!(
+                        "old time: {}",
+                        self.params.delay_times[tap_index].load(Ordering::SeqCst)
+                    );
+                    let new_delay_time = conversion_factor
+                        * self.params.delay_times[tap_index].load(Ordering::SeqCst);
                     self.params.delay_times[tap_index].store(new_delay_time, Ordering::SeqCst);
 
                     if tap_index < tap_counter {
                         // find a free delay_tap to run the new delay time
                         self.start_tap(tap_index, true);
                     }
+                    nih_log!(
+                        "new time: {}",
+                        self.params.delay_times[tap_index].load(Ordering::SeqCst)
+                    );
                 }
             }
             // store the actual tempo, in case the user makes a new preset
@@ -932,13 +942,14 @@ impl Plugin for Del2 {
                                 / (drive * global_drive[value_idx]);
                             let eq_gain = delay_tap.eq_gain.next();
                             let pan_gain = delay_tap.pan_gain.next();
+                            nih_log!("proc sample_rate: {sample_rate}");
                             delay_tap
                                 .eq_l
-                                .set(0, Curve::Peak, 18_000.0, 0.42, eq_gain.min(0.0));
+                                .set(0, Curve::Peak, 18_001.0, 0.42, eq_gain.min(0.0));
                             delay_tap.eq_r.set(
                                 0,
                                 Curve::Peak,
-                                18_000.0,
+                                18_001.0,
                                 0.42,
                                 (eq_gain * -1.0).min(0.0),
                             );
@@ -994,10 +1005,10 @@ impl Plugin for Del2 {
 }
 
 impl Del2 {
-    fn update_min_max_tap_samples(&mut self) {
+    fn update_min_max_tap_time(&mut self) {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
-        self.params.max_tap_samples.store(
-            (sample_rate * self.params.global.max_tap_ms.value() * 0.001) as u32,
+        self.params.max_tap_time.store(
+            self.params.global.max_tap_ms.value() * 0.001,
             Ordering::SeqCst,
         );
         self.min_tap_samples =
@@ -1041,6 +1052,8 @@ impl Del2 {
         let is_learning = self.is_learning.load(Ordering::SeqCst);
         let taps_unlocked = !self.enabled_actions.load(LOCK_TAPS);
         let min_tap_samples = self.min_tap_samples;
+        let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
+        let sample_rate_recip = sample_rate.recip();
 
         if !is_delay_note {
             self.last_played_notes.note_on(note);
@@ -1093,7 +1106,9 @@ impl Del2 {
         }
 
         // Check for timeout condition and reset if necessary
-        if self.samples_since_last_event > self.params.max_tap_samples.load(Ordering::SeqCst) {
+        if self.samples_since_last_event
+            > (self.params.max_tap_time.load(Ordering::SeqCst) * sample_rate) as u32
+        {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
@@ -1105,13 +1120,17 @@ impl Del2 {
             // Update tap information with timing and velocity
             if tap_counter > 0 {
                 self.params.delay_times[tap_counter].store(
-                    self.samples_since_last_event
-                        + self.params.delay_times[tap_counter - 1].load(Ordering::SeqCst),
+                    (self.samples_since_last_event as f32).mul_add(
+                        sample_rate_recip,
+                        self.params.delay_times[tap_counter - 1].load(Ordering::SeqCst),
+                    ),
                     Ordering::SeqCst,
                 );
             } else {
-                self.params.delay_times[tap_counter]
-                    .store(self.samples_since_last_event, Ordering::SeqCst);
+                self.params.delay_times[tap_counter].store(
+                    self.samples_since_last_event as f32 * sample_rate_recip,
+                    Ordering::SeqCst,
+                );
             }
             self.params.velocities[tap_counter].store(velocity, Ordering::SeqCst);
             self.params.notes[tap_counter].store(note, Ordering::SeqCst);
@@ -1210,6 +1229,8 @@ impl Del2 {
 
     fn prepare_for_delay(&mut self, buffer_samples: usize) {
         let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
+        let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
+        let sample_rate_recip = sample_rate.recip();
         match self.counting_state {
             CountingState::TimeOut => {}
             CountingState::CountingInBuffer => {
@@ -1223,7 +1244,9 @@ impl Del2 {
             }
         }
 
-        if self.samples_since_last_event > self.params.max_tap_samples.load(Ordering::SeqCst) {
+        if self.samples_since_last_event
+            > (self.params.max_tap_time.load(Ordering::SeqCst) * sample_rate) as u32
+        {
             self.counting_state = CountingState::TimeOut;
             self.timing_last_event = 0;
             self.samples_since_last_event = 0;
@@ -1235,16 +1258,16 @@ impl Del2 {
             }
         }
 
-        let samples_since_last_event = self.samples_since_last_event;
+        let samples_since_last_event = self.samples_since_last_event as f32;
 
         // Calculate the current time based on whether there are taps
         let current_time = if self.counting_state == CountingState::TimeOut {
-            0
+            0.0
         } else if tap_counter > 0 {
             let last_delay_time = self.params.delay_times[tap_counter - 1].load(Ordering::SeqCst);
-            last_delay_time + samples_since_last_event
+            samples_since_last_event.mul_add(sample_rate_recip, last_delay_time)
         } else {
-            samples_since_last_event
+            samples_since_last_event * sample_rate_recip
         };
 
         // Store the computed current time
@@ -1335,7 +1358,7 @@ impl Del2 {
 
     fn set_delay_buffer_size(&mut self, buffer_config: &BufferConfig) {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
-        let total_delay_samples = sample_rate as f64 * TOTAL_DELAY_SECONDS as f64;
+        let total_delay_samples = f64::from(sample_rate) * TOTAL_DELAY_SECONDS as f64;
         let min_size = Self::calculate_buffer_size(
             buffer_config.min_buffer_size.unwrap_or(1),
             total_delay_samples,
@@ -1395,7 +1418,7 @@ impl Del2 {
     }
 
     fn v2s_f32_ms_then_s(total_digits: usize) -> Arc<dyn Fn(f32) -> String + Send + Sync> {
-        Arc::new(move |value| format_time(value, total_digits))
+        Arc::new(move |value| format_time(value * 0.001, total_digits))
     }
     fn _v2s_f32_ms_then_s(total_digits: usize) -> Arc<dyn Fn(f32) -> String + Send + Sync> {
         Arc::new(move |value| {
@@ -1490,7 +1513,8 @@ impl Del2 {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
         let global_params = &self.params.global;
 
-        let delay_time = self.params.delay_times[new_index].load(Ordering::SeqCst);
+        let delay_time =
+            (self.params.delay_times[new_index].load(Ordering::SeqCst) * sample_rate) as u32;
         let note = self.params.notes[new_index].load(Ordering::SeqCst);
         let velocity = self.params.velocities[new_index].load(Ordering::SeqCst);
 
@@ -1881,6 +1905,7 @@ impl PersistentField<'_, u8> for ArcAtomicBoolArray {
 }
 struct AtomicU8Array([Arc<AtomicU8>; NUM_TAPS]);
 pub struct AtomicUsizeArray([Arc<AtomicUsize>; NUM_TAPS]);
+#[allow(dead_code)]
 struct AtomicU32Array([Arc<AtomicU32>; NUM_TAPS]);
 pub struct AtomicF32Array([Arc<AtomicF32>; NUM_TAPS]);
 
@@ -2092,14 +2117,14 @@ impl LastPlayedNotes {
     }
 }
 
-fn format_time(value: f32, total_digits: usize) -> String {
-    if value < 1000.0 {
-        let digits_after_decimal = (total_digits - value.trunc().to_string().len())
+fn format_time(seconds: f32, total_digits: usize) -> String {
+    if seconds < 1.0 {
+        let milliseconds = seconds / 1000.0;
+        let digits_after_decimal = (total_digits - milliseconds.trunc().to_string().len())
             .max(0)
             .min(total_digits - 1);
-        format!("{value:.digits_after_decimal$} ms")
+        format!("{milliseconds:.digits_after_decimal$} ms")
     } else {
-        let seconds = value / 1000.0;
         let digits_after_decimal = (total_digits - seconds.trunc().to_string().len()).max(0);
         format!("{seconds:.digits_after_decimal$} s")
     }
