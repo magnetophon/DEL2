@@ -13,6 +13,7 @@
 
 .parameters {
     top: 0px;
+    bottom: 4px;
     /* the columns are the same width, but one needs to include spacing and the other doesn't */
     child-left: 0px;
     child-right: 9px;
@@ -67,7 +68,7 @@ param-slider .value-entry {
     /* // This should align nicely with the right edge of the slider */
     left: 269px;
     right: 1s;
-    top: 9px;
+    top: 1s;
     bottom: 9px;
     /* background-color: #4e4e4e; */
 }
@@ -87,7 +88,7 @@ param-slider .value-entry {
 
 delay-graph {
     top: 9px;
-    bottom: 14px;
+    bottom: 9px;
     right: 9px;
     border-width: 1px;
     outline-width: 5px;

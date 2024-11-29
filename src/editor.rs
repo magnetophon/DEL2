@@ -284,7 +284,8 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                         });
                     });
                 })
-                .size(Auto);
+                .size(Auto)
+                .class("param-group");
             })
             .class("parameters");
             VStack::new(cx, |cx| {
