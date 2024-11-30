@@ -16,7 +16,36 @@ https://github.com/neodsp/simper-filter
 
 TODO: research choke event, possibly clear_taps()
 
+***************
+dry/wet attack
+wet release
+drive min
+mutes max
 
+***************
+dry/wet mutes
+wet drive
+attack release
+min max
+channel tempo_sync
+
+***************
+dry/wet wet
+attack release
+min max
+channel tempo_sync
+mutes drive
+
+
+***************
+dry/wet wet
+attack release
+mutes drive
+
+pref:
+min max
+channel tempo_sync
+tooltips ??
  */
 
 // #![allow(non_snake_case)]

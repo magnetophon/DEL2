@@ -80,8 +80,9 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     })
                     .class("row");
                     HStack::new(cx, |cx| {
-                        Label::new(cx, "attack").class("slider-label");
-                        ParamSlider::new(cx, Data::params, |params| &params.global.attack_ms)
+                        Label::new(cx, "mutes").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
+                            .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                             .class("widget");
                     })
                     .class("row");
@@ -95,8 +96,8 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     })
                     .class("row");
                     HStack::new(cx, |cx| {
-                        Label::new(cx, "release").class("slider-label");
-                        ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
+                        Label::new(cx, "drive").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.global_drive)
                             .class("widget");
                     })
                     .class("row");
@@ -105,27 +106,26 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
 
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
-                        Label::new(cx, "drive").class("slider-label");
-                        ParamSlider::new(cx, Data::params, |params| &params.global.global_drive)
+                        Label::new(cx, "attack").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.attack_ms)
                             .class("widget");
                     })
                     .class("row");
                     HStack::new(cx, |cx| {
-                        Label::new(cx, "min tap").class("slider-label");
-                        ParamSlider::new(cx, Data::params, |params| {
-                            &params.global.min_tap_milliseconds
-                        })
-                        .class("widget");
+                        Label::new(cx, "release").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.release_ms)
+                            .class("widget");
                     })
                     .class("row");
                 })
                 .class("param-group");
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
-                        Label::new(cx, "mutes").class("slider-label");
-                        ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
-                            .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
-                            .class("widget");
+                        Label::new(cx, "min tap").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| {
+                            &params.global.min_tap_milliseconds
+                        })
+                        .class("widget");
                     })
                     .class("row");
                     HStack::new(cx, |cx| {
