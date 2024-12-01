@@ -755,7 +755,7 @@ impl Plugin for Del2 {
         }
         let base_tempo = self.params.base_tempo.load(Ordering::SeqCst);
         let running_delay_tempo = self.running_delay_tempo;
-        if (sync && current_tempo != base_tempo && current_tempo != running_delay_tempo)
+        if (sync && running_delay_tempo != current_tempo)
             || (!sync && running_delay_tempo != base_tempo)
         {
             self.running_delay_tempo = if sync { current_tempo } else { base_tempo };
@@ -1582,6 +1582,7 @@ impl Del2 {
         let note = self.params.notes[new_index].load(Ordering::SeqCst);
         let velocity = self.params.velocities[new_index].load(Ordering::SeqCst);
 
+        self.should_update_filter.store(true, Ordering::Release);
         if global_params.mute_is_toggle.value() {
             self.enabled_actions.store(MUTE_OUT, false);
         }
@@ -1600,18 +1601,18 @@ impl Del2 {
         for (index, delay_tap) in self.delay_taps.iter_mut().enumerate() {
             if delay_tap.is_alive {
                 // Recycle an old tap if `delay_samples` and `note` match
-                // TODO: re enable ?
-                // if delay_tap.delay_samples == delay_samples && delay_tap.note == note {
-                //     delay_tap.velocity = velocity;
-                //     delay_tap.releasing = false;
-                //     delay_tap.amp_envelope.style =
-                //         SmoothingStyle::Linear(self.params.global.attack_ms.value());
-                //     delay_tap.amp_envelope.set_target(sample_rate, 1.0);
-                //     // delay_tap.meter_index = new_index;
-                //     return;
-                // } else
-
-                if delay_tap.internal_id < oldest_id {
+                // nih_log!("delay_tap.delay_time == delay_samples: {}, {delay_samples}", delay_tap.delay_time);
+                if delay_tap.delay_time == delay_samples && delay_tap.note == note {
+                    delay_tap.velocity = velocity;
+                    delay_tap.releasing = false;
+                    delay_tap.amp_envelope.style =
+                        SmoothingStyle::Linear(self.params.global.attack_ms.value());
+                    delay_tap.amp_envelope.set_target(sample_rate, 1.0);
+                    self.meter_indexes[new_index].store(index, Ordering::Relaxed);
+                    // delay_tap.meter_index = new_index;
+                    // nih_log!("recycled tap {index}");
+                    return;
+                } else if delay_tap.internal_id < oldest_id {
                     // Track the oldest active tap
                     oldest_id = delay_tap.internal_id;
                     found_oldest = Some(delay_tap);
@@ -1651,7 +1652,6 @@ impl Del2 {
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
             self.meter_indexes[new_index].store(found_oldest_index.unwrap(), Ordering::Relaxed);
         }
-        self.should_update_filter.store(true, Ordering::Release);
     }
 
     /// Start the release process for all delay taps by changing their amplitude envelope.
