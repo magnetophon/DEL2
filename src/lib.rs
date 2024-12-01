@@ -759,8 +759,7 @@ impl Plugin for Del2 {
             // nih_log!("first proc after reset: {}", self.last_tempo);
         }
         if self.last_sync != sync
-            && current_tempo != DEFAULT_TEMPO
-            && current_tempo != self.last_tempo
+            || (current_tempo != DEFAULT_TEMPO && current_tempo != self.last_tempo)
         {
             // nih_log!("tempo change from {} to {current_tempo}", self.last_tempo);
             self.last_tempo = current_tempo;
@@ -779,12 +778,13 @@ impl Plugin for Del2 {
             let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
 
             // first start fading out the current delay taps
+
             self.start_release_for_all_delay_taps();
+            // self.delay_taps.iter_mut().for_each(|delay_tap| {
+            // delay_tap.is_alive = false;
+            // });
             for tap_index in 0..tap_counter {
-                // if tap_index < tap_counter {
-                // find a free delay_tap to run the new delay time
                 self.start_tap(tap_index, current_tempo);
-                // }
             }
         }
 
@@ -939,6 +939,9 @@ impl Plugin for Del2 {
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                             let pre_filter_gain =
                                 global_drive[value_idx] * self.delay_tap_amp_envelope[value_idx];
+                            // if self.delay_tap_amp_envelope[value_idx] != 1.0 && self.delay_tap_amp_envelope[value_idx] != 0.0 {
+                            // nih_log!("self.delay_tap_amp_envelope[value_idx]: {}", self.delay_tap_amp_envelope[value_idx]);
+                            // }
                             delay_tap.delayed_audio_l[sample_idx] =
                                 self.delay_buffer[0].lin_interp_f32(
                                     read_index - delay_tap.smoothed_offset_l.next()
@@ -1639,7 +1642,7 @@ impl Del2 {
 
         if let Some(delay_tap) = found_inactive {
             // Initialize the non-active tap
-            // nih_log!("start_tap: inactive tap: {}", found_inactive_index.unwrap());
+            nih_log!("start_tap: inactive tap: {}", found_inactive_index.unwrap());
             delay_tap.init(
                 amp_envelope,
                 self.next_internal_id,
@@ -1650,7 +1653,7 @@ impl Del2 {
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
             self.meter_indexes[new_index].store(found_inactive_index.unwrap(), Ordering::Relaxed);
         } else if let Some(oldest_delay_tap) = found_oldest {
-            // nih_log!("start_tap: oldest tap: {}", found_oldest_index.unwrap());
+            nih_log!("start_tap: oldest tap: {}", found_oldest_index.unwrap());
             // Replace the oldest tap if needed
             oldest_delay_tap.init(
                 amp_envelope,

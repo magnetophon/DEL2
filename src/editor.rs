@@ -491,7 +491,7 @@ impl DelayGraph {
             1.0
         };
 
-        nih_log!("label conversion_factor: {conversion_factor}");
+        // nih_log!("label conversion_factor: {conversion_factor}");
         let seconds = if current_time > 0.0 {
             current_time
         } else if tap_counter > 0 {
