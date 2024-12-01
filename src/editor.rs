@@ -55,7 +55,7 @@ impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1408, 704))
+    ViziaState::new(|| (1428, 714))
 }
 
 pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -80,9 +80,8 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     })
                     .class("row");
                     HStack::new(cx, |cx| {
-                        Label::new(cx, "mutes").class("slider-label");
-                        ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
-                            .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
+                        Label::new(cx, "listen to").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.channel)
                             .class("widget");
                     })
                     .class("row");
@@ -132,6 +131,23 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                         Label::new(cx, "max tap").class("slider-label");
                         ParamSlider::new(cx, Data::params, |params| &params.global.max_tap_ms)
                             .set_style(ParamSliderStyle::FromLeft)
+                            .class("widget");
+                    })
+                    .class("row");
+                })
+                .class("param-group");
+                HStack::new(cx, |cx| {
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "mutes").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
+                            .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
+                            .class("widget");
+                    })
+                    .class("row");
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "sync").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.global.sync)
+                            .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                             .class("widget");
                     })
                     .class("row");
@@ -468,11 +484,18 @@ impl DelayGraph {
         let current_time = params.current_time.load(Ordering::SeqCst);
         let tempo = params.current_tempo.load(Ordering::SeqCst);
         let time_sig_numerator = params.time_sig_numerator.load(Ordering::SeqCst);
+        let sync = params.global.sync.value();
+        let conversion_factor = if sync {
+            params.base_tempo.load(Ordering::SeqCst) / tempo
+        } else {
+            1.0
+        };
 
+        nih_log!("label conversion_factor: {conversion_factor}");
         let seconds = if current_time > 0.0 {
             current_time
         } else if tap_counter > 0 {
-            params.delay_times[tap_counter - 1].load(Ordering::SeqCst)
+            params.delay_times[tap_counter - 1].load(Ordering::SeqCst) * conversion_factor
         } else {
             0.0 // Default value in case both conditions fail
         };
@@ -482,7 +505,7 @@ impl DelayGraph {
             return String::new();
         }
 
-        if tempo > 0.0 && time_sig_numerator > 0 {
+        if sync && tempo > 0.0 && time_sig_numerator > 0 {
             let seconds_per_beat = 60.0 / tempo;
             let seconds_per_measure = seconds_per_beat * time_sig_numerator as f32;
             let full_bars = (seconds / seconds_per_measure).floor() as i32;

@@ -151,7 +151,7 @@ struct Del2 {
     should_update_filter: Arc<AtomicBool>,
     enabled_actions: Arc<AtomicBoolArray>,
     last_tempo: f32,
-    base_tempo: f32,
+    last_sync: bool,
     first_process_after_reset: bool,
 }
 
@@ -192,6 +192,7 @@ pub struct Del2Params {
     sample_rate: AtomicF32,
     // TODO: persist and use for conversions
     current_tempo: AtomicF32,
+    base_tempo: AtomicF32,
     time_sig_numerator: AtomicI32,
     learning_start_time: AtomicU64,
 }
@@ -215,6 +216,10 @@ struct GlobalParams {
     pub min_tap_milliseconds: FloatParam,
     #[id = "max_tap_ms"]
     pub max_tap_ms: FloatParam,
+    #[id = "channel"]
+    pub channel: IntParam,
+    #[id = "sync"]
+    pub sync: BoolParam,
 }
 
 impl GlobalParams {
@@ -309,6 +314,18 @@ impl GlobalParams {
             )
             .with_value_to_string(Del2::v2s_f32_ms_then_s(3))
             .with_string_to_value(Del2::s2v_f32_ms_then_s()),
+
+            channel: IntParam::new(
+                "channel",
+                0, // 0 means: any channel
+                IntRange::Linear { min: 0, max: 16 },
+            )
+            .with_value_to_string(Del2::v2s_i32_channel())
+            .with_string_to_value(Del2::s2v_i32_channel()),
+
+            sync: BoolParam::new("sync", true).with_value_to_string(Arc::new(|value| {
+                String::from(if value { "bpm" } else { "free" })
+            })),
         }
     }
 }
@@ -531,7 +548,7 @@ impl Default for Del2 {
             should_update_filter,
             enabled_actions,
             last_tempo: DEFAULT_TEMPO,
-            base_tempo: DEFAULT_TEMPO,
+            last_sync: false,
             first_process_after_reset: true,
         }
     }
@@ -571,6 +588,7 @@ impl Del2Params {
             last_frame_time: AtomicU64::new(0),
             sample_rate: 1.0.into(),
             current_tempo: (-1.0).into(),
+            base_tempo: (DEFAULT_TEMPO).into(),
             time_sig_numerator: (-1).into(),
             learning_start_time: AtomicU64::new(0),
         }
@@ -686,10 +704,10 @@ impl Plugin for Del2 {
         });
 
         // then fill the array
-        for tap_index in 0..NUM_TAPS {
-            if tap_index < tap_counter {
-                self.start_tap(tap_index, self.base_tempo);
-            }
+        for tap_index in 0..tap_counter {
+            // if tap_index < tap_counter {
+            self.start_tap(tap_index, self.params.base_tempo.load(Ordering::SeqCst));
+            // }
         }
         self.first_process_after_reset = true;
         self.counting_state = CountingState::TimeOut;
@@ -730,16 +748,23 @@ impl Plugin for Del2 {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
 
         let current_tempo = context.transport().tempo.unwrap_or(DEFAULT_TEMPO as f64) as f32;
+        let sync = self.params.global.sync.value();
 
         if self.first_process_after_reset {
             self.last_tempo = current_tempo;
-            self.base_tempo = current_tempo;
+            self.params
+                .base_tempo
+                .store(current_tempo, Ordering::SeqCst);
             self.first_process_after_reset = false;
             // nih_log!("first proc after reset: {}", self.last_tempo);
         }
-        if current_tempo != DEFAULT_TEMPO && current_tempo != self.last_tempo {
+        if self.last_sync != sync
+            && current_tempo != DEFAULT_TEMPO
+            && current_tempo != self.last_tempo
+        {
             // nih_log!("tempo change from {} to {current_tempo}", self.last_tempo);
             self.last_tempo = current_tempo;
+            self.last_sync = sync;
 
             // convert the delay times for the new tempo
             // we do this in  process() and not in reset(),
@@ -755,11 +780,11 @@ impl Plugin for Del2 {
 
             // first start fading out the current delay taps
             self.start_release_for_all_delay_taps();
-            for tap_index in 0..NUM_TAPS {
-                if tap_index < tap_counter {
-                    // find a free delay_tap to run the new delay time
-                    self.start_tap(tap_index, current_tempo);
-                }
+            for tap_index in 0..tap_counter {
+                // if tap_index < tap_counter {
+                // find a free delay_tap to run the new delay time
+                self.start_tap(tap_index, current_tempo);
+                // }
             }
         }
 
@@ -800,19 +825,27 @@ impl Plugin for Del2 {
                         match event {
                             NoteEvent::NoteOn {
                                 timing,
+                                channel,
                                 note,
                                 velocity,
                                 ..
                             } => {
-                                self.store_note_on_in_delay_data(timing, note, velocity);
-                                let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
-                                if tap_counter > old_nr_taps {
-                                    // nih_log!("process: added a tap: {} > {old_nr_taps}", tap_counter);
-                                    self.start_tap(tap_counter - 1, current_tempo);
+                                let listen_to = self.params.global.channel.value() - 1;
+                                if listen_to as u8 == channel || listen_to == -1 {
+                                    self.store_note_on_in_delay_data(timing, note, velocity);
+                                    let tap_counter =
+                                        self.params.tap_counter.load(Ordering::SeqCst);
+                                    if tap_counter > old_nr_taps {
+                                        // nih_log!("process: added a tap: {} > {old_nr_taps}", tap_counter);
+                                        self.start_tap(tap_counter - 1, current_tempo);
+                                    }
                                 }
                             }
-                            NoteEvent::NoteOff { note, .. } => {
-                                self.store_note_off_in_delay_data(note);
+                            NoteEvent::NoteOff { channel, note, .. } => {
+                                let listen_to = self.params.global.channel.value() - 1;
+                                if listen_to as u8 == channel || listen_to == -1 {
+                                    self.store_note_off_in_delay_data(note);
+                                }
                             }
                             _ => (),
                         };
@@ -1076,6 +1109,10 @@ impl Del2 {
                     // If in TimeOut state, reset and start new counting phase
                     self.clear_taps(timing, true);
                     self.params.first_note.store(note, Ordering::SeqCst);
+                    self.params.base_tempo.store(
+                        self.params.current_tempo.load(Ordering::SeqCst),
+                        Ordering::SeqCst,
+                    );
                 }
             }
             CountingState::CountingInBuffer => {
@@ -1511,12 +1548,45 @@ impl Del2 {
         })
     }
 
+    fn v2s_i32_channel() -> Arc<dyn Fn(i32) -> String + Send + Sync> {
+        Arc::new(move |value| {
+            if value < 1 {
+                "any channel".to_string()
+            } else {
+                format!("channel {value}")
+            }
+        })
+    }
+    fn s2v_i32_channel() -> Arc<dyn Fn(&str) -> Option<i32> + Send + Sync> {
+        Arc::new(move |string| {
+            // Retain only numeric characters from the input string
+            let numeric_string: String = string.chars().filter(|c| c.is_digit(10)).collect();
+
+            // Attempt to parse the string as an i32
+            if let Ok(number) = numeric_string.parse::<i32>() {
+                // Check if the number is within the desired range
+                if number >= 1 && number <= 16 {
+                    return Some(number);
+                }
+            }
+            // If parsing fails or the number is out of range, return 0
+            Some(0)
+        })
+    }
+
     fn start_tap(&mut self, new_index: usize, tempo: f32) {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
         let global_params = &self.params.global;
 
-        let conversion_factor = self.base_tempo / tempo;
-        // nih_log!("conversion_factor: {conversion_factor}");
+        let sync = self.params.global.sync.value();
+        let conversion_factor = self.params.base_tempo.load(Ordering::SeqCst) / tempo;
+        // if sync {
+        // self.params.base_tempo.load(Ordering::SeqCst) / tempo
+        // } else {
+        // 1.0
+        // };
+
+        nih_log!("conversion_factor: {conversion_factor}");
         let delay_samples = (self.params.delay_times[new_index].load(Ordering::SeqCst)
             * sample_rate
             * conversion_factor) as u32;
