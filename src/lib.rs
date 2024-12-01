@@ -150,8 +150,7 @@ struct Del2 {
     counting_state: CountingState,
     should_update_filter: Arc<AtomicBool>,
     enabled_actions: Arc<AtomicBoolArray>,
-    last_tempo: f32,
-    last_sync: bool,
+    running_delay_tempo: f32,
     first_process_after_reset: bool,
 }
 
@@ -192,9 +191,9 @@ pub struct Del2Params {
     sample_rate: AtomicF32,
     // TODO: persist and use for conversions
     current_tempo: AtomicF32,
-    base_tempo: AtomicF32,
     time_sig_numerator: AtomicI32,
     learning_start_time: AtomicU64,
+    base_tempo: AtomicF32,
 }
 
 /// Contains the global parameters.
@@ -547,8 +546,7 @@ impl Default for Del2 {
             counting_state: CountingState::TimeOut,
             should_update_filter,
             enabled_actions,
-            last_tempo: DEFAULT_TEMPO,
-            last_sync: false,
+            running_delay_tempo: DEFAULT_TEMPO,
             first_process_after_reset: true,
         }
     }
@@ -588,9 +586,9 @@ impl Del2Params {
             last_frame_time: AtomicU64::new(0),
             sample_rate: 1.0.into(),
             current_tempo: (-1.0).into(),
-            base_tempo: (DEFAULT_TEMPO).into(),
             time_sig_numerator: (-1).into(),
             learning_start_time: AtomicU64::new(0),
+            base_tempo: (DEFAULT_TEMPO).into(),
         }
     }
 }
@@ -745,23 +743,26 @@ impl Plugin for Del2 {
         // let sample_rate = context.transport().sample_rate;
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
 
-        let current_tempo = context.transport().tempo.unwrap_or(DEFAULT_TEMPO as f64) as f32;
         let sync = self.params.global.sync.value();
-
+        let current_tempo = context.transport().tempo.unwrap_or(DEFAULT_TEMPO as f64) as f32;
+        // since we don't know the tempo in reset, we need to do this here, instead of in reset.
         if self.first_process_after_reset {
-            self.last_tempo = current_tempo;
+            self.running_delay_tempo = current_tempo;
             self.params
                 .base_tempo
                 .store(current_tempo, Ordering::SeqCst);
             self.first_process_after_reset = false;
-            // nih_log!("first proc after reset: {}", self.last_tempo);
         }
-        if self.last_sync != sync
-            || (current_tempo != DEFAULT_TEMPO && current_tempo != self.last_tempo)
+        let base_tempo = self.params.base_tempo.load(Ordering::SeqCst);
+        let running_delay_tempo = self.running_delay_tempo;
+        if (sync && current_tempo != base_tempo && current_tempo != running_delay_tempo)
+            || (!sync && running_delay_tempo != base_tempo)
         {
-            // nih_log!("tempo change from {} to {current_tempo}", self.last_tempo);
-            self.last_tempo = current_tempo;
-            self.last_sync = sync;
+            self.running_delay_tempo = if sync { current_tempo } else { base_tempo };
+            // nih_log!(
+            // "tempo change from {} to {current_tempo}",
+            // self.running_delay_tempo
+            // );
 
             // convert the delay times for the new tempo
             // we do this in  process() and not in reset(),
@@ -776,13 +777,9 @@ impl Plugin for Del2 {
             let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
 
             // first start fading out the current delay taps
-
             self.start_release_for_all_delay_taps();
-            // self.delay_taps.iter_mut().for_each(|delay_tap| {
-            // delay_tap.is_alive = false;
-            // });
             for tap_index in 0..tap_counter {
-                self.start_tap(tap_index, current_tempo);
+                self.start_tap(tap_index, self.running_delay_tempo);
             }
         }
 
@@ -1576,13 +1573,7 @@ impl Del2 {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
         let global_params = &self.params.global;
 
-        let sync = self.params.global.sync.value();
         let conversion_factor = self.params.base_tempo.load(Ordering::SeqCst) / tempo;
-        // if sync {
-        // self.params.base_tempo.load(Ordering::SeqCst) / tempo
-        // } else {
-        // 1.0
-        // };
 
         // nih_log!("conversion_factor: {conversion_factor}");
         let delay_samples = (self.params.delay_times[new_index].load(Ordering::SeqCst)
