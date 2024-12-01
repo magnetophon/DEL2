@@ -744,7 +744,10 @@ impl Plugin for Del2 {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
 
         let sync = self.params.global.sync.value();
-        let current_tempo = context.transport().tempo.unwrap_or(DEFAULT_TEMPO as f64) as f32;
+        let current_tempo = context
+            .transport()
+            .tempo
+            .unwrap_or_else(|| f64::from(DEFAULT_TEMPO)) as f32;
         // since we don't know the tempo in reset, we need to do this here, instead of in reset.
         if self.first_process_after_reset {
             self.running_delay_tempo = current_tempo;
@@ -1555,12 +1558,12 @@ impl Del2 {
     fn s2v_i32_channel() -> Arc<dyn Fn(&str) -> Option<i32> + Send + Sync> {
         Arc::new(move |string| {
             // Retain only numeric characters from the input string
-            let numeric_string: String = string.chars().filter(|c| c.is_digit(10)).collect();
+            let numeric_string: String = string.chars().filter(char::is_ascii_digit).collect();
 
             // Attempt to parse the string as an i32
             if let Ok(number) = numeric_string.parse::<i32>() {
                 // Check if the number is within the desired range
-                if number >= 1 && number <= 16 {
+                if (1..=16).contains(&number) {
                     return Some(number);
                 }
             }
