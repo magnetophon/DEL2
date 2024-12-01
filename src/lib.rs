@@ -714,8 +714,6 @@ impl Plugin for Del2 {
         self.timing_last_event = 0;
         self.samples_since_last_event = 0;
 
-        // Indicate filter update needed
-        self.should_update_filter.store(true, Ordering::Release);
         // reset learning system
         self.is_learning.store(false, Ordering::SeqCst);
         self.params.learning_start_time.store(0, Ordering::SeqCst);
@@ -1184,9 +1182,6 @@ impl Del2 {
                 self.timing_last_event = 0;
                 self.samples_since_last_event = 0;
             }
-
-            // Indicate filter update needed
-            self.should_update_filter.store(true, Ordering::Release);
         }
         // Handle ActionTrigger events
         // LOCK_TAPS is handled at the start
@@ -1589,7 +1584,7 @@ impl Del2 {
         // 1.0
         // };
 
-        nih_log!("conversion_factor: {conversion_factor}");
+        // nih_log!("conversion_factor: {conversion_factor}");
         let delay_samples = (self.params.delay_times[new_index].load(Ordering::SeqCst)
             * sample_rate
             * conversion_factor) as u32;
@@ -1642,7 +1637,7 @@ impl Del2 {
 
         if let Some(delay_tap) = found_inactive {
             // Initialize the non-active tap
-            nih_log!("start_tap: inactive tap: {}", found_inactive_index.unwrap());
+            // nih_log!("start_tap: inactive tap: {}", found_inactive_index.unwrap());
             delay_tap.init(
                 amp_envelope,
                 self.next_internal_id,
@@ -1653,7 +1648,7 @@ impl Del2 {
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
             self.meter_indexes[new_index].store(found_inactive_index.unwrap(), Ordering::Relaxed);
         } else if let Some(oldest_delay_tap) = found_oldest {
-            nih_log!("start_tap: oldest tap: {}", found_oldest_index.unwrap());
+            // nih_log!("start_tap: oldest tap: {}", found_oldest_index.unwrap());
             // Replace the oldest tap if needed
             oldest_delay_tap.init(
                 amp_envelope,
@@ -1665,6 +1660,7 @@ impl Del2 {
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
             self.meter_indexes[new_index].store(found_oldest_index.unwrap(), Ordering::Relaxed);
         }
+        self.should_update_filter.store(true, Ordering::Release);
     }
 
     /// Start the release process for all delay taps by changing their amplitude envelope.
