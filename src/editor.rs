@@ -368,16 +368,18 @@ impl View for DelayGraph {
             let meter_indexes = self.meter_indexes.clone();
             let current_time = params.current_time.load(Ordering::SeqCst);
             // Compute the time scaling factor
-            let target_time_scaling_factor =
-                Self::compute_time_scaling_factor(&params, bounds.w, border_width, outline_width);
+            let target_time_scaling_factor = Self::compute_time_scaling_factor(&params);
 
             let gui_decay_weight = Self::calculate_gui_decay_weight(&params);
 
-            let time_scaling_factor = Self::gui_smooth(
+            let available_width = outline_width.mul_add(-0.5, bounds.w - border_width);
+
+            let time_scaling_factor = (Self::gui_smooth(
                 target_time_scaling_factor,
                 &params.previous_time_scaling_factor,
                 gui_decay_weight,
-            );
+            ) / available_width)
+                .recip();
 
             if tap_counter > 0 {
                 Self::draw_delay_times_as_lines(
@@ -540,12 +542,7 @@ impl DelayGraph {
             format_time(seconds, TOTAL_DIGITS)
         }
     }
-    fn compute_time_scaling_factor(
-        params: &Arc<Del2Params>,
-        rect_width: f32,
-        border_width: f32,
-        outline_width: f32,
-    ) -> f32 {
+    fn compute_time_scaling_factor(params: &Arc<Del2Params>) -> f32 {
         // Load atomic values once
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
         let current_time = params.current_time.load(Ordering::SeqCst);
@@ -568,18 +565,8 @@ impl DelayGraph {
             max_tap_time
         };
 
-        // Use mul_add for efficient denominator calculation
-        let denominator = outline_width.mul_add(-0.5, rect_width - border_width);
-
-        // Calculate scaling factor
-        let total_delay = max_delay_time + zoom_tap_samples;
-        if denominator == 0.0 {
-            // Handle potential division by zero
-            return f32::INFINITY;
-        }
-
-        // Use recip for reciprocal calculation
-        (total_delay / denominator).recip()
+        // Return the total delay
+        max_delay_time + zoom_tap_samples
     }
 
     fn calculate_gui_decay_weight(params: &Arc<Del2Params>) -> f32 {
@@ -873,13 +860,12 @@ impl DelayGraph {
         // Draw half a note for panning center
         let normalized_panning_center =
             get_normalized_value(panning_center, min_note_value, max_note_value);
-        let target_panning_center_height =
-            (1.0 - normalized_panning_center).mul_add(available_height, margin + note_size);
         let panning_center_height = Self::gui_smooth(
-            target_panning_center_height,
+            1.0 - normalized_panning_center,
             &params.previous_panning_center_height,
             gui_decay_weight,
-        );
+        )
+        .mul_add(available_height, margin + note_size);
 
         let note_half_size = line_width;
 
@@ -894,13 +880,12 @@ impl DelayGraph {
         // Draw half a note for the first note at time 0
         let normalized_first_note =
             get_normalized_value(first_note, min_note_value, max_note_value);
-        let target_note_height =
-            (1.0 - normalized_first_note).mul_add(available_height, margin + note_size);
         let note_height = Self::gui_smooth(
-            target_note_height,
+            1.0 - normalized_first_note,
             &params.previous_first_note_height,
             gui_decay_weight,
-        );
+        )
+        .mul_add(available_height, margin + note_size);
 
         let first_note_center_x = bounds.x;
         let first_note_center_y = bounds.y + note_height;
@@ -917,13 +902,12 @@ impl DelayGraph {
 
             let note_value = params.notes[i].load(Ordering::SeqCst);
             let normalized_note = get_normalized_value(note_value, min_note_value, max_note_value);
-            let target_note_height =
-                (1.0 - normalized_note).mul_add(available_height, margin + note_size);
             let note_height = Self::gui_smooth(
-                target_note_height,
+                1.0 - normalized_note,
                 &params.previous_note_heights[i],
                 gui_decay_weight,
-            );
+            )
+            .mul_add(available_height, margin + note_size);
 
             let note_center_x = bounds.x + x_offset;
             let note_center_y = bounds.y + note_height;
