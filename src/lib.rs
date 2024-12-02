@@ -190,10 +190,11 @@ pub struct Del2Params {
     // the rate we are nunning at now
     sample_rate: AtomicF32,
     // TODO: persist and use for conversions
-    current_tempo: AtomicF32,
+    host_tempo: AtomicF32,
     time_sig_numerator: AtomicI32,
     learning_start_time: AtomicU64,
-    base_tempo: AtomicF32,
+    #[persist = "preset_tempo"]
+    preset_tempo: AtomicF32,
 }
 
 /// Contains the global parameters.
@@ -585,10 +586,10 @@ impl Del2Params {
             })),
             last_frame_time: AtomicU64::new(0),
             sample_rate: 1.0.into(),
-            current_tempo: (-1.0).into(),
+            host_tempo: (-1.0).into(),
             time_sig_numerator: (-1).into(),
             learning_start_time: AtomicU64::new(0),
-            base_tempo: (DEFAULT_TEMPO).into(),
+            preset_tempo: (DEFAULT_TEMPO).into(),
         }
     }
 }
@@ -704,7 +705,7 @@ impl Plugin for Del2 {
         // then fill the array
         for tap_index in 0..tap_counter {
             // if tap_index < tap_counter {
-            self.start_tap(tap_index, self.params.base_tempo.load(Ordering::SeqCst));
+            self.start_tap(tap_index, self.params.preset_tempo.load(Ordering::SeqCst));
             // }
         }
         self.first_process_after_reset = true;
@@ -744,26 +745,24 @@ impl Plugin for Del2 {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
 
         let sync = self.params.global.sync.value();
-        let current_tempo = context
+        let host_tempo = context
             .transport()
             .tempo
             .unwrap_or_else(|| f64::from(DEFAULT_TEMPO)) as f32;
         // since we don't know the tempo in reset, we need to do this here, instead of in reset.
         if self.first_process_after_reset {
-            self.running_delay_tempo = current_tempo;
-            self.params
-                .base_tempo
-                .store(current_tempo, Ordering::SeqCst);
+            self.running_delay_tempo = host_tempo;
+            self.params.preset_tempo.store(host_tempo, Ordering::SeqCst);
             self.first_process_after_reset = false;
         }
-        let base_tempo = self.params.base_tempo.load(Ordering::SeqCst);
+        let preset_tempo = self.params.preset_tempo.load(Ordering::SeqCst);
         let running_delay_tempo = self.running_delay_tempo;
-        if (sync && running_delay_tempo != current_tempo)
-            || (!sync && running_delay_tempo != base_tempo)
+        if (sync && running_delay_tempo != host_tempo)
+            || (!sync && running_delay_tempo != preset_tempo)
         {
-            self.running_delay_tempo = if sync { current_tempo } else { base_tempo };
+            self.running_delay_tempo = if sync { host_tempo } else { preset_tempo };
             // nih_log!(
-            // "tempo change from {} to {current_tempo}",
+            // "tempo change from {} to {host_tempo}",
             // self.running_delay_tempo
             // );
 
@@ -789,9 +788,7 @@ impl Plugin for Del2 {
         self.params
             .sample_rate
             .store(context.transport().sample_rate, Ordering::SeqCst);
-        self.params
-            .current_tempo
-            .store(current_tempo, Ordering::SeqCst);
+        self.params.host_tempo.store(host_tempo, Ordering::SeqCst);
         self.params.time_sig_numerator.store(
             context.transport().time_sig_numerator.unwrap_or(-1),
             Ordering::SeqCst,
@@ -835,7 +832,7 @@ impl Plugin for Del2 {
                                         self.params.tap_counter.load(Ordering::SeqCst);
                                     if tap_counter > old_nr_taps {
                                         // nih_log!("process: added a tap: {} > {old_nr_taps}", tap_counter);
-                                        self.start_tap(tap_counter - 1, current_tempo);
+                                        self.start_tap(tap_counter - 1, host_tempo);
                                     }
                                 }
                             }
@@ -1110,8 +1107,8 @@ impl Del2 {
                     // If in TimeOut state, reset and start new counting phase
                     self.clear_taps(timing, true);
                     self.params.first_note.store(note, Ordering::SeqCst);
-                    self.params.base_tempo.store(
-                        self.params.current_tempo.load(Ordering::SeqCst),
+                    self.params.preset_tempo.store(
+                        self.params.host_tempo.load(Ordering::SeqCst),
                         Ordering::SeqCst,
                     );
                 }
@@ -1572,11 +1569,11 @@ impl Del2 {
         })
     }
 
-    fn start_tap(&mut self, new_index: usize, tempo: f32) {
+    fn start_tap(&mut self, new_index: usize, host_tempo: f32) {
         let sample_rate = self.params.sample_rate.load(Ordering::SeqCst);
         let global_params = &self.params.global;
 
-        let conversion_factor = self.params.base_tempo.load(Ordering::SeqCst) / tempo;
+        let conversion_factor = self.params.preset_tempo.load(Ordering::SeqCst) / host_tempo;
 
         // nih_log!("conversion_factor: {conversion_factor}");
         let delay_samples = (self.params.delay_times[new_index].load(Ordering::SeqCst)

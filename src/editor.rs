@@ -484,11 +484,11 @@ impl DelayGraph {
 
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
         let current_time = params.current_time.load(Ordering::SeqCst);
-        let tempo = params.current_tempo.load(Ordering::SeqCst);
+        let host_tempo = params.host_tempo.load(Ordering::SeqCst);
         let time_sig_numerator = params.time_sig_numerator.load(Ordering::SeqCst);
         let sync = params.global.sync.value();
         let conversion_factor = if sync {
-            params.base_tempo.load(Ordering::SeqCst) / tempo
+            params.preset_tempo.load(Ordering::SeqCst) / host_tempo
         } else {
             1.0
         };
@@ -507,8 +507,8 @@ impl DelayGraph {
             return String::new();
         }
 
-        if sync && tempo > 0.0 && time_sig_numerator > 0 {
-            let seconds_per_beat = 60.0 / tempo;
+        if sync && host_tempo > 0.0 && time_sig_numerator > 0 {
+            let seconds_per_beat = 60.0 / host_tempo;
             let seconds_per_measure = seconds_per_beat * time_sig_numerator as f32;
             let full_bars = (seconds / seconds_per_measure).floor() as i32;
             let remaining_seconds = seconds % seconds_per_measure;
