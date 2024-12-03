@@ -9,6 +9,8 @@ https://github.com/neodsp/simper-filter
  also simper, with simd
 // https://github.com/SamiPerttu/fundsp/blob/801ad0a0c97838f9744d0dbe506512215f780b7d/src/svf.rs#L2
 
+- other way to change the delay time: https://signalsmith-audio.co.uk/writing/2021/stride-interpolated-delay/
+
 - make mutes sample-accurate
 
 - optional: live-mode / daw-mode switch
@@ -16,36 +18,6 @@ https://github.com/neodsp/simper-filter
 
 TODO: research choke event, possibly clear_taps()
 
-***************
-dry/wet attack
-wet release
-drive min
-mutes max
-
-***************
-dry/wet mutes
-wet drive
-attack release
-min max
-channel tempo_sync
-
-***************
-dry/wet wet
-attack release
-min max
-channel tempo_sync
-mutes drive
-
-
-***************
-dry/wet wet
-attack release
-mutes drive
-
-pref:
-min max
-channel tempo_sync
-tooltips ??
  */
 
 // #![allow(non_snake_case)]
@@ -189,7 +161,6 @@ pub struct Del2Params {
     last_frame_time: AtomicU64,
     // the rate we are nunning at now
     sample_rate: AtomicF32,
-    // TODO: persist and use for conversions
     host_tempo: AtomicF32,
     time_sig_numerator: AtomicI32,
     learning_start_time: AtomicU64,
