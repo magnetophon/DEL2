@@ -32,6 +32,7 @@
     cargo
     rustc
     rustfmt
+    cargo-flamegraph
     # rust-analyzer
     # clippy
     # cargo-watch

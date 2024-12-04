@@ -5,8 +5,8 @@ TODO:
 
 - evaluate filters:
 https://github.com/AquaEBM/svf
+ also simper, with simd, non nonlin
 https://github.com/neodsp/simper-filter
- also simper, with simd
 // https://github.com/SamiPerttu/fundsp/blob/801ad0a0c97838f9744d0dbe506512215f780b7d/src/svf.rs#L2
 
 - other way to change the delay time: https://signalsmith-audio.co.uk/writing/2021/stride-interpolated-delay/
@@ -83,7 +83,7 @@ const PANNER_EQ_Q: f32 = 0.42;
 const MIN_PAN_GAIN: f32 = -4.2;
 const DEFAULT_TEMPO: f32 = 60.0;
 
-struct Del2 {
+pub struct Del2 {
     params: Arc<Del2Params>,
 
     /// The effect's delay taps. Inactive delay taps will be set to `None` values.
