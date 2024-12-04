@@ -104,6 +104,10 @@ pub struct Del2 {
     wet_gain: Box<[f32]>,
     global_drive: Box<[f32]>,
     delay_tap_amp_envelope: Box<[f32]>,
+    delay_tap_smoothed_offset_l: Box<[f32]>,
+    delay_tap_smoothed_offset_r: Box<[f32]>,
+    delay_tap_eq_gain: Box<[f32]>,
+    delay_tap_pan_gain: Box<[f32]>,
 
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
@@ -498,6 +502,10 @@ impl Default for Del2 {
             wet_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             global_drive: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_amp_envelope: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_smoothed_offset_l: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_smoothed_offset_r: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_eq_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_pan_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
@@ -894,6 +902,18 @@ impl Plugin for Del2 {
                             .amp_envelope
                             .next_block(&mut self.delay_tap_amp_envelope, block_len);
 
+                        delay_tap
+                            .smoothed_offset_l
+                            .next_block(&mut self.delay_tap_smoothed_offset_l, block_len);
+                        delay_tap
+                            .smoothed_offset_r
+                            .next_block(&mut self.delay_tap_smoothed_offset_r, block_len);
+                        delay_tap
+                            .eq_gain
+                            .next_block(&mut self.delay_tap_eq_gain, block_len);
+                        delay_tap
+                            .pan_gain
+                            .next_block(&mut self.delay_tap_pan_gain, block_len);
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                             let pre_filter_gain =
                                 global_drive[value_idx] * self.delay_tap_amp_envelope[value_idx];
@@ -902,31 +922,17 @@ impl Plugin for Del2 {
                             // }
                             delay_tap.delayed_audio_l[sample_idx] =
                                 self.delay_buffer[0].lin_interp_f32(
-                                    read_index - delay_tap.smoothed_offset_l.next()
+                                    read_index - self.delay_tap_smoothed_offset_l[value_idx]
                                         + value_idx as f32,
                                 ) * pre_filter_gain;
                             delay_tap.delayed_audio_r[sample_idx] =
                                 self.delay_buffer[1].lin_interp_f32(
-                                    read_index - delay_tap.smoothed_offset_r.next()
+                                    read_index - self.delay_tap_smoothed_offset_r[value_idx]
                                         + value_idx as f32,
                                 ) * pre_filter_gain;
                         }
 
                         for i in (block_start..block_end).step_by(2) {
-                            // let eq_gain_1 = delay_tap.eq_gain.next();
-                            // let eq_gain_2 = delay_tap.eq_gain.next();
-                            // let eq_gain_l_lin_1 = util::db_to_gain_fast(eq_gain_1.min(0.0));
-                            // let eq_gain_l_lin_2 = util::db_to_gain_fast(eq_gain_2.min(0.0));
-                            // let eq_gain_r_lin_1 =
-                            // util::db_to_gain_fast((eq_gain_1 * -1.0).min(0.0));
-                            // let eq_gain_r_lin_2 =
-                            // util::db_to_gain_fast((eq_gain_2 * -1.0).min(0.0));
-                            // let eq_gain_frame = f32x4::from_array([
-                            // eq_gain_l_lin_1,
-                            // eq_gain_l_lin_2,
-                            // eq_gain_r_lin_1,
-                            // eq_gain_r_lin_2,
-                            // ]);
                             let frame = f32x4::from_array([
                                 delay_tap.delayed_audio_l[i],
                                 delay_tap.delayed_audio_r[i],
@@ -934,8 +940,10 @@ impl Plugin for Del2 {
                                 delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
                             ]);
 
-                            let (eq_gain_1, eq_gain_2) =
-                                (delay_tap.eq_gain.next(), delay_tap.eq_gain.next());
+                            let (eq_gain_1, eq_gain_2) = (
+                                self.delay_tap_eq_gain[i],
+                                self.delay_tap_eq_gain.get(i + 1).copied().unwrap_or(0.0),
+                            );
 
                             // Prepare inputs and perform min operation using SIMD
                             let gain_values =
@@ -972,8 +980,7 @@ impl Plugin for Del2 {
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                             let post_filter_gain = dry_wet[value_idx] * wet_gain[value_idx]
                                 / (drive * global_drive[value_idx]);
-                            // let eq_gain = delay_tap.eq_gain.next();
-                            let pan_gain = delay_tap.pan_gain.next();
+                            let pan_gain = self.delay_tap_pan_gain[value_idx];
                             let left = delay_tap.delayed_audio_l[sample_idx]
                                 * post_filter_gain
                                 * util::db_to_gain_fast(pan_gain.min(0.0));
