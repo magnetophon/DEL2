@@ -45,6 +45,7 @@ use simple_eq::design::Curve;
 use simple_eq::Equalizer;
 use std::ops::Index;
 use std::simd::f32x4;
+use std::simd::num::SimdFloat;
 use std::sync::atomic::{
     AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering,
 };
@@ -53,7 +54,9 @@ use synfx_dsp::fh_va::{FilterParams, LadderMode};
 
 mod delay_tap;
 mod editor;
+mod svf_simper;
 use delay_tap::DelayTap;
+use svf_simper::SVFSimper;
 
 // max seconds per tap
 const MAX_TAP_SECONDS: usize = 20;
@@ -75,12 +78,12 @@ const MUTE_IN: usize = 0;
 const MUTE_OUT: usize = 1;
 const CLEAR_TAPS: usize = 2;
 const LOCK_TAPS: usize = 3;
-const MAX_HAAS_MS: f32 = 5.0;
+const MAX_HAAS_MS: f32 = 0.0;
 const NO_GUI_SMOOTHING: f32 = f32::MAX;
-const MIN_EQ_GAIN: f32 = -13.0;
+const MIN_EQ_GAIN: f32 = -23.0;
 const PANNER_EQ_FREQ: f32 = 18_000.0;
 const PANNER_EQ_Q: f32 = 0.42;
-const MIN_PAN_GAIN: f32 = -4.2;
+const MIN_PAN_GAIN: f32 = -0.0;
 const DEFAULT_TEMPO: f32 = 60.0;
 
 pub struct Del2 {
@@ -646,6 +649,7 @@ impl Plugin for Del2 {
         // Initialize filter parameters for each tap
         self.initialize_filter_parameters();
         for delay_tap in &mut self.delay_taps {
+            delay_tap.shelving_eq.set(5000.0, 0.0, sample_rate);
             delay_tap.eq_l.set_sample_rate(sample_rate);
             delay_tap.eq_r.set_sample_rate(sample_rate);
             // workaround for comment from upstream:
@@ -921,13 +925,52 @@ impl Plugin for Del2 {
                         }
 
                         for i in (block_start..block_end).step_by(2) {
+                            // let eq_gain_1 = delay_tap.eq_gain.next();
+                            // let eq_gain_2 = delay_tap.eq_gain.next();
+                            // let eq_gain_l_lin_1 = util::db_to_gain_fast(eq_gain_1.min(0.0));
+                            // let eq_gain_l_lin_2 = util::db_to_gain_fast(eq_gain_2.min(0.0));
+                            // let eq_gain_r_lin_1 =
+                            // util::db_to_gain_fast((eq_gain_1 * -1.0).min(0.0));
+                            // let eq_gain_r_lin_2 =
+                            // util::db_to_gain_fast((eq_gain_2 * -1.0).min(0.0));
+                            // let eq_gain_frame = f32x4::from_array([
+                            // eq_gain_l_lin_1,
+                            // eq_gain_l_lin_2,
+                            // eq_gain_r_lin_1,
+                            // eq_gain_r_lin_2,
+                            // ]);
                             let frame = f32x4::from_array([
                                 delay_tap.delayed_audio_l[i],
                                 delay_tap.delayed_audio_r[i],
                                 delay_tap.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
                                 delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
                             ]);
-                            let frame_out = *delay_tap.ladders.tick_pivotal(frame).as_array();
+
+                            let (eq_gain_1, eq_gain_2) =
+                                (delay_tap.eq_gain.next(), delay_tap.eq_gain.next());
+
+                            // Prepare inputs and perform min operation using SIMD
+                            let gain_values =
+                                f32x4::from_array([eq_gain_1, eq_gain_2, -eq_gain_1, -eq_gain_2]);
+                            let clamped_gain_values = gain_values
+                                .simd_clamp(f32x4::splat(-std::f32::MAX), f32x4::splat(0.0));
+
+                            // Apply db_to_gain_fast using direct lane access
+                            let mut lin_gains = [0.0; 4];
+                            for i in 0..4 {
+                                lin_gains[i] = util::db_to_gain_fast(clamped_gain_values[i]);
+                            }
+
+                            let eq_gain_frame = f32x4::from_array(lin_gains);
+                            // let eq_gain_frame = f32x4::from_array(lin_gains.to_array());
+
+                            // let frame_out = *delay_tap.ladders.tick_pivotal(frame).as_array();
+                            let frame_filtered = *delay_tap.ladders.tick_pivotal(frame).as_array();
+                            let frame_out = delay_tap
+                                .shelving_eq
+                                .highshelf(frame_filtered.into(), eq_gain_frame);
+
+                            // let frame_out = *delay_tap.ladders.tick_linear(frame).as_array();
                             delay_tap.delayed_audio_l[i] = frame_out[0];
                             delay_tap.delayed_audio_r[i] = frame_out[1];
                             if i + 1 < block_end {
@@ -941,32 +984,14 @@ impl Plugin for Del2 {
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                             let post_filter_gain = dry_wet[value_idx] * wet_gain[value_idx]
                                 / (drive * global_drive[value_idx]);
-                            let eq_gain = delay_tap.eq_gain.next();
+                            // let eq_gain = delay_tap.eq_gain.next();
                             let pan_gain = delay_tap.pan_gain.next();
-                            delay_tap.eq_l.set(
-                                0,
-                                Curve::Peak,
-                                PANNER_EQ_FREQ,
-                                PANNER_EQ_Q,
-                                eq_gain.min(0.0),
-                            );
-                            delay_tap.eq_r.set(
-                                0,
-                                Curve::Peak,
-                                PANNER_EQ_FREQ,
-                                PANNER_EQ_Q,
-                                (eq_gain * -1.0).min(0.0),
-                            );
-                            let left = delay_tap.eq_l.process(
-                                delay_tap.delayed_audio_l[sample_idx]
-                                    * post_filter_gain
-                                    * util::db_to_gain_fast(pan_gain.min(0.0)),
-                            );
-                            let right = delay_tap.eq_r.process(
-                                delay_tap.delayed_audio_r[sample_idx]
-                                    * post_filter_gain
-                                    * util::db_to_gain_fast((pan_gain * -1.0).min(0.0)),
-                            );
+                            let left = delay_tap.delayed_audio_l[sample_idx]
+                                * post_filter_gain
+                                * util::db_to_gain_fast(pan_gain.min(0.0));
+                            let right = delay_tap.delayed_audio_r[sample_idx]
+                                * post_filter_gain
+                                * util::db_to_gain_fast((pan_gain * -1.0).min(0.0));
                             output[0][sample_idx] += left;
                             output[1][sample_idx] += right;
                             amplitude += (left.abs() + right.abs()) * 0.5;
