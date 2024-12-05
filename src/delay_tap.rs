@@ -44,7 +44,10 @@ pub struct DelayTap {
     pub is_muted: bool,
     /// Is set to true when the tap is created and false  is created
     /// and false when the amplitude envelope hits 0 while the note is releasing.
+    /// when we mute a tap, we don't set releasing so the tap stays alive
     pub is_alive: bool,
+    /// is the amp envelope > 0.0?  otherwise stop doing dsp for that tap
+    pub is_audible: bool,
 }
 
 impl DelayTap {
@@ -70,6 +73,7 @@ impl DelayTap {
             releasing: false,
             is_muted: true,
             is_alive: false,
+            is_audible: false,
         }
     }
 
@@ -88,5 +92,6 @@ impl DelayTap {
         self.velocity = velocity;
         self.releasing = false;
         self.is_alive = true;
+        self.is_audible = true;
     }
 }

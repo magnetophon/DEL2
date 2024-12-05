@@ -678,9 +678,8 @@ impl Plugin for Del2 {
 
         // then fill the array
         for tap_index in 0..tap_counter {
-            // if tap_index < tap_counter {
+            // nih_log!("reset tap_counter: {tap_counter}");
             self.start_tap(tap_index, self.params.preset_tempo.load(Ordering::SeqCst));
-            // }
         }
         self.first_process_after_reset = true;
         self.counting_state = CountingState::TimeOut;
@@ -876,30 +875,16 @@ impl Plugin for Del2 {
                 .enumerate()
                 .for_each(|(meter_index, delay_tap)| {
                     if delay_tap.is_alive {
-                        let pan = ((f32::from(delay_tap.note) - panning_center) * panning_amount)
-                            .clamp(-1.0, 1.0);
-                        let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
-                        delay_tap
-                            .smoothed_offset_l
-                            .set_target(sample_rate, offset_l);
-                        delay_tap
-                            .smoothed_offset_r
-                            .set_target(sample_rate, offset_r);
+                        // nih_log!("delay_tap.is_audible: {}", delay_tap.is_audible);
 
-                        let calculate_and_set_gain =
-                            |target: &mut Smoother<f32>, min_gain: f32, multiplier: f32| {
-                                let gain_value =
-                                    util::db_to_gain_fast((min_gain * pan * multiplier).min(0.0));
-                                target.set_target(sample_rate, gain_value);
-                            };
-
-                        calculate_and_set_gain(&mut delay_tap.eq_gain_l, MIN_EQ_GAIN, 1.0);
-                        calculate_and_set_gain(&mut delay_tap.eq_gain_r, MIN_EQ_GAIN, -1.0);
-                        calculate_and_set_gain(&mut delay_tap.pan_gain_l, MIN_PAN_GAIN, 1.0);
-                        calculate_and_set_gain(&mut delay_tap.pan_gain_r, MIN_PAN_GAIN, -1.0);
+                        delay_tap
+                            .amp_envelope
+                            .next_block(&mut self.delay_tap_amp_envelope, block_len);
 
                         let delay_time = delay_tap.delay_time as isize;
                         let write_index = self.delay_write_index;
+
+                        let read_index = (write_index - (delay_time - 1)) as f32;
 
                         let drive = delay_tap.filter_params.drive;
                         self.mute_in_delay_buffer.read_into(
@@ -907,72 +892,93 @@ impl Plugin for Del2 {
                             write_index - (delay_time - 1),
                         );
 
-                        let read_index = (write_index - (delay_time - 1)) as f32;
-                        delay_tap
-                            .amp_envelope
-                            .next_block(&mut self.delay_tap_amp_envelope, block_len);
+                        if delay_tap.is_audible {
+                            let pan = ((f32::from(delay_tap.note) - panning_center)
+                                * panning_amount)
+                                .clamp(-1.0, 1.0);
+                            let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
+                            delay_tap
+                                .smoothed_offset_l
+                                .set_target(sample_rate, offset_l);
+                            delay_tap
+                                .smoothed_offset_r
+                                .set_target(sample_rate, offset_r);
 
-                        delay_tap
-                            .smoothed_offset_l
-                            .next_block(&mut self.delay_tap_smoothed_offset_l, block_len);
-                        delay_tap
-                            .smoothed_offset_r
-                            .next_block(&mut self.delay_tap_smoothed_offset_r, block_len);
-                        delay_tap
-                            .eq_gain_l
-                            .next_block(&mut self.delay_tap_eq_gain_l, block_len);
-                        delay_tap
-                            .eq_gain_r
-                            .next_block(&mut self.delay_tap_eq_gain_r, block_len);
-                        delay_tap
-                            .pan_gain_l
-                            .next_block(&mut self.delay_tap_pan_gain_l, block_len);
-                        delay_tap
-                            .pan_gain_r
-                            .next_block(&mut self.delay_tap_pan_gain_r, block_len);
-                        for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                            let pre_filter_gain = global_drive[value_idx];
-                            // if self.delay_tap_amp_envelope[value_idx] != 1.0 && self.delay_tap_amp_envelope[value_idx] != 0.0 {
-                            // nih_log!("self.delay_tap_amp_envelope[value_idx]: {}", self.delay_tap_amp_envelope[value_idx]);
-                            // }
-                            delay_tap.delayed_audio_l[sample_idx] =
-                                self.delay_buffer[0].lin_interp_f32(
-                                    read_index - self.delay_tap_smoothed_offset_l[value_idx]
-                                        + value_idx as f32,
-                                ) * pre_filter_gain;
-                            delay_tap.delayed_audio_r[sample_idx] =
-                                self.delay_buffer[1].lin_interp_f32(
-                                    read_index - self.delay_tap_smoothed_offset_r[value_idx]
-                                        + value_idx as f32,
-                                ) * pre_filter_gain;
-                        }
+                            let calculate_and_set_gain =
+                                |target: &mut Smoother<f32>, min_gain: f32, multiplier: f32| {
+                                    let gain_value = util::db_to_gain_fast(
+                                        (min_gain * pan * multiplier).min(0.0),
+                                    );
+                                    target.set_target(sample_rate, gain_value);
+                                };
 
-                        for i in (block_start..block_end).step_by(2) {
-                            let frame = f32x4::from_array([
-                                delay_tap.delayed_audio_l[i],
-                                delay_tap.delayed_audio_r[i],
-                                delay_tap.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
-                                delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
-                            ]);
+                            calculate_and_set_gain(&mut delay_tap.eq_gain_l, MIN_EQ_GAIN, 1.0);
+                            calculate_and_set_gain(&mut delay_tap.eq_gain_r, MIN_EQ_GAIN, -1.0);
+                            calculate_and_set_gain(&mut delay_tap.pan_gain_l, MIN_PAN_GAIN, 1.0);
+                            calculate_and_set_gain(&mut delay_tap.pan_gain_r, MIN_PAN_GAIN, -1.0);
+                            delay_tap
+                                .smoothed_offset_l
+                                .next_block(&mut self.delay_tap_smoothed_offset_l, block_len);
+                            delay_tap
+                                .smoothed_offset_r
+                                .next_block(&mut self.delay_tap_smoothed_offset_r, block_len);
+                            delay_tap
+                                .eq_gain_l
+                                .next_block(&mut self.delay_tap_eq_gain_l, block_len);
+                            delay_tap
+                                .eq_gain_r
+                                .next_block(&mut self.delay_tap_eq_gain_r, block_len);
+                            delay_tap
+                                .pan_gain_l
+                                .next_block(&mut self.delay_tap_pan_gain_l, block_len);
+                            delay_tap
+                                .pan_gain_r
+                                .next_block(&mut self.delay_tap_pan_gain_r, block_len);
+                            for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
+                                let pre_filter_gain = global_drive[value_idx];
+                                // if self.delay_tap_amp_envelope[value_idx] != 1.0 && self.delay_tap_amp_envelope[value_idx] != 0.0 {
+                                // nih_log!("self.delay_tap_amp_envelope[value_idx]: {}", self.delay_tap_amp_envelope[value_idx]);
+                                // }
+                                delay_tap.delayed_audio_l[sample_idx] =
+                                    self.delay_buffer[0].lin_interp_f32(
+                                        read_index - self.delay_tap_smoothed_offset_l[value_idx]
+                                            + value_idx as f32,
+                                    ) * pre_filter_gain;
+                                delay_tap.delayed_audio_r[sample_idx] =
+                                    self.delay_buffer[1].lin_interp_f32(
+                                        read_index - self.delay_tap_smoothed_offset_r[value_idx]
+                                            + value_idx as f32,
+                                    ) * pre_filter_gain;
+                            }
 
-                            let gain_values = f32x4::from_array([
-                                self.delay_tap_eq_gain_l[i],
-                                self.delay_tap_eq_gain_r[i],
-                                self.delay_tap_eq_gain_l.get(i + 1).copied().unwrap_or(1.0),
-                                self.delay_tap_eq_gain_r.get(i + 1).copied().unwrap_or(1.0),
-                            ]);
+                            for i in (block_start..block_end).step_by(2) {
+                                let frame = f32x4::from_array([
+                                    delay_tap.delayed_audio_l[i],
+                                    delay_tap.delayed_audio_r[i],
+                                    delay_tap.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
+                                    delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
+                                ]);
 
-                            let frame_filtered = *delay_tap.ladders.tick_pivotal(frame).as_array();
-                            let frame_out = delay_tap
-                                .shelving_eq
-                                .highshelf(frame_filtered.into(), gain_values);
+                                let gain_values = f32x4::from_array([
+                                    self.delay_tap_eq_gain_l[i],
+                                    self.delay_tap_eq_gain_r[i],
+                                    self.delay_tap_eq_gain_l.get(i + 1).copied().unwrap_or(1.0),
+                                    self.delay_tap_eq_gain_r.get(i + 1).copied().unwrap_or(1.0),
+                                ]);
 
-                            // let frame_out = *delay_tap.ladders.tick_linear(frame).as_array();
-                            delay_tap.delayed_audio_l[i] = frame_out[0];
-                            delay_tap.delayed_audio_r[i] = frame_out[1];
-                            if i + 1 < block_end {
-                                delay_tap.delayed_audio_l[i + 1] = frame_out[2];
-                                delay_tap.delayed_audio_r[i + 1] = frame_out[3];
+                                let frame_filtered =
+                                    *delay_tap.ladders.tick_pivotal(frame).as_array();
+                                let frame_out = delay_tap
+                                    .shelving_eq
+                                    .highshelf(frame_filtered.into(), gain_values);
+
+                                // let frame_out = *delay_tap.ladders.tick_linear(frame).as_array();
+                                delay_tap.delayed_audio_l[i] = frame_out[0];
+                                delay_tap.delayed_audio_r[i] = frame_out[1];
+                                if i + 1 < block_end {
+                                    delay_tap.delayed_audio_l[i + 1] = frame_out[2];
+                                    delay_tap.delayed_audio_r[i + 1] = frame_out[3];
+                                }
                             }
                         }
 
@@ -994,11 +1000,6 @@ impl Plugin for Del2 {
                             amplitude += (left.abs() + right.abs()) * 0.5;
                         }
 
-                        if delay_tap.releasing && delay_tap.amp_envelope.previous_value() == 0.0 {
-                            delay_tap.is_alive = false;
-                            // nih_log!("killed");
-                        }
-
                         if self.params.editor_state.is_open() {
                             let weight = self.peak_meter_decay_weight * 0.91;
 
@@ -1016,6 +1017,15 @@ impl Plugin for Del2 {
                             };
 
                             self.tap_meters[meter_index].store(new_peak_meter, Ordering::Relaxed);
+                        }
+                        if self.delay_tap_amp_envelope[0] == 0.0 {
+                            if delay_tap.releasing {
+                                delay_tap.is_alive = false;
+                                // nih_log!("killed");
+                            }
+                            delay_tap.is_audible = false;
+                        } else {
+                            delay_tap.is_audible = true;
                         }
                     }
                 });
@@ -1679,7 +1689,9 @@ impl Del2 {
             let muted = new_mute || !delay_tap.is_alive;
             let needs_toggle = delay_tap.is_muted != muted;
 
-            // nih_log!("delay_tap.is_alive: {}, {tap_index}", delay_tap.is_alive);
+            // if delay_tap.is_alive {
+            // nih_log!("delay_tap.is_muted: {tap_index} {}", delay_tap.is_muted);
+            // }
             if needs_toggle {
                 if muted {
                     delay_tap.amp_envelope.style =
@@ -1688,14 +1700,17 @@ impl Del2 {
                         .amp_envelope
                         .set_target(self.params.sample_rate.load(Ordering::SeqCst), 0.0);
                     // nih_log!("set target {tap_index} 0.0");
-                    delay_tap.releasing = true;
+                    // don't set releasing, since we want the tap to stay alive
+                    // delay_tap.releasing = true;
                 } else {
                     delay_tap.amp_envelope.style =
                         SmoothingStyle::Linear(self.params.global.attack_ms.value());
                     delay_tap
                         .amp_envelope
                         .set_target(self.params.sample_rate.load(Ordering::SeqCst), 1.0);
-                    // nih_log!("set target {tap_index} 1.0");
+                    // nih_log!("set target 1.0");
+                    delay_tap.is_alive = true;
+                    delay_tap.is_audible = true;
                     delay_tap.releasing = false;
                 }
                 delay_tap.is_muted = muted;
