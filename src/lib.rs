@@ -915,8 +915,7 @@ impl Plugin for Del2 {
                             .pan_gain
                             .next_block(&mut self.delay_tap_pan_gain, block_len);
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                            let pre_filter_gain =
-                                global_drive[value_idx] * self.delay_tap_amp_envelope[value_idx];
+                            let pre_filter_gain = global_drive[value_idx];
                             // if self.delay_tap_amp_envelope[value_idx] != 1.0 && self.delay_tap_amp_envelope[value_idx] != 0.0 {
                             // nih_log!("self.delay_tap_amp_envelope[value_idx]: {}", self.delay_tap_amp_envelope[value_idx]);
                             // }
@@ -978,7 +977,9 @@ impl Plugin for Del2 {
                         // Process the output and meter updates
                         let mut amplitude = 0.0;
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                            let post_filter_gain = dry_wet[value_idx] * wet_gain[value_idx]
+                            let post_filter_gain = dry_wet[value_idx]
+                                * wet_gain[value_idx]
+                                * self.delay_tap_amp_envelope[value_idx]
                                 / (drive * global_drive[value_idx]);
                             let pan_gain = self.delay_tap_pan_gain[value_idx];
                             let left = delay_tap.delayed_audio_l[sample_idx]
