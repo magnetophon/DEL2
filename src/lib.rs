@@ -79,10 +79,10 @@ const LOCK_TAPS: usize = 3;
 // another value with a special meaning
 const NO_GUI_SMOOTHING: f32 = f32::MAX;
 
-const MAX_HAAS_MS: f32 = 5.0;
+const MAX_HAAS_MS: f32 = 30.0;
 const PANNER_EQ_FREQ: f32 = 5_000.0;
 const MIN_EQ_GAIN: f32 = -13.0;
-const MIN_PAN_GAIN: f32 = -4.2;
+const MIN_PAN_GAIN: f32 = -6.0;
 const DEFAULT_TEMPO: f32 = 60.0;
 
 pub struct Del2 {
