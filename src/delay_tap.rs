@@ -26,8 +26,10 @@ pub struct DelayTap {
     // for modulated delay times from panning
     pub smoothed_offset_l: Smoother<f32>,
     pub smoothed_offset_r: Smoother<f32>,
-    pub eq_gain: Smoother<f32>,
-    pub pan_gain: Smoother<f32>,
+    pub eq_gain_l: Smoother<f32>,
+    pub eq_gain_r: Smoother<f32>,
+    pub pan_gain_l: Smoother<f32>,
+    pub pan_gain_r: Smoother<f32>,
     /// The note's key/note, in `0..128`. Only used for the delay tap terminated event.
     pub note: u8,
     /// The note's velocity. This is used to interpollate it's dsp parameters.
@@ -57,8 +59,10 @@ impl DelayTap {
             delay_time: 0,
             smoothed_offset_l: Smoother::new(SmoothingStyle::Linear(77.0)),
             smoothed_offset_r: Smoother::new(SmoothingStyle::Linear(77.0)),
-            eq_gain: Smoother::new(SmoothingStyle::Linear(77.0)),
-            pan_gain: Smoother::new(SmoothingStyle::Linear(77.0)),
+            eq_gain_l: Smoother::new(SmoothingStyle::Linear(77.0)),
+            eq_gain_r: Smoother::new(SmoothingStyle::Linear(77.0)),
+            pan_gain_l: Smoother::new(SmoothingStyle::Linear(77.0)),
+            pan_gain_r: Smoother::new(SmoothingStyle::Linear(77.0)),
             note: NO_LEARNED_NOTE,
             velocity: 0.0,
             releasing: false,
