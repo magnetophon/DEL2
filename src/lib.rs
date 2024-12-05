@@ -886,25 +886,17 @@ impl Plugin for Del2 {
                             .smoothed_offset_r
                             .set_target(sample_rate, offset_r);
 
-                        let eq_gain_target_l = util::db_to_gain_fast((MIN_EQ_GAIN * pan).min(0.0));
-                        delay_tap
-                            .eq_gain_l
-                            .set_target(sample_rate, eq_gain_target_l);
-                        let eq_gain_target_r =
-                            util::db_to_gain_fast((MIN_EQ_GAIN * pan * -1.0).min(0.0));
-                        delay_tap
-                            .eq_gain_r
-                            .set_target(sample_rate, eq_gain_target_r);
-                        let pan_gain_target_l =
-                            util::db_to_gain_fast((MIN_PAN_GAIN * pan).min(0.0));
-                        delay_tap
-                            .pan_gain_l
-                            .set_target(sample_rate, pan_gain_target_l);
-                        let pan_gain_target_r =
-                            util::db_to_gain_fast((MIN_PAN_GAIN * pan * -1.0).min(0.0));
-                        delay_tap
-                            .pan_gain_r
-                            .set_target(sample_rate, pan_gain_target_r);
+                        let calculate_and_set_gain =
+                            |target: &mut Smoother<f32>, min_gain: f32, multiplier: f32| {
+                                let gain_value =
+                                    util::db_to_gain_fast((min_gain * pan * multiplier).min(0.0));
+                                target.set_target(sample_rate, gain_value);
+                            };
+
+                        calculate_and_set_gain(&mut delay_tap.eq_gain_l, MIN_EQ_GAIN, 1.0);
+                        calculate_and_set_gain(&mut delay_tap.eq_gain_r, MIN_EQ_GAIN, -1.0);
+                        calculate_and_set_gain(&mut delay_tap.pan_gain_l, MIN_PAN_GAIN, 1.0);
+                        calculate_and_set_gain(&mut delay_tap.pan_gain_r, MIN_PAN_GAIN, -1.0);
 
                         let delay_time = delay_tap.delay_time as isize;
                         let write_index = self.delay_write_index;
