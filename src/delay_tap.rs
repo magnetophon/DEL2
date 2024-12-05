@@ -5,6 +5,8 @@ use synfx_dsp::fh_va::LadderFilter;
 
 use crate::{SVFSimper, MAX_BLOCK_SIZE, NO_LEARNED_NOTE, PANNER_EQ_FREQ};
 
+const PAN_SMOOTHING_TIME: f32 = 242.0;
+
 #[derive(Debug, Clone)]
 pub struct DelayTap {
     pub delayed_audio_l: Box<[f32]>,
@@ -57,12 +59,12 @@ impl DelayTap {
             amp_envelope: Smoother::new(SmoothingStyle::Linear(13.0)),
             internal_id: 0,
             delay_time: 0,
-            smoothed_offset_l: Smoother::new(SmoothingStyle::Linear(77.0)),
-            smoothed_offset_r: Smoother::new(SmoothingStyle::Linear(77.0)),
-            eq_gain_l: Smoother::new(SmoothingStyle::Linear(77.0)),
-            eq_gain_r: Smoother::new(SmoothingStyle::Linear(77.0)),
-            pan_gain_l: Smoother::new(SmoothingStyle::Linear(77.0)),
-            pan_gain_r: Smoother::new(SmoothingStyle::Linear(77.0)),
+            smoothed_offset_l: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
+            smoothed_offset_r: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
+            eq_gain_l: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
+            eq_gain_r: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
+            pan_gain_l: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
+            pan_gain_r: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
             note: NO_LEARNED_NOTE,
             velocity: 0.0,
             releasing: false,
