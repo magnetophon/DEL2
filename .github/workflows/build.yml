@@ -97,11 +97,9 @@ jobs:
           runner_name=${{ matrix.name }}
           if [[ $runner_name = 'macos-universal' ]]; then
             curl -L "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip" -o pluginval.zip; unzip pluginval
-          else
-          if [[ $runner_name = 'ubuntu-20.04' ]]; then
+          elif [[ $runner_name = 'ubuntu-20.04' ]]; then
             curl -L "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip" -o pluginval.zip; unzip pluginval
-          else
-          if [[ $runner_name = 'windows' ]]; then
+          elif [[ $runner_name = 'windows' ]]; then
             powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pluginval.zip"
             powershell -Command "Expand-Archive pluginval.zip -DestinationPath ."
           fi
@@ -112,11 +110,9 @@ jobs:
           runner_name=${{ matrix.name }}
           if [[ $runner_name = 'macos-universal' ]]; then
             pluginval.app/Contents/MacOS/pluginval --verbose --strictness-level 5 target/bundled/DEL2.vst3 || exit 1
-          else
-          if [[ $runner_name = 'ubuntu-20.04' ]]; then
-            ./pluginval --verbose --strictness-level 5 target/bundled/DEL2.vst3
-          else
-          if [[ $runner_name = 'windows' ]]; then
+          elif [[ $runner_name = 'ubuntu-20.04' ]]; then
+            ./pluginval --verbose --strictness-level 5 target/bundled/DEL2.vst3 || exit 1
+          elif [[ $runner_name = 'windows' ]]; then
             pluginval.exe --verbose --strictness-level 5 target/bundled/DEL2.vst3
             if %ERRORLEVEL% neq 0 exit /b 1
           fi
