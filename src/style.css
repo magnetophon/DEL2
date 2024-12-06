@@ -11,18 +11,27 @@
     font-weight: light;
 }
 
-.parameters {
+.parameters-left {
     top: 0px;
-    bottom: 4px;
-    /* the columns are the same width, but one needs to include spacing and the other doesn't */
-    child-left: 0px;
+    bottom: 9px;
+    left: 0px;
+    right: 1s;
     child-right: 9px;
-    width: auto;
+    width: 50%;
 }
 
+.parameters-right {
+    top: 0px;
+    bottom: 9px;
+    right: 13px;
+    width: 50%;
+}
+.parameters-all {
+    height: 50%;
+}
 param-slider {
     height: 30px;
-    width: 171px;
+    width: 210px;
     border-width: 1px;
     background-color: #4e4e4e;
     border-color: #fabdf0;
@@ -45,37 +54,51 @@ param-slider .fill {
 /* This is a textbox, but we want it to appear just like the label */
 param-slider .value-entry {
     /* Vizia doesn't support the unset value */
-    /* background-color: transparent; */
-    background-color: #292929;
+    background-color: transparent;
     border-width: 0px;
     child-space: 1s;
 }
-/* param-slider .value-entry .caret { */
-/* background-color: #fdf6e3; */
-/* } */
-/* param-slider .value-entry .selection { */
-/* background-color: #fdf6e330; */
-/* } */
+param-slider .value-entry .caret {
+    background-color: #fabdf0;
+}
+param-slider .value-entry .selection {
+    background-color: #fabdf0;
+}
+
 .plugin-name {
     color: #fabdf0;
     font-size: 42;
-    top: 9px;
-    right: 18px;
+    top: 13px;
+    right: 21px;
 }
 
 .group-title {
     font-size: 30;
     /* // This should align nicely with the right edge of the slider */
-    left: 269px;
+    left: 323px;
+    right: 1s;
+    top: 0px;
+    bottom: 9px;
+}
+
+.mid-group-title {
+    font-size: 30;
+    /* // This should align nicely with the right edge of the slider */
+    left: 323px;
     right: 1s;
     top: 1s;
     bottom: 9px;
-    /* background-color: #4e4e4e; */
 }
-
+.column-title-group {
+    height: auto;
+    left: 18px;
+    right: 0px;
+    top: 19px;
+    bottom: 9px;
+}
 .column-title {
     font-size: 23;
-    /* // This should align nicely with the right edge of the slider */
+    left: 1s;
     right: 0px;
 }
 
@@ -87,9 +110,10 @@ param-slider .value-entry {
 }
 
 delay-graph {
-    top: 9px;
-    bottom: 9px;
-    right: 9px;
+    top: 13px;
+    bottom: 4px;
+    left: 13px;
+    right: 13px;
     border-width: 1px;
     outline-width: 5px;
     border-color: #4e4e4e;
@@ -112,7 +136,7 @@ delay-graph {
 }
 
 action-trigger {
-    width: 171px;
+    width: 210px;
     height: 30px;
     top: 0px;
     bottom: 0px;
@@ -133,11 +157,6 @@ action-trigger:hover {
     top: 1s;
     bottom: 4px;
 }
-generic-ui {
-    child-left: 0px;
-    child-right: 0px;
-}
-
 .row {
     height: 30px;
     layout-type: row;
@@ -155,12 +174,6 @@ generic-ui {
 label {
     left: 1s;
     right: 1s;
-    top: 1s;
-    bottom: 1s;
-}
-generic-ui .label {
-    left: 1s;
-    right: 9px;
     top: 1s;
     bottom: 1s;
 }
