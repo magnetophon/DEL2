@@ -872,161 +872,157 @@ impl Plugin for Del2 {
 
             self.delay_taps
                 .iter_mut()
+                .filter(|tap| tap.is_alive)
                 .enumerate()
                 .for_each(|(meter_index, delay_tap)| {
-                    if delay_tap.is_alive {
-                        // nih_log!("delay_tap.is_audible: {}", delay_tap.is_audible);
+                    // nih_log!("delay_tap.is_audible: {}", delay_tap.is_audible);
 
+                    delay_tap
+                        .amp_envelope
+                        .next_block(&mut self.delay_tap_amp_envelope, block_len);
+
+                    let delay_time = delay_tap.delay_time as isize;
+                    let write_index = self.delay_write_index;
+
+                    let read_index = (write_index - (delay_time - 1)) as f32;
+
+                    let drive = delay_tap.filter_params.drive;
+                    self.mute_in_delay_buffer.read_into(
+                        &mut delay_tap.mute_in_delayed,
+                        write_index - (delay_time - 1),
+                    );
+
+                    if delay_tap.is_audible {
+                        let pan = ((f32::from(delay_tap.note) - panning_center) * panning_amount)
+                            .clamp(-1.0, 1.0);
+                        let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
                         delay_tap
-                            .amp_envelope
-                            .next_block(&mut self.delay_tap_amp_envelope, block_len);
+                            .smoothed_offset_l
+                            .set_target(sample_rate, offset_l);
+                        delay_tap
+                            .smoothed_offset_r
+                            .set_target(sample_rate, offset_r);
 
-                        let delay_time = delay_tap.delay_time as isize;
-                        let write_index = self.delay_write_index;
-
-                        let read_index = (write_index - (delay_time - 1)) as f32;
-
-                        let drive = delay_tap.filter_params.drive;
-                        self.mute_in_delay_buffer.read_into(
-                            &mut delay_tap.mute_in_delayed,
-                            write_index - (delay_time - 1),
-                        );
-
-                        if delay_tap.is_audible {
-                            let pan = ((f32::from(delay_tap.note) - panning_center)
-                                * panning_amount)
-                                .clamp(-1.0, 1.0);
-                            let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
-                            delay_tap
-                                .smoothed_offset_l
-                                .set_target(sample_rate, offset_l);
-                            delay_tap
-                                .smoothed_offset_r
-                                .set_target(sample_rate, offset_r);
-
-                            let calculate_and_set_gain =
-                                |target: &mut Smoother<f32>, min_gain: f32, multiplier: f32| {
-                                    let gain_value = util::db_to_gain_fast(
-                                        (min_gain * pan * multiplier).min(0.0),
-                                    );
-                                    target.set_target(sample_rate, gain_value);
-                                };
-
-                            calculate_and_set_gain(&mut delay_tap.eq_gain_l, MIN_EQ_GAIN, 1.0);
-                            calculate_and_set_gain(&mut delay_tap.eq_gain_r, MIN_EQ_GAIN, -1.0);
-                            calculate_and_set_gain(&mut delay_tap.pan_gain_l, MIN_PAN_GAIN, 1.0);
-                            calculate_and_set_gain(&mut delay_tap.pan_gain_r, MIN_PAN_GAIN, -1.0);
-                            delay_tap
-                                .smoothed_offset_l
-                                .next_block(&mut self.delay_tap_smoothed_offset_l, block_len);
-                            delay_tap
-                                .smoothed_offset_r
-                                .next_block(&mut self.delay_tap_smoothed_offset_r, block_len);
-                            delay_tap
-                                .eq_gain_l
-                                .next_block(&mut self.delay_tap_eq_gain_l, block_len);
-                            delay_tap
-                                .eq_gain_r
-                                .next_block(&mut self.delay_tap_eq_gain_r, block_len);
-                            delay_tap
-                                .pan_gain_l
-                                .next_block(&mut self.delay_tap_pan_gain_l, block_len);
-                            delay_tap
-                                .pan_gain_r
-                                .next_block(&mut self.delay_tap_pan_gain_r, block_len);
-                            for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                                let pre_filter_gain = global_drive[value_idx];
-                                // if self.delay_tap_amp_envelope[value_idx] != 1.0 && self.delay_tap_amp_envelope[value_idx] != 0.0 {
-                                // nih_log!("self.delay_tap_amp_envelope[value_idx]: {}", self.delay_tap_amp_envelope[value_idx]);
-                                // }
-                                delay_tap.delayed_audio_l[sample_idx] =
-                                    self.delay_buffer[0].lin_interp_f32(
-                                        read_index - self.delay_tap_smoothed_offset_l[value_idx]
-                                            + value_idx as f32,
-                                    ) * pre_filter_gain;
-                                delay_tap.delayed_audio_r[sample_idx] =
-                                    self.delay_buffer[1].lin_interp_f32(
-                                        read_index - self.delay_tap_smoothed_offset_r[value_idx]
-                                            + value_idx as f32,
-                                    ) * pre_filter_gain;
-                            }
-
-                            for i in (block_start..block_end).step_by(2) {
-                                let frame = f32x4::from_array([
-                                    delay_tap.delayed_audio_l[i],
-                                    delay_tap.delayed_audio_r[i],
-                                    delay_tap.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
-                                    delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
-                                ]);
-
-                                let gain_values = f32x4::from_array([
-                                    self.delay_tap_eq_gain_l[i],
-                                    self.delay_tap_eq_gain_r[i],
-                                    self.delay_tap_eq_gain_l.get(i + 1).copied().unwrap_or(1.0),
-                                    self.delay_tap_eq_gain_r.get(i + 1).copied().unwrap_or(1.0),
-                                ]);
-
-                                let frame_filtered =
-                                    *delay_tap.ladders.tick_pivotal(frame).as_array();
-                                let frame_out = delay_tap
-                                    .shelving_eq
-                                    .highshelf(frame_filtered.into(), gain_values);
-
-                                // let frame_out = *delay_tap.ladders.tick_linear(frame).as_array();
-                                delay_tap.delayed_audio_l[i] = frame_out[0];
-                                delay_tap.delayed_audio_r[i] = frame_out[1];
-                                if i + 1 < block_end {
-                                    delay_tap.delayed_audio_l[i + 1] = frame_out[2];
-                                    delay_tap.delayed_audio_r[i + 1] = frame_out[3];
-                                }
-                            }
-                        }
-
-                        // Process the output and meter updates
-                        let mut amplitude = 0.0;
-                        for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                            let post_filter_gain = dry_wet[value_idx]
-                                * wet_gain[value_idx]
-                                * self.delay_tap_amp_envelope[value_idx]
-                                / (drive * global_drive[value_idx]);
-                            let left = delay_tap.delayed_audio_l[sample_idx]
-                                * post_filter_gain
-                                * self.delay_tap_pan_gain_l[value_idx];
-                            let right = delay_tap.delayed_audio_r[sample_idx]
-                                * post_filter_gain
-                                * self.delay_tap_pan_gain_r[value_idx];
-                            output[0][sample_idx] += left;
-                            output[1][sample_idx] += right;
-                            amplitude += (left.abs() + right.abs()) * 0.5;
-                        }
-
-                        if self.params.editor_state.is_open() {
-                            let weight = self.peak_meter_decay_weight * 0.91;
-
-                            amplitude = (amplitude / block_len as f32).min(1.0);
-                            let current_peak_meter =
-                                self.tap_meters[meter_index].load(Ordering::Relaxed);
-                            let new_peak_meter = if amplitude > current_peak_meter {
-                                // nih_log!(
-                                // "process: self.meter_indexes[{meter_index}]: {}",
-                                // self.meter_indexes[meter_index].load(Ordering::Relaxed)
-                                // );
-                                amplitude
-                            } else {
-                                current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
+                        let calculate_and_set_gain =
+                            |target: &mut Smoother<f32>, min_gain: f32, multiplier: f32| {
+                                let gain_value =
+                                    util::db_to_gain_fast((min_gain * pan * multiplier).min(0.0));
+                                target.set_target(sample_rate, gain_value);
                             };
 
-                            self.tap_meters[meter_index].store(new_peak_meter, Ordering::Relaxed);
+                        calculate_and_set_gain(&mut delay_tap.eq_gain_l, MIN_EQ_GAIN, 1.0);
+                        calculate_and_set_gain(&mut delay_tap.eq_gain_r, MIN_EQ_GAIN, -1.0);
+                        calculate_and_set_gain(&mut delay_tap.pan_gain_l, MIN_PAN_GAIN, 1.0);
+                        calculate_and_set_gain(&mut delay_tap.pan_gain_r, MIN_PAN_GAIN, -1.0);
+                        delay_tap
+                            .smoothed_offset_l
+                            .next_block(&mut self.delay_tap_smoothed_offset_l, block_len);
+                        delay_tap
+                            .smoothed_offset_r
+                            .next_block(&mut self.delay_tap_smoothed_offset_r, block_len);
+                        delay_tap
+                            .eq_gain_l
+                            .next_block(&mut self.delay_tap_eq_gain_l, block_len);
+                        delay_tap
+                            .eq_gain_r
+                            .next_block(&mut self.delay_tap_eq_gain_r, block_len);
+                        delay_tap
+                            .pan_gain_l
+                            .next_block(&mut self.delay_tap_pan_gain_l, block_len);
+                        delay_tap
+                            .pan_gain_r
+                            .next_block(&mut self.delay_tap_pan_gain_r, block_len);
+                        for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
+                            let pre_filter_gain = global_drive[value_idx];
+                            // if self.delay_tap_amp_envelope[value_idx] != 1.0 && self.delay_tap_amp_envelope[value_idx] != 0.0 {
+                            // nih_log!("self.delay_tap_amp_envelope[value_idx]: {}", self.delay_tap_amp_envelope[value_idx]);
+                            // }
+                            delay_tap.delayed_audio_l[sample_idx] =
+                                self.delay_buffer[0].lin_interp_f32(
+                                    read_index - self.delay_tap_smoothed_offset_l[value_idx]
+                                        + value_idx as f32,
+                                ) * pre_filter_gain;
+                            delay_tap.delayed_audio_r[sample_idx] =
+                                self.delay_buffer[1].lin_interp_f32(
+                                    read_index - self.delay_tap_smoothed_offset_r[value_idx]
+                                        + value_idx as f32,
+                                ) * pre_filter_gain;
                         }
-                        if self.delay_tap_amp_envelope[0] == 0.0 {
-                            if delay_tap.releasing {
-                                delay_tap.is_alive = false;
-                                // nih_log!("killed");
+
+                        for i in (block_start..block_end).step_by(2) {
+                            let frame = f32x4::from_array([
+                                delay_tap.delayed_audio_l[i],
+                                delay_tap.delayed_audio_r[i],
+                                delay_tap.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
+                                delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
+                            ]);
+
+                            let gain_values = f32x4::from_array([
+                                self.delay_tap_eq_gain_l[i],
+                                self.delay_tap_eq_gain_r[i],
+                                self.delay_tap_eq_gain_l.get(i + 1).copied().unwrap_or(1.0),
+                                self.delay_tap_eq_gain_r.get(i + 1).copied().unwrap_or(1.0),
+                            ]);
+
+                            let frame_filtered = *delay_tap.ladders.tick_pivotal(frame).as_array();
+                            let frame_out = delay_tap
+                                .shelving_eq
+                                .highshelf(frame_filtered.into(), gain_values);
+
+                            // let frame_out = *delay_tap.ladders.tick_linear(frame).as_array();
+                            delay_tap.delayed_audio_l[i] = frame_out[0];
+                            delay_tap.delayed_audio_r[i] = frame_out[1];
+                            if i + 1 < block_end {
+                                delay_tap.delayed_audio_l[i + 1] = frame_out[2];
+                                delay_tap.delayed_audio_r[i + 1] = frame_out[3];
                             }
-                            delay_tap.is_audible = false;
-                        } else {
-                            delay_tap.is_audible = true;
                         }
+                    }
+
+                    // Process the output and meter updates
+                    let mut amplitude = 0.0;
+                    for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
+                        let post_filter_gain = dry_wet[value_idx]
+                            * wet_gain[value_idx]
+                            * self.delay_tap_amp_envelope[value_idx]
+                            / (drive * global_drive[value_idx]);
+                        let left = delay_tap.delayed_audio_l[sample_idx]
+                            * post_filter_gain
+                            * self.delay_tap_pan_gain_l[value_idx];
+                        let right = delay_tap.delayed_audio_r[sample_idx]
+                            * post_filter_gain
+                            * self.delay_tap_pan_gain_r[value_idx];
+                        output[0][sample_idx] += left;
+                        output[1][sample_idx] += right;
+                        amplitude += (left.abs() + right.abs()) * 0.5;
+                    }
+
+                    if self.params.editor_state.is_open() {
+                        let weight = self.peak_meter_decay_weight * 0.91;
+
+                        amplitude = (amplitude / block_len as f32).min(1.0);
+                        let current_peak_meter =
+                            self.tap_meters[meter_index].load(Ordering::Relaxed);
+                        let new_peak_meter = if amplitude > current_peak_meter {
+                            // nih_log!(
+                            // "process: self.meter_indexes[{meter_index}]: {}",
+                            // self.meter_indexes[meter_index].load(Ordering::Relaxed)
+                            // );
+                            amplitude
+                        } else {
+                            current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
+                        };
+
+                        self.tap_meters[meter_index].store(new_peak_meter, Ordering::Relaxed);
+                    }
+                    if self.delay_tap_amp_envelope[0] == 0.0 {
+                        if delay_tap.releasing {
+                            delay_tap.is_alive = false;
+                            // nih_log!("killed");
+                        }
+                        delay_tap.is_audible = false;
+                    } else {
+                        delay_tap.is_audible = true;
                     }
                 });
 
@@ -1314,45 +1310,47 @@ impl Del2 {
     }
 
     fn update_filters(&mut self) {
+        // Extract params once to avoid repeated access
         let velocity_params = &self.params.taps;
         let low_params = &velocity_params.velocity_low;
         let high_params = &velocity_params.velocity_high;
+        let note_to_cutoff = velocity_params.note_to_cutoff_amount.value();
+        let vel_to_cutoff = velocity_params.velocity_to_cutoff_amount.value();
 
-        self.delay_taps.iter_mut().for_each(|delay_tap| {
-            if delay_tap.is_alive {
+        // Pre-compute static values for the iteration
+        let low_drive_db = util::gain_to_db(low_params.drive.value());
+        let high_drive_db = util::gain_to_db(high_params.drive.value());
+        let low_res = low_params.res.value();
+        let high_res = high_params.res.value();
+        let low_cutoff = low_params.cutoff.value();
+        let high_cutoff = high_params.cutoff.value();
+        let low_mode = low_params.mode.value();
+        let high_mode = high_params.mode.value();
+
+        // Use par_iter_mut() if the collection is large enough to benefit from parallelization
+        self.delay_taps
+            .iter_mut()
+            .filter(|tap| tap.is_alive)
+            .for_each(|delay_tap| {
                 let velocity = delay_tap.velocity;
 
-                // Unsafe block to get a mutable reference to the filter parameters
+                // Safety: We know this is unique as we have &mut access to delay_tap
                 let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
 
-                let res = Self::lerp(low_params.res.value(), high_params.res.value(), velocity);
-
-                let velocity_cutoff = Self::log_interpolate(
-                    low_params.cutoff.value(),
-                    high_params.cutoff.value(),
-                    velocity,
-                );
-
+                // Compute filter parameters
+                let res = Self::lerp(low_res, high_res, velocity);
+                let velocity_cutoff = Self::log_interpolate(low_cutoff, high_cutoff, velocity);
                 let note_cutoff = util::midi_note_to_freq(delay_tap.note);
+
+                // Fused multiply-add operation
                 let cutoff = note_cutoff
-                    .mul_add(
-                        velocity_params.note_to_cutoff_amount.value(),
-                        velocity_cutoff * velocity_params.velocity_to_cutoff_amount.value(),
-                    )
+                    .mul_add(note_to_cutoff, velocity_cutoff * vel_to_cutoff)
                     .clamp(10.0, 20_000.0);
 
-                let drive_db = Self::lerp(
-                    util::gain_to_db(low_params.drive.value()),
-                    util::gain_to_db(high_params.drive.value()),
-                    velocity,
-                );
+                let drive = util::db_to_gain(Self::lerp(low_drive_db, high_drive_db, velocity));
+                let mode = MyLadderMode::lerp(low_mode, high_mode, velocity);
 
-                let drive = util::db_to_gain(drive_db);
-
-                let mode =
-                    MyLadderMode::lerp(low_params.mode.value(), high_params.mode.value(), velocity);
-
-                // Apply computed parameters
+                // Batch update filter parameters
                 filter_params.set_resonance(res);
                 filter_params.set_frequency(cutoff);
                 filter_params.drive = drive;
@@ -1360,8 +1358,7 @@ impl Del2 {
 
                 // Update filter mix mode
                 delay_tap.ladders.set_mix(mode);
-            }
-        });
+            });
     }
 
     #[inline]
