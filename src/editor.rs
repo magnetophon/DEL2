@@ -352,49 +352,59 @@ impl View for DelayGraph {
         // Draw components
         Self::draw_background(canvas, bounds, background_color);
 
+        let outline_color: vg::Color = draw_context.outline_color().into();
+        let selection_color: vg::Color = draw_context.selection_color().into();
+        let font_color: vg::Color = draw_context.font_color().into();
+        let tap_meters = self.tap_meters.clone();
+        let meter_indexes = self.meter_indexes.clone();
+        let current_time = params.current_time.load(Ordering::SeqCst);
+        // Compute the time scaling factor
+        let target_time_scaling_factor = Self::compute_time_scaling_factor(&params);
+
+        let gui_decay_weight = Self::calculate_gui_decay_weight(&params);
+
+        let available_width = outline_width.mul_add(-0.5, bounds.w - border_width);
+
+        let time_scaling_factor = (Self::gui_smooth(
+            target_time_scaling_factor,
+            &params.previous_time_scaling_factor,
+            gui_decay_weight,
+        ) / available_width)
+            .recip();
+
+        if tap_counter > 0 {
+            Self::draw_delay_times_as_lines(
+                canvas,
+                &params,
+                bounds,
+                border_color,
+                border_width,
+                time_scaling_factor,
+            );
+            Self::draw_tap_velocities_and_meters(
+                canvas,
+                &params,
+                &tap_meters,
+                &meter_indexes,
+                bounds,
+                outline_color,
+                border_color,
+                outline_width,
+                time_scaling_factor,
+                border_width,
+            );
+        }
+
+        Self::draw_in_out_meters(
+            canvas,
+            &input_meter,
+            &output_meter,
+            bounds,
+            border_color,
+            outline_width,
+        );
+
         if first_note != NO_LEARNED_NOTE {
-            let outline_color: vg::Color = draw_context.outline_color().into();
-            let selection_color: vg::Color = draw_context.selection_color().into();
-            let font_color: vg::Color = draw_context.font_color().into();
-            let tap_meters = self.tap_meters.clone();
-            let meter_indexes = self.meter_indexes.clone();
-            let current_time = params.current_time.load(Ordering::SeqCst);
-            // Compute the time scaling factor
-            let target_time_scaling_factor = Self::compute_time_scaling_factor(&params);
-
-            let gui_decay_weight = Self::calculate_gui_decay_weight(&params);
-
-            let available_width = outline_width.mul_add(-0.5, bounds.w - border_width);
-
-            let time_scaling_factor = (Self::gui_smooth(
-                target_time_scaling_factor,
-                &params.previous_time_scaling_factor,
-                gui_decay_weight,
-            ) / available_width)
-                .recip();
-
-            if tap_counter > 0 {
-                Self::draw_delay_times_as_lines(
-                    canvas,
-                    &params,
-                    bounds,
-                    border_color,
-                    border_width,
-                    time_scaling_factor,
-                );
-                Self::draw_tap_velocities_and_meters(
-                    canvas,
-                    &params,
-                    &tap_meters,
-                    &meter_indexes,
-                    bounds,
-                    outline_color,
-                    border_color,
-                    outline_width,
-                    time_scaling_factor,
-                    border_width,
-                );
-            }
             Self::draw_tap_notes_and_pans(
                 canvas,
                 &params,
@@ -422,14 +432,6 @@ impl View for DelayGraph {
             }
         }
 
-        Self::draw_in_out_meters(
-            canvas,
-            &input_meter,
-            &output_meter,
-            bounds,
-            border_color,
-            outline_width,
-        );
         Self::draw_bounding_outline(canvas, bounds, border_color, border_width);
     }
 }
