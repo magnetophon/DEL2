@@ -426,7 +426,7 @@ impl FilterGuiParams {
                     factor: FloatRange::skew_factor(-1.6),
                 },
             )
-            .with_value_to_string(formatters::v2s_f32_hz_then_khz(1))
+            .with_value_to_string(Del2::v2s_f32_hz_then_khz_three_digits())
             .with_string_to_value(formatters::s2v_f32_hz_then_khz())
             .with_callback(Arc::new({
                 let should_update_filter = should_update_filter.clone();
@@ -1449,6 +1449,22 @@ impl Del2 {
     fn is_playing_action(&self, index: usize) -> bool {
         self.last_played_notes
             .is_playing(self.learned_notes.load(index))
+    }
+
+    /// Format a `f32` Hertz value as a rounded `Hz` below 1000 Hz, and as a rounded `kHz` value above
+    /// 1000 Hz. This already includes the unit.
+    fn v2s_f32_hz_then_khz_three_digits() -> Arc<dyn Fn(f32) -> String + Send + Sync> {
+        Arc::new(move |value| {
+            if value < 100.0 {
+                format!("{:.1} Hz", value)
+            } else if value < 1000.0 {
+                format!("{:.0} Hz", value)
+            } else if value < 10000.0 {
+                format!("{:.2} kHz", value / 1000.0)
+            } else {
+                format!("{:.1} kHz", value / 1000.0)
+            }
+        })
     }
 
     fn v2s_f32_ms_then_s(total_digits: usize) -> Arc<dyn Fn(f32) -> String + Send + Sync> {
