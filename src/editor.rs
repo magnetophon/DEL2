@@ -352,14 +352,6 @@ impl View for DelayGraph {
         // Draw components
         Self::draw_background(canvas, bounds, background_color);
 
-        Self::draw_in_out_meters(
-            canvas,
-            &input_meter,
-            &output_meter,
-            bounds,
-            border_color,
-            outline_width,
-        );
         if first_note != NO_LEARNED_NOTE {
             let outline_color: vg::Color = draw_context.outline_color().into();
             let selection_color: vg::Color = draw_context.selection_color().into();
@@ -416,6 +408,7 @@ impl View for DelayGraph {
                 border_color,
                 background_color,
             );
+
             if current_time > 0.0 {
                 Self::draw_time_line(
                     canvas,
@@ -428,6 +421,15 @@ impl View for DelayGraph {
                 );
             }
         }
+
+        Self::draw_in_out_meters(
+            canvas,
+            &input_meter,
+            &output_meter,
+            bounds,
+            border_color,
+            outline_width,
+        );
         Self::draw_bounding_outline(canvas, bounds, border_color, border_width);
     }
 }
@@ -750,14 +752,7 @@ impl DelayGraph {
             let velocity_value = params.velocities[i].load(Ordering::SeqCst);
             let velocity_height = velocity_value.mul_add(bounds.h, -border_width);
 
-            let meter_index = meter_indexes[i].load(Ordering::Relaxed);
-            // nih_log!("draw: meter_indexes[{i}]: {meter_index}");
-            let meter_db = util::gain_to_db(tap_meters[meter_index].load(Ordering::Relaxed));
-            let meter_height = {
-                let tick_fraction = (meter_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
-                (tick_fraction * bounds.h).max(0.0)
-            };
-
+            // Draw the velocity path
             let mut path = vg::Path::new();
             let x_val = line_width.mul_add(-0.75, bounds.x + x_offset);
             path.move_to(x_val, bounds.y + bounds.h - velocity_height);
@@ -767,8 +762,21 @@ impl DelayGraph {
                 &path,
                 &vg::Paint::color(velocity_color).with_line_width(line_width * 1.5),
             );
+        }
 
-            path = vg::Path::new();
+        for i in 0..tap_counter {
+            let delay_time = params.delay_times[i].load(Ordering::SeqCst);
+            let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
+
+            let meter_index = meter_indexes[i].load(Ordering::Relaxed);
+            let meter_db = util::gain_to_db(tap_meters[meter_index].load(Ordering::Relaxed));
+            let meter_height = {
+                let tick_fraction = (meter_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
+                (tick_fraction * bounds.h).max(0.0)
+            };
+
+            // Draw the meter path
+            let mut path = vg::Path::new();
             let x_val = line_width.mul_add(0.75, bounds.x + x_offset);
             path.move_to(x_val, bounds.y + bounds.h - meter_height);
             path.line_to(x_val, bounds.y + bounds.h);
