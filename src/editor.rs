@@ -368,7 +368,7 @@ impl View for DelayGraph {
             .recip();
 
         // Start drawing
-        Self::draw_background(canvas, bounds, background_color);
+        // Self::draw_background(canvas, bounds, background_color);
 
         if tap_counter > 0 {
             Self::draw_delay_times_as_lines(
@@ -658,7 +658,7 @@ impl DelayGraph {
         canvas.stroke_path(&path, &vg::Paint::color(border_color).with_line_width(0.7));
     }
 
-    fn draw_background(canvas: &mut Canvas, bounds: BoundingBox, color: vg::Color) {
+    fn _draw_background(canvas: &mut Canvas, bounds: BoundingBox, color: vg::Color) {
         let mut path = vg::Path::new();
         // Use the original bounds directly
         path.rect(bounds.x, bounds.y, bounds.w, bounds.h);
