@@ -73,7 +73,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
             ZStack::new(cx, |cx| {
                 DelayGraph::new(cx, Data::params, Data::tap_meters, Data::input_meter, Data::output_meter, Data::meter_indexes)
                 // .overflow(Overflow::Hidden)
-                        ;
+                    ;
                 Label::new(cx, "DEL2").class("plugin-name");
             });
             HStack::new(cx, |cx| {
@@ -748,6 +748,16 @@ impl DelayGraph {
         path.close();
 
         canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
+
+        // let gloss = &vg::Paint::radial_gradient(
+        // 0.0,
+        // 0.0,
+        // 30.0,
+        // 40.0,
+        // Color::rgba(0, 0, 0, 0).into(),
+        // color,
+        // );
+        // canvas.stroke_path(&path, &gloss);
     }
 
     fn draw_in_out_meters(
@@ -805,20 +815,71 @@ impl DelayGraph {
         for i in 0..tap_counter {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst);
             let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
-
             let velocity_value = params.velocities[i].load(Ordering::SeqCst);
             let velocity_height = velocity_value.mul_add(bounds.h, -border_width);
 
-            // Draw the velocity path
-            let mut path = vg::Path::new();
+            // Calculate line position
             let x_val = line_width.mul_add(-0.75, bounds.x + x_offset);
-            path.move_to(x_val, bounds.y + bounds.h - velocity_height);
-            path.line_to(x_val, bounds.y + bounds.h);
+            let y_start = bounds.y + bounds.h - velocity_height;
+            let y_end = bounds.y + bounds.h;
 
-            canvas.stroke_path(
-                &path,
-                &vg::Paint::color(velocity_color).with_line_width(line_width * 1.5),
+            // Convert f32 color components to u8 (0-255 range)
+            let r = (velocity_color.r * 255.0) as u8;
+            let g = (velocity_color.g * 255.0) as u8;
+            let b = (velocity_color.b * 255.0) as u8;
+
+            // Create box dimensions for the glow
+            let box_width = line_width * 1.5;
+            let box_height = y_end - y_start;
+            let corner_radius = box_width * 0.5;
+            let feather = box_width * 2.0;
+
+            // Create the glow gradient
+            let glow_paint = vg::Paint::box_gradient(
+                x_val - box_width * 0.5,          // x: center the box on the line
+                y_start,                          // y: start at the top of the line
+                box_width,                        // width: slightly wider than the line
+                box_height,                       // height: full line height
+                corner_radius,                    // radius: smooth corners
+                feather,                          // feather: blur amount for glow
+                Color::rgba(r, g, b, 167).into(), // inner: bright core
+                Color::rgba(r, g, b, 0).into(),   // outer: fade to transparent
             );
+
+            // Create path for the glow effect
+            let mut path = vg::Path::new();
+
+            // Add outer rectangle that extends beyond the glow
+            let padding = feather * 2.0;
+            path.rect(
+                x_val - box_width * 0.5 - padding,
+                y_start - padding,
+                box_width + padding * 2.0,
+                box_height + padding * 2.0,
+            );
+
+            // Add inner rectangle for the line itself
+            path.rounded_rect(
+                x_val - box_width * 0.5,
+                y_start,
+                box_width,
+                box_height,
+                corner_radius,
+            );
+
+            // Apply the glow effect
+            canvas.fill_path(&path, &glow_paint);
+
+            // Draw the core line
+            let mut core_path = vg::Path::new();
+            core_path.rounded_rect(
+                x_val - box_width * 0.5,
+                y_start,
+                box_width,
+                box_height,
+                corner_radius,
+            );
+            canvas.fill_path(&core_path, &vg::Paint::color(velocity_color));
         }
 
         for i in 0..tap_counter {

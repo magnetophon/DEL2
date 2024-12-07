@@ -9,6 +9,7 @@
      *       weight lower seems to compensate for this.
      */
     font-weight: light;
+    /* box-shadow: 4px 3px 10px #fabdf0; */
 }
 
 .parameters-left {
@@ -35,13 +36,21 @@ param-slider {
     border-width: 1px;
     background-color: #4e4e4e;
     border-color: #fabdf0;
-    transition: background-color 300ms;
+    /* transition: background-color 800ms; */
+    /* box-shadow: 0px 0px 5px #fabdf0; */
+    /* box-shadow: 0px 0px 13px #3b363a; */
+    /* box-shadow: 0px 0px 13px #5c4d59; */
+    box-shadow: 0px 0px 10px #7d5f78;
+    transition: box-shadow 320ms;
 }
 
 param-slider:active,
 param-slider:hover {
-    background-color: #292929;
-    transition: background-color 100ms;
+    /* background-color: #292929; */
+    background-color: #4e4e4e;
+    /* box-shadow: 0px 0px 9px #fabdf0; */
+    box-shadow: 0px 0px 14px #906d8b;
+    transition: box-shadow 100ms;
 }
 
 param-slider .fill {
@@ -70,6 +79,11 @@ param-slider .value-entry .selection {
     font-size: 42;
     top: 13px;
     right: 21px;
+    bottom: 0px;
+    /* box-shadow: 0px 0px 25px #fabdf0; */
+    /* box-shadow: 0px 0px 20px #5c4d59; */
+    /* box-shadow: 0px 0px 20px #3b363a; */
+    box-shadow: 0px 0px 20px #383538;
 }
 
 .group-title {
@@ -79,6 +93,7 @@ param-slider .value-entry .selection {
     right: 1s;
     top: 0px;
     bottom: 9px;
+    box-shadow: 0px 0px 14px #33322e;
 }
 
 .mid-group-title {
@@ -88,6 +103,7 @@ param-slider .value-entry .selection {
     right: 1s;
     top: 1s;
     bottom: 9px;
+    box-shadow: 0px 0px 14px #33322e;
 }
 .column-title-group {
     height: auto;
@@ -100,6 +116,7 @@ param-slider .value-entry .selection {
     font-size: 23;
     left: 1s;
     right: 0px;
+    box-shadow: 0px 0px 14px #33322e;
 }
 
 .slider-label {
@@ -107,6 +124,7 @@ param-slider .value-entry .selection {
     right: 9px;
     top: 1s;
     bottom: 1s;
+    box-shadow: 0px 0px 14px #33322e;
 }
 
 delay-graph {
@@ -145,12 +163,14 @@ action-trigger {
     outline-color: #e0ce91;
     selection-color: #fabdf0;
     border-width: 1px;
-    transition: background-color 300ms;
+    box-shadow: 0px 0px 5px #fabdf0;
+    transition: box-shadow 500ms;
 }
 
 action-trigger:hover {
-    background-color: #292929;
-    transition: background-color 100ms;
+    background-color: #4e4e4e;
+    box-shadow: 0px 0px 9px #fabdf0;
+    transition: box-shadow 100ms;
 }
 .action-name {
     right: 9px;
