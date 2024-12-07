@@ -813,70 +813,70 @@ impl DelayGraph {
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
 
         for i in 0..tap_counter {
-            let delay_time = params.delay_times[i].load(Ordering::SeqCst);
-            let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
-            let velocity_value = params.velocities[i].load(Ordering::SeqCst);
-            let velocity_height = velocity_value.mul_add(bounds.h, -border_width);
-
-            // Calculate line position
+            // Calculate position based on delay time
+            let x_offset = params.delay_times[i]
+                .load(Ordering::SeqCst)
+                .mul_add(time_scaling_factor, border_width * 0.5);
             let x_val = line_width.mul_add(-0.75, bounds.x + x_offset);
+
+            // Calculate velocity-based height
+            let velocity_height = params.velocities[i]
+                .load(Ordering::SeqCst)
+                .mul_add(bounds.h, -border_width);
             let y_start = bounds.y + bounds.h - velocity_height;
             let y_end = bounds.y + bounds.h;
 
-            // Convert f32 color components to u8 (0-255 range)
-            let r = (velocity_color.r * 255.0) as u8;
-            let g = (velocity_color.g * 255.0) as u8;
-            let b = (velocity_color.b * 255.0) as u8;
-
-            // Create box dimensions for the glow
+            // Define glow box dimensions
             let box_width = line_width * 1.5;
-            let box_height = y_end - y_start;
             let corner_radius = box_width * 0.5;
             let feather = box_width * 2.0;
 
-            // Create the glow gradient
-            let glow_paint = vg::Paint::box_gradient(
-                x_val - box_width * 0.5,          // x: center the box on the line
-                y_start,                          // y: start at the top of the line
-                box_width,                        // width: slightly wider than the line
-                box_height,                       // height: full line height
-                corner_radius,                    // radius: smooth corners
-                feather,                          // feather: blur amount for glow
-                Color::rgba(r, g, b, 167).into(), // inner: bright core
-                Color::rgba(r, g, b, 0).into(),   // outer: fade to transparent
+            // Convert velocity color to RGB bytes once
+            let color_bytes = (
+                (velocity_color.r * 255.0) as u8,
+                (velocity_color.g * 255.0) as u8,
+                (velocity_color.b * 255.0) as u8,
             );
 
-            // Create path for the glow effect
-            let mut path = vg::Path::new();
+            // Create glow gradient
+            let glow_paint = vg::Paint::box_gradient(
+                x_val - box_width * 0.5, // Center x position
+                y_start,                 // Top y position
+                box_width,               // Width of glow box
+                y_end - y_start,         // Height of line
+                corner_radius,           // Corner smoothing
+                feather,                 // Glow spread
+                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 167).into(), // Core color
+                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(), // Fade out
+            );
 
-            // Add outer rectangle that extends beyond the glow
+            // Create and fill glow path
+            let mut path = vg::Path::new();
             let padding = feather * 2.0;
+            // Outer rectangle for glow spread
             path.rect(
                 x_val - box_width * 0.5 - padding,
                 y_start - padding,
                 box_width + padding * 2.0,
-                box_height + padding * 2.0,
+                y_end - y_start + padding * 2.0,
             );
-
-            // Add inner rectangle for the line itself
+            // Inner rectangle for core glow
             path.rounded_rect(
                 x_val - box_width * 0.5,
                 y_start,
                 box_width,
-                box_height,
+                y_end - y_start,
                 corner_radius,
             );
-
-            // Apply the glow effect
             canvas.fill_path(&path, &glow_paint);
 
-            // Draw the core line
+            // Draw solid core line
             let mut core_path = vg::Path::new();
             core_path.rounded_rect(
                 x_val - box_width * 0.5,
                 y_start,
                 box_width,
-                box_height,
+                y_end - y_start,
                 corner_radius,
             );
             canvas.fill_path(&core_path, &vg::Paint::color(velocity_color));
