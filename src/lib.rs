@@ -40,7 +40,7 @@ use bit_mask_ring_buf::BMRingBuf;
 use default_boxed::DefaultBoxed;
 use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
-use nih_plug_vizia::ViziaState;
+use vizia_plug::ViziaState;
 use std::ops::Index;
 use std::simd::f32x4;
 use std::sync::atomic::{

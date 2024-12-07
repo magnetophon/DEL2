@@ -5,10 +5,10 @@ use std::sync::{
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use nih_plug::prelude::Editor;
-use nih_plug_vizia::{
-    assets, create_vizia_editor,
+use vizia_plug::{
+    create_vizia_editor,
     vizia::{prelude::*, vg},
-    widgets::{ParamSlider, ParamSliderExt, ParamSliderStyle, ResizeHandle},
+    widgets::{ParamSlider, ParamSliderExt, ParamSliderStyle},
     ViziaState, ViziaTheming,
 };
 
@@ -60,8 +60,6 @@ pub fn default_state() -> Arc<ViziaState> {
 
 pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
-        assets::register_noto_sans_light(cx);
-        assets::register_noto_sans_thin(cx);
 
         // Add the stylesheet to the app
         cx.add_stylesheet(include_style!("src/style.css"))
@@ -368,7 +366,6 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                 .class("parameters-right");
             })
             .class("parameters-all");
-            ResizeHandle::new(cx);
         });
     })
 }
@@ -392,7 +389,7 @@ impl View for DelayGraph {
         Some("delay-graph")
     }
 
-    fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, draw_context: &mut DrawContext, canvas: &Canvas) {
         let params = self.params.clone();
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
         let tap_meters = self.tap_meters.clone();
@@ -689,7 +686,7 @@ impl DelayGraph {
     }
 
     fn draw_delay_times_as_lines(
-        canvas: &mut Canvas,
+        canvas: &Canvas,
         params: &Arc<Del2Params>,
         bounds: BoundingBox,
         border_color: vg::Color,
@@ -707,25 +704,39 @@ impl DelayGraph {
             let start_y = border_width.mul_add(-0.5, bounds.y + bounds.h);
             let end_y = border_width.mul_add(0.5, bounds.y);
 
-            path.move_to(bounds.x + x_offset, start_y);
-            path.line_to(bounds.x + x_offset, end_y);
+            path.move_to((bounds.x + x_offset, start_y));
+            path.line_to((bounds.x + x_offset, end_y));
         }
 
-        canvas.stroke_path(&path, &vg::Paint::color(border_color).with_line_width(0.7));
+        let mut paint = vg::Paint::default();
+        paint.set_color(border_color);
+        paint.set_stroke_width(0.7);
+        paint.set_style(vg::PaintStyle::Stroke);
+
+        canvas.draw_path(
+            &path,
+            &paint,
+        );
     }
 
-    fn _draw_background(canvas: &mut Canvas, bounds: BoundingBox, color: vg::Color) {
+    fn _draw_background(canvas: &Canvas, bounds: BoundingBox, color: vg::Color) {
         let mut path = vg::Path::new();
         // Use the original bounds directly
-        path.rect(bounds.x, bounds.y, bounds.w, bounds.h);
+        path.add_rect(vg::Rect::from_xywh(bounds.x, bounds.y, bounds.w, bounds.h), None);
         path.close();
 
-        let paint = vg::Paint::color(color);
-        canvas.fill_path(&path, &paint);
+        let mut paint = vg::Paint::default();
+        paint.set_color(color);
+        paint.set_style(vg::PaintStyle::Fill);
+
+        canvas.draw_path(
+            &path,
+            &paint,
+        );
     }
 
     fn draw_time_line(
-        canvas: &mut Canvas,
+        canvas: &Canvas,
         params: &Arc<Del2Params>,
         bounds: BoundingBox,
         color: vg::Color,
@@ -743,15 +754,23 @@ impl DelayGraph {
         let y_move = border_width.mul_add(-0.5, bounds.y + bounds.h);
 
         let mut path = vg::Path::new();
-        path.move_to(bounds.x + x_offset, y_move);
-        path.line_to(bounds.x + x_offset, bounds.y);
+        path.move_to((bounds.x + x_offset, y_move));
+        path.line_to((bounds.x + x_offset, bounds.y));
         path.close();
 
-        canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
+        let mut paint = vg::Paint::default();
+        paint.set_color(color);
+        paint.set_stroke_width(line_width);
+        paint.set_style(vg::PaintStyle::Stroke);
+
+        canvas.draw_path(
+            &path,
+            &paint,
+        );
     }
 
     fn draw_in_out_meters(
-        canvas: &mut Canvas,
+        canvas: &Canvas,
         input_meter: &Arc<AtomicF32>,
         output_meter: &Arc<AtomicF32>,
         bounds: BoundingBox,
@@ -766,11 +785,17 @@ impl DelayGraph {
         };
         let mut path = vg::Path::new();
         let x_val = line_width.mul_add(0.75, bounds.x);
-        path.move_to(x_val, bounds.y + bounds.h - input_height);
-        path.line_to(x_val, bounds.y + bounds.h);
-        canvas.stroke_path(
+        path.move_to((x_val, bounds.y + bounds.h - input_height));
+        path.line_to((x_val, bounds.y + bounds.h));
+
+        let mut paint = vg::Paint::default();
+        paint.set_color(meter_color);
+        paint.set_stroke_width(line_width * 1.5);
+        paint.set_style(vg::PaintStyle::Stroke);
+
+        canvas.draw_path(
             &path,
-            &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
+            &paint,
         );
 
         // Calculate and draw output meter
@@ -781,15 +806,21 @@ impl DelayGraph {
         };
         path = vg::Path::new();
         let x_val = line_width.mul_add(-0.75, bounds.x + bounds.w);
-        path.move_to(x_val, bounds.y + bounds.h - output_height);
-        path.line_to(x_val, bounds.y + bounds.h);
-        canvas.stroke_path(
+        path.move_to((x_val, bounds.y + bounds.h - output_height));
+        path.line_to((x_val, bounds.y + bounds.h));
+
+        let mut paint = vg::Paint::default();
+        paint.set_color(meter_color);
+        paint.set_stroke_width(line_width * 1.5);
+        paint.set_style(vg::PaintStyle::Stroke);
+
+        canvas.draw_path(
             &path,
-            &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
+            &paint,
         );
     }
     fn draw_tap_velocities_and_meters(
-        canvas: &mut Canvas,
+        canvas: &Canvas,
         params: &Arc<Del2Params>,
         tap_meters: &Arc<AtomicF32Array>,
         meter_indexes: &Arc<AtomicUsizeArray>,
@@ -812,12 +843,17 @@ impl DelayGraph {
             // Draw the velocity path
             let mut path = vg::Path::new();
             let x_val = line_width.mul_add(-0.75, bounds.x + x_offset);
-            path.move_to(x_val, bounds.y + bounds.h - velocity_height);
-            path.line_to(x_val, bounds.y + bounds.h);
+            path.move_to((x_val, bounds.y + bounds.h - velocity_height));
+            path.line_to((x_val, bounds.y + bounds.h));
 
-            canvas.stroke_path(
+            let mut paint = vg::Paint::default();
+            paint.set_color(velocity_color);
+            paint.set_stroke_width(line_width * 1.5);
+            paint.set_style(vg::PaintStyle::Stroke);
+
+            canvas.draw_path(
                 &path,
-                &vg::Paint::color(velocity_color).with_line_width(line_width * 1.5),
+                &paint,
             );
         }
 
@@ -835,18 +871,23 @@ impl DelayGraph {
             // Draw the meter path
             let mut path = vg::Path::new();
             let x_val = line_width.mul_add(0.75, bounds.x + x_offset);
-            path.move_to(x_val, bounds.y + bounds.h - meter_height);
-            path.line_to(x_val, bounds.y + bounds.h);
+            path.move_to((x_val, bounds.y + bounds.h - meter_height));
+            path.line_to((x_val, bounds.y + bounds.h));
 
-            canvas.stroke_path(
+            let mut paint = vg::Paint::default();
+            paint.set_color(meter_color);
+            paint.set_stroke_width(line_width * 1.5);
+            paint.set_style(vg::PaintStyle::Stroke);
+
+            canvas.draw_path(
                 &path,
-                &vg::Paint::color(meter_color).with_line_width(line_width * 1.5),
+                &paint,
             );
         }
     }
 
     fn draw_tap_notes_and_pans(
-        canvas: &mut Canvas,
+        canvas: &Canvas,
         params: &Arc<Del2Params>,
         bounds: BoundingBox,
         color: vg::Color,
@@ -937,9 +978,9 @@ impl DelayGraph {
         let panning_center_x = bounds.x;
         let panning_center_y = bounds.y + panning_center_height;
 
-        center_path.move_to(panning_center_x, panning_center_y + note_half_size);
-        center_path.line_to(panning_center_x + note_half_size, panning_center_y);
-        center_path.line_to(panning_center_x, panning_center_y - note_half_size);
+        center_path.move_to((panning_center_x, panning_center_y + note_half_size));
+        center_path.line_to((panning_center_x + note_half_size, panning_center_y));
+        center_path.line_to((panning_center_x, panning_center_y - note_half_size));
         center_path.close();
 
         // Draw half a note for the first note at time 0
@@ -956,9 +997,9 @@ impl DelayGraph {
         let first_note_center_y = bounds.y + note_height;
         let note_half_size = line_width;
 
-        note_path.move_to(first_note_center_x, first_note_center_y + note_half_size);
-        note_path.line_to(first_note_center_x + note_half_size, first_note_center_y);
-        note_path.line_to(first_note_center_x, first_note_center_y - note_half_size);
+        note_path.move_to((first_note_center_x, first_note_center_y + note_half_size));
+        note_path.line_to((first_note_center_x + note_half_size, first_note_center_y));
+        note_path.line_to((first_note_center_x, first_note_center_y - note_half_size));
         note_path.close();
 
         for i in 0..tap_counter {
@@ -978,10 +1019,10 @@ impl DelayGraph {
             let note_center_y = bounds.y + note_height;
             let note_half_size = line_width;
 
-            note_path.move_to(note_center_x + note_half_size, note_center_y);
-            note_path.line_to(note_center_x, note_center_y + note_half_size);
-            note_path.line_to(note_center_x - note_half_size, note_center_y);
-            note_path.line_to(note_center_x, note_center_y - note_half_size);
+            note_path.move_to((note_center_x + note_half_size, note_center_y));
+            note_path.line_to((note_center_x, note_center_y + note_half_size));
+            note_path.line_to((note_center_x - note_half_size, note_center_y));
+            note_path.line_to((note_center_x, note_center_y - note_half_size));
             note_path.close();
 
             let pan_value = ((f32::from(note_value) - f32::from(panning_center)) * panning_amount)
@@ -1011,52 +1052,80 @@ impl DelayGraph {
                 gui_decay_weight,
             );
 
-            pan_background_path.move_to(note_center_x, note_center_y);
+            pan_background_path.move_to((note_center_x, note_center_y));
             pan_background_path.line_to(
-                (note_center_x + pan_background_length)
+                ((note_center_x + pan_background_length)
                     .clamp(bounds.x + 1.0, bounds.x + bounds.w - 1.0),
-                note_center_y,
+                note_center_y,)
             );
 
-            pan_foreground_path.move_to(note_center_x, note_center_y);
+            pan_foreground_path.move_to((note_center_x, note_center_y));
             pan_foreground_path.line_to(
-                (note_center_x + pan_foreground_length)
+                ((note_center_x + pan_foreground_length)
                     .clamp(bounds.x + 1.0, bounds.x + bounds.w - 1.0),
-                note_center_y,
+                note_center_y,)
             );
         }
 
-        canvas.stroke_path(
+        let mut paint = vg::Paint::default();
+        paint.set_color(border_color);
+        paint.set_stroke_width(line_width);
+        paint.set_style(vg::PaintStyle::Stroke);
+
+        canvas.draw_path(
             &pan_background_path,
-            &vg::Paint::color(border_color).with_line_width(line_width),
+            &paint,
         );
-        canvas.stroke_path(
+
+        let mut paint = vg::Paint::default();
+        paint.set_color(font_color);
+        paint.set_stroke_width(line_width);
+        paint.set_style(vg::PaintStyle::Stroke);
+
+        canvas.draw_path(
             &center_path,
-            &vg::Paint::color(font_color).with_line_width(line_width),
+            &paint,
         );
-        canvas.stroke_path(
+
+        let mut paint = vg::Paint::default();
+        paint.set_color(font_color);
+        paint.set_stroke_width(line_width);
+        paint.set_style(vg::PaintStyle::Stroke);
+
+        canvas.draw_path(
             &pan_foreground_path,
-            &vg::Paint::color(font_color).with_line_width(line_width),
+            &paint,
         );
-        canvas.stroke_path(
+
+        let mut paint = vg::Paint::default();
+        paint.set_color(color);
+        paint.set_stroke_width(line_width);
+        paint.set_style(vg::PaintStyle::Stroke);
+
+        canvas.draw_path(
             &note_path,
-            &vg::Paint::color(color).with_line_width(line_width),
+            &paint,
         );
 
         // Fix cover line drawing as needed
         let mut cover_line_path = vg::Path::new();
         let cover_x = border_width.mul_add(0.5, line_width.mul_add(-0.5, bounds.x));
-        cover_line_path.move_to(cover_x, bounds.y);
-        cover_line_path.line_to(cover_x, bounds.y + bounds.h);
+        cover_line_path.move_to((cover_x, bounds.y));
+        cover_line_path.line_to((cover_x, bounds.y + bounds.h));
 
-        canvas.stroke_path(
+        let mut paint = vg::Paint::default();
+        paint.set_color(background_color);
+        paint.set_stroke_width(line_width);
+        paint.set_style(vg::PaintStyle::Stroke);
+
+        canvas.draw_path(
             &cover_line_path,
-            &vg::Paint::color(background_color).with_line_width(line_width),
+            &paint,
         );
     }
 
     fn draw_bounding_outline(
-        canvas: &mut Canvas,
+        canvas: &Canvas,
         bounds: BoundingBox,
         color: vg::Color,
         border_width: f32,
@@ -1064,17 +1133,21 @@ impl DelayGraph {
         let half_border = border_width / 2.0;
 
         let mut path = vg::Path::new();
-        path.rect(
-            bounds.x + half_border,
+        path.add_rect(vg::Rect::from_xywh(bounds.x + half_border,
             bounds.y + half_border,
             bounds.w - border_width,
             bounds.h - border_width,
-        );
+        ), None);
         path.close();
 
-        canvas.stroke_path(
+        let mut paint = vg::Paint::default();
+        paint.set_color(color);
+        paint.set_stroke_width(border_width);
+        paint.set_style(vg::PaintStyle::Stroke);
+
+        canvas.draw_path(
             &path,
-            &vg::Paint::color(color).with_line_width(border_width),
+            &paint,
         );
     }
 }
@@ -1217,7 +1290,7 @@ impl ActionTrigger {
     #[allow(clippy::match_same_arms)]
     fn draw_background(
         &self,
-        canvas: &mut Canvas,
+        canvas: &Canvas,
         bounds: BoundingBox,
         background_color: vg::Color,
         outline_color: vg::Color,
@@ -1233,7 +1306,7 @@ impl ActionTrigger {
 
         // Drawing the background rectangle
         let mut path = vg::Path::new();
-        path.rect(x, y, w, h);
+        path.add_rect(vg::Rect::from_xywh(x, y, w, h), None);
         path.close();
 
         if self.is_learning() {
@@ -1253,32 +1326,41 @@ impl ActionTrigger {
         }
 
         // Determine the paint color based on the state
-        let paint = match (
+        let paint_color = match (
             self.is_learning(),
             self.params.global.mute_is_toggle.value(),
             self.is_enabled(),
             self.is_playing(),
             self.own_index == CLEAR_TAPS,
         ) {
-            (true, _, _, _, _) => vg::Paint::color(border_color),
-            (_, _, _, true, true) => vg::Paint::color(outline_color),
-            (_, true, true, _, _) => vg::Paint::color(outline_color),
-            (_, true, false, _, _) => vg::Paint::color(background_color),
-            (_, _, true, _, _) => vg::Paint::color(outline_color),
-            (_, _, _, true, _) => vg::Paint::color(selection_color),
-            _ => vg::Paint::color(background_color), // Default: paint with background color
+            (true, _, _, _, _) => border_color,
+            (_, _, _, true, true) => outline_color,
+            (_, true, true, _, _) => outline_color,
+            (_, true, false, _, _) => background_color,
+            (_, _, true, _, _) => outline_color,
+            (_, _, _, true, _) => selection_color,
+            _ => background_color, // Default: paint with background color
         };
 
-        canvas.fill_path(&path, &paint);
+        let mut paint = vg::Paint::default();
+        paint.set_color(paint_color);
+
+        canvas.draw_path(&path, &paint);
 
         // Drawing the border around the rectangle
         let mut path = vg::Path::new();
-        path.rect(x, y, w, h);
+        path.add_rect(vg::Rect::from_xywh(x, y, w, h), None);
+        // path.rect(x, y, w, h);
         path.close();
 
-        canvas.stroke_path(
+        let mut paint = vg::Paint::default();
+        paint.set_color(border_color);
+        paint.set_stroke_width(border_width);
+        paint.set_style(vg::PaintStyle::Stroke);
+
+        canvas.draw_path(
             &path,
-            &vg::Paint::color(border_color).with_line_width(border_width),
+            &paint,
         );
     }
 }
@@ -1289,7 +1371,7 @@ impl View for ActionTrigger {
         Some("action-trigger")
     }
 
-    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
         event.map(|window_event, meta| match window_event {
             // We don't need special double and triple click handling
             WindowEvent::MouseDown(MouseButton::Left)
@@ -1300,12 +1382,13 @@ impl View for ActionTrigger {
                 } else {
                     self.start_learning();
                 }
+                cx.needs_redraw();
                 meta.consume();
             }
             _ => {}
         });
     }
-    fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, draw_context: &mut DrawContext, canvas: &Canvas) {
         let bounds = draw_context.bounds();
         let background_color: vg::Color = draw_context.background_color().into();
         let border_color: vg::Color = draw_context.border_color().into();
