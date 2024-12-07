@@ -733,31 +733,68 @@ impl DelayGraph {
         time_scaling_factor: f32,
         border_width: f32,
     ) {
-        // Load the values once
         let current_time = params.current_time.load(Ordering::SeqCst);
-
-        // Compute offset using mul_add for precision and performance
         let x_offset = current_time.mul_add(time_scaling_factor, border_width * 0.5);
+        let x_pos = bounds.x + x_offset;
 
-        // Calculate y_move using mul_add
-        let y_move = border_width.mul_add(-0.5, bounds.y + bounds.h);
+        // Constants for glow effect
+        let box_width = line_width * 1.0;
+        let corner_radius = 0.0;
+        let feather = box_width * 4.0;
+        let box_height = bounds.y + bounds.h - bounds.y;
 
+        // Create glow gradient
+        let color_bytes = (
+            (color.r * 255.0) as u8,
+            (color.g * 255.0) as u8,
+            (color.b * 255.0) as u8,
+        );
+
+        let glow_paint = vg::Paint::box_gradient(
+            x_pos - box_width * 0.5,                                                  // x
+            bounds.y,                                                                 // y
+            box_width,                                                                // width
+            box_height,                                                               // height
+            corner_radius,                                                            // radius
+            feather,                                                                  // feather
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142).into(), // Core color
+            Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(),       // Fade out
+        );
+
+        // Create and fill glow path
         let mut path = vg::Path::new();
-        path.move_to(bounds.x + x_offset, y_move);
-        path.line_to(bounds.x + x_offset, bounds.y);
-        path.close();
+        let padding = feather * 2.0;
 
-        canvas.stroke_path(&path, &vg::Paint::color(color).with_line_width(line_width));
+        // Outer rectangle for glow spread
+        path.rect(
+            x_pos - box_width * 0.5 - padding,
+            bounds.y - padding,
+            box_width + padding * 2.0,
+            box_height + padding * 2.0,
+        );
 
-        // let gloss = &vg::Paint::radial_gradient(
-        // 0.0,
-        // 0.0,
-        // 30.0,
-        // 40.0,
-        // Color::rgba(0, 0, 0, 0).into(),
-        // color,
-        // );
-        // canvas.stroke_path(&path, &gloss);
+        // Inner rectangle for core glow
+        path.rounded_rect(
+            x_pos - box_width * 0.5,
+            bounds.y,
+            box_width,
+            box_height,
+            corner_radius,
+        );
+
+        canvas.fill_path(&path, &glow_paint);
+
+        // Draw solid core line
+        let mut core_path = vg::Path::new();
+        core_path.rounded_rect(
+            x_pos - box_width * 0.5,
+            bounds.y,
+            box_width,
+            box_height,
+            corner_radius,
+        );
+
+        canvas.fill_path(&core_path, &vg::Paint::color(color));
     }
 
     fn draw_in_out_meters(
@@ -812,6 +849,17 @@ impl DelayGraph {
     ) {
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
 
+        // Define glow box dimensions
+        let box_width = line_width * 1.5;
+        let corner_radius = box_width * 0.5;
+        let feather = box_width * 1.75;
+        // Convert velocity color to RGB bytes once
+        let color_bytes = (
+            (velocity_color.r * 255.0) as u8,
+            (velocity_color.g * 255.0) as u8,
+            (velocity_color.b * 255.0) as u8,
+        );
+
         for i in 0..tap_counter {
             // Calculate position based on delay time
             let x_offset = params.delay_times[i]
@@ -826,28 +874,16 @@ impl DelayGraph {
             let y_start = bounds.y + bounds.h - velocity_height;
             let y_end = bounds.y + bounds.h;
 
-            // Define glow box dimensions
-            let box_width = line_width * 1.5;
-            let corner_radius = box_width * 0.5;
-            let feather = box_width * 2.0;
-
-            // Convert velocity color to RGB bytes once
-            let color_bytes = (
-                (velocity_color.r * 255.0) as u8,
-                (velocity_color.g * 255.0) as u8,
-                (velocity_color.b * 255.0) as u8,
-            );
-
             // Create glow gradient
             let glow_paint = vg::Paint::box_gradient(
-                x_val - box_width * 0.5, // Center x position
-                y_start,                 // Top y position
-                box_width,               // Width of glow box
-                y_end - y_start,         // Height of line
-                corner_radius,           // Corner smoothing
-                feather,                 // Glow spread
-                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 167).into(), // Core color
-                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(), // Fade out
+                x_val - box_width * 0.5,                                              // x
+                y_start,                                                              // y
+                box_width,                                                            // width
+                y_end - y_start,                                                      // height
+                corner_radius,                                                        // radius
+                feather,                                                              // feather
+                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142).into(), // Core color
+                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(),   // Fade out
             );
 
             // Create and fill glow path
@@ -983,7 +1019,7 @@ impl DelayGraph {
                 (f32::from(value) - min) / (max - min)
             }
         };
-        // Draw half a note for panning center
+
         let normalized_panning_center =
             get_normalized_value(panning_center, min_note_value, max_note_value);
         let panning_center_height = Self::gui_smooth(
@@ -992,36 +1028,109 @@ impl DelayGraph {
             gui_decay_weight,
         )
         .mul_add(available_height, margin + note_size);
-
-        let note_half_size = line_width;
-
         let panning_center_x = bounds.x;
         let panning_center_y = bounds.y + panning_center_height;
+        // Draw center note with glow
 
-        center_path.move_to(panning_center_x, panning_center_y + note_half_size);
-        center_path.line_to(panning_center_x + note_half_size, panning_center_y);
-        center_path.line_to(panning_center_x, panning_center_y - note_half_size);
-        center_path.close();
+        // Convert note color to RGB bytes
+        let color_bytes = (
+            (font_color.r * 255.0) as u8,
+            (font_color.g * 255.0) as u8,
+            (font_color.b * 255.0) as u8,
+        );
 
-        // Draw half a note for the first note at time 0
+        let note_half_size = line_width;
+        let box_width = note_half_size * 2.0;
+        let corner_radius = box_width * 0.5;
+        let feather = box_width * 1.75;
+        let padding = feather * 2.0;
+
         let normalized_first_note =
             get_normalized_value(first_note, min_note_value, max_note_value);
-        let note_height = Self::gui_smooth(
+        let first_note_height = Self::gui_smooth(
             1.0 - normalized_first_note,
             &params.previous_first_note_height,
             gui_decay_weight,
         )
         .mul_add(available_height, margin + note_size);
+        // Create glow gradient
+        if (panning_center_height - first_note_height).abs() > 0.5 {
+            let glow_paint = vg::Paint::box_gradient(
+                panning_center_x - box_width * 0.5, // x
+                panning_center_y - box_width * 0.5, // y
+                box_width,                          // width
+                box_width,                          // height
+                corner_radius,                      // radius
+                feather,                            // feather
+                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 127).into(),
+                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(),
+            );
 
+            // Create and fill glow path
+            let mut glow_path = vg::Path::new();
+
+            // Outer rectangle for glow spread
+            glow_path.rect(
+                panning_center_x - box_width * 0.5 - padding,
+                panning_center_y - box_width * 0.5 - padding,
+                box_width + padding * 2.0,
+                box_width + padding * 2.0,
+            );
+
+            // Inner diamond shape for the note
+            center_path.move_to(panning_center_x, panning_center_y + note_half_size);
+            center_path.line_to(panning_center_x + note_half_size, panning_center_y);
+            center_path.line_to(panning_center_x, panning_center_y - note_half_size);
+            center_path.close();
+            glow_path.move_to(panning_center_x, panning_center_y + note_half_size);
+            glow_path.line_to(panning_center_x + note_half_size, panning_center_y);
+            glow_path.line_to(panning_center_x, panning_center_y - note_half_size);
+            glow_path.close();
+
+            // Apply the glow
+            canvas.fill_path(&glow_path, &glow_paint);
+        }
         let first_note_center_x = bounds.x;
-        let first_note_center_y = bounds.y + note_height;
-        let note_half_size = line_width;
+        let first_note_center_y = bounds.y + first_note_height;
+        let color_bytes = (
+            (color.r * 255.0) as u8,
+            (color.g * 255.0) as u8,
+            (color.b * 255.0) as u8,
+        );
 
+        // Draw first note with glow
+        let glow_paint = vg::Paint::box_gradient(
+            first_note_center_x - box_width * 0.5, // x
+            first_note_center_y - box_width * 0.5, // y
+            box_width,                             // width
+            box_width,                             // height
+            corner_radius,                         // radius
+            feather,                               // feather
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142), // Core color
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0), // Fade out
+        );
+
+        let mut glow_path = vg::Path::new();
+
+        // Outer rectangle for glow spread
+        glow_path.rect(
+            first_note_center_x - box_width * 0.5 - padding,
+            first_note_center_y - box_width * 0.5 - padding,
+            box_width + padding * 2.0,
+            box_width + padding * 2.0,
+        );
         note_path.move_to(first_note_center_x, first_note_center_y + note_half_size);
         note_path.line_to(first_note_center_x + note_half_size, first_note_center_y);
         note_path.line_to(first_note_center_x, first_note_center_y - note_half_size);
         note_path.close();
+        glow_path.move_to(first_note_center_x, first_note_center_y + note_half_size);
+        glow_path.line_to(first_note_center_x + note_half_size, first_note_center_y);
+        glow_path.line_to(first_note_center_x, first_note_center_y - note_half_size);
+        glow_path.close();
 
+        canvas.fill_path(&glow_path, &glow_paint);
+
+        // Draw all other notes with glow
         for i in 0..tap_counter {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst);
             let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
@@ -1037,8 +1146,38 @@ impl DelayGraph {
 
             let note_center_x = bounds.x + x_offset;
             let note_center_y = bounds.y + note_height;
-            let note_half_size = line_width;
 
+            // Add glow effect for each note
+            let glow_paint = vg::Paint::box_gradient(
+                note_center_x - box_width * 0.5, // x
+                note_center_y - box_width * 0.5, // y
+                box_width,                       // width
+                box_width,                       // height
+                corner_radius,                   // radius
+                feather,                         // feather
+                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142), // Core color
+                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0), // Fade out
+            );
+
+            let mut glow_path = vg::Path::new();
+
+            // Outer rectangle for glow spread
+            glow_path.rect(
+                note_center_x - box_width * 0.5 - padding,
+                note_center_y - box_width * 0.5 - padding,
+                box_width + padding * 2.0,
+                box_width + padding * 2.0,
+            );
+
+            glow_path.move_to(note_center_x + note_half_size, note_center_y);
+            glow_path.line_to(note_center_x, note_center_y + note_half_size);
+            glow_path.line_to(note_center_x - note_half_size, note_center_y);
+            glow_path.line_to(note_center_x, note_center_y - note_half_size);
+            glow_path.close();
+
+            canvas.fill_path(&glow_path, &glow_paint);
+
+            // Add note paths and panning paths as before
             note_path.move_to(note_center_x + note_half_size, note_center_y);
             note_path.line_to(note_center_x, note_center_y + note_half_size);
             note_path.line_to(note_center_x - note_half_size, note_center_y);
@@ -1105,15 +1244,11 @@ impl DelayGraph {
         );
 
         // Fix cover line drawing as needed
-        let mut cover_line_path = vg::Path::new();
-        let cover_x = border_width.mul_add(0.5, line_width.mul_add(-0.5, bounds.x));
-        cover_line_path.move_to(cover_x, bounds.y);
-        cover_line_path.line_to(cover_x, bounds.y + bounds.h);
+        let mut cover_path = vg::Path::new();
+        cover_path.rect(bounds.x, bounds.y, bounds.x - 200.0, bounds.h);
+        cover_path.close();
 
-        canvas.stroke_path(
-            &cover_line_path,
-            &vg::Paint::color(background_color).with_line_width(line_width),
-        );
+        canvas.fill_path(&cover_path, &vg::Paint::color(background_color));
     }
 
     fn draw_bounding_outline(
@@ -1271,21 +1406,40 @@ impl ActionTrigger {
             Color::rgb(224, 206, 145) // yellow
         }
     }
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    //                       for drawing
-    /////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    // clippy's suggestion doesn't work, cause we need the early exit
+}
+
+impl View for ActionTrigger {
+    // For CSS:
+    fn element(&self) -> Option<&'static str> {
+        Some("action-trigger")
+    }
+
+    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
+        event.map(|window_event, meta| match window_event {
+            // We don't need special double and triple click handling
+            WindowEvent::MouseDown(MouseButton::Left)
+            | WindowEvent::MouseDoubleClick(MouseButton::Left)
+            | WindowEvent::MouseTripleClick(MouseButton::Left) => {
+                if self.is_learning() {
+                    self.stop_learning();
+                } else {
+                    self.start_learning();
+                }
+                meta.consume();
+            }
+            _ => {}
+        });
+    }
     #[allow(clippy::match_same_arms)]
-    fn draw_background(
-        &self,
-        canvas: &mut Canvas,
-        bounds: BoundingBox,
-        background_color: vg::Color,
-        outline_color: vg::Color,
-        selection_color: vg::Color,
-        border_color: vg::Color,
-        border_width: f32,
-    ) {
+    fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
+        let bounds = draw_context.bounds();
+        let background_color: vg::Color = draw_context.background_color().into();
+        let border_color: vg::Color = draw_context.selection_color().into();
+        let outline_color: vg::Color = draw_context.border_color().into();
+        let selection_color: vg::Color = draw_context.outline_color().into();
+        let border_width = draw_context.border_width();
+        // let outline_width = draw_context.outline_width();
+
         // Adjust bounds for borders
         let x = border_width.mul_add(0.5, bounds.x);
         let y = border_width.mul_add(0.5, bounds.y);
@@ -1340,49 +1494,6 @@ impl ActionTrigger {
         canvas.stroke_path(
             &path,
             &vg::Paint::color(border_color).with_line_width(border_width),
-        );
-    }
-}
-
-impl View for ActionTrigger {
-    // For CSS:
-    fn element(&self) -> Option<&'static str> {
-        Some("action-trigger")
-    }
-
-    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
-        event.map(|window_event, meta| match window_event {
-            // We don't need special double and triple click handling
-            WindowEvent::MouseDown(MouseButton::Left)
-            | WindowEvent::MouseDoubleClick(MouseButton::Left)
-            | WindowEvent::MouseTripleClick(MouseButton::Left) => {
-                if self.is_learning() {
-                    self.stop_learning();
-                } else {
-                    self.start_learning();
-                }
-                meta.consume();
-            }
-            _ => {}
-        });
-    }
-    fn draw(&self, draw_context: &mut DrawContext, canvas: &mut Canvas) {
-        let bounds = draw_context.bounds();
-        let background_color: vg::Color = draw_context.background_color().into();
-        let border_color: vg::Color = draw_context.border_color().into();
-        let outline_color: vg::Color = draw_context.outline_color().into();
-        let selection_color: vg::Color = draw_context.selection_color().into();
-        let border_width = draw_context.border_width();
-        // let outline_width = draw_context.outline_width();
-
-        self.draw_background(
-            canvas,
-            bounds,
-            background_color,
-            border_color,
-            outline_color,
-            selection_color,
-            border_width,
         );
     }
 }
