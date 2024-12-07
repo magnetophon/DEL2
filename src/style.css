@@ -13,25 +13,25 @@
 
 .parameters-left {
     top: 0px;
-    bottom: 9px;
+    bottom: 13px;
     left: 0px;
     right: 1s;
-    child-right: 9px;
     width: 50%;
 }
 
 .parameters-right {
     top: 0px;
-    bottom: 9px;
+    bottom: 13px;
     right: 13px;
     width: 50%;
 }
 .parameters-all {
-    height: 50%;
+    height: 402px;
+
 }
 param-slider {
     height: 30px;
-    width: 210px;
+    width: 194px;
     border-width: 1px;
     background-color: #4e4e4e;
     border-color: #fabdf0;
@@ -75,7 +75,7 @@ param-slider .value-entry .selection {
 .group-title {
     font-size: 30;
     /* // This should align nicely with the right edge of the slider */
-    left: 323px;
+    left: 303px;
     right: 1s;
     top: 0px;
     bottom: 9px;
@@ -84,7 +84,7 @@ param-slider .value-entry .selection {
 .mid-group-title {
     font-size: 30;
     /* // This should align nicely with the right edge of the slider */
-    left: 323px;
+    left: 303px;
     right: 1s;
     top: 1s;
     bottom: 9px;
@@ -93,7 +93,7 @@ param-slider .value-entry .selection {
     height: auto;
     left: 18px;
     right: 0px;
-    top: 19px;
+    top: 17px;
     bottom: 9px;
 }
 .column-title {
@@ -136,7 +136,7 @@ delay-graph {
 }
 
 action-trigger {
-    width: 210px;
+    width: 194px;
     height: 30px;
     top: 0px;
     bottom: 0px;
