@@ -751,14 +751,14 @@ impl DelayGraph {
         );
 
         let glow_paint = vg::Paint::box_gradient(
-            x_pos - box_width * 0.5,                                                  // x
-            bounds.y,                                                                 // y
-            box_width,                                                                // width
-            box_height,                                                               // height
-            corner_radius,                                                            // radius
-            feather,                                                                  // feather
-            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142).into(), // Core color
-            Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(),       // Fade out
+            box_width.mul_add(-0.5, x_pos),                                    // x
+            bounds.y,                                                          // y
+            box_width,                                                         // width
+            box_height,                                                        // height
+            corner_radius,                                                     // radius
+            feather,                                                           // feather
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142), // Core color
+            Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(), // Fade out
         );
 
         // Create and fill glow path
@@ -767,15 +767,15 @@ impl DelayGraph {
 
         // Outer rectangle for glow spread
         path.rect(
-            x_pos - box_width * 0.5 - padding,
+            box_width.mul_add(-0.5, x_pos) - padding,
             bounds.y - padding,
-            box_width + padding * 2.0,
-            box_height + padding * 2.0,
+            padding.mul_add(2.0, box_width),
+            padding.mul_add(2.0, box_height),
         );
 
         // Inner rectangle for core glow
         path.rounded_rect(
-            x_pos - box_width * 0.5,
+            box_width.mul_add(-0.5, x_pos),
             bounds.y,
             box_width,
             box_height,
@@ -787,7 +787,7 @@ impl DelayGraph {
         // Draw solid core line
         let mut core_path = vg::Path::new();
         core_path.rounded_rect(
-            x_pos - box_width * 0.5,
+            box_width.mul_add(-0.5, x_pos),
             bounds.y,
             box_width,
             box_height,
@@ -876,14 +876,14 @@ impl DelayGraph {
 
             // Create glow gradient
             let glow_paint = vg::Paint::box_gradient(
-                x_val - box_width * 0.5,                                              // x
-                y_start,                                                              // y
-                box_width,                                                            // width
-                y_end - y_start,                                                      // height
-                corner_radius,                                                        // radius
-                feather,                                                              // feather
+                box_width.mul_add(-0.5, x_val), // x
+                y_start,                        // y
+                box_width,                      // width
+                y_end - y_start,                // height
+                corner_radius,                  // radius
+                feather,                        // feather
                 Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 169).into(), // Core color
-                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(),   // Fade out
+                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(), // Fade out
             );
 
             // Create and fill glow path
@@ -891,17 +891,17 @@ impl DelayGraph {
             let padding = feather * 2.0;
             // Outer rectangle for glow spread
             path.rect(
-                x_val - box_width * 0.5 - padding,
+                box_width.mul_add(-0.5, x_val) - padding,
                 y_start - padding,
-                box_width + padding * 2.0,
-                y_end - y_start + padding * 2.0,
+                padding.mul_add(2.0, box_width),
+                padding.mul_add(2.0, y_end - y_start),
             );
             canvas.fill_path(&path, &glow_paint);
 
             // Draw solid core line
             let mut core_path = vg::Path::new();
             core_path.rounded_rect(
-                x_val - box_width * 0.5,
+                box_width.mul_add(-0.5, x_val),
                 y_start,
                 box_width,
                 y_end - y_start,
@@ -1048,12 +1048,12 @@ impl DelayGraph {
         // Create glow gradient
         if (panning_center_height - first_note_height).abs() > 0.5 {
             let glow_paint = vg::Paint::box_gradient(
-                panning_center_x - box_width * 0.5, // x
-                panning_center_y - box_width * 0.5, // y
-                box_width,                          // width
-                box_width,                          // height
-                corner_radius,                      // radius
-                feather,                            // feather
+                box_width.mul_add(-0.5, panning_center_x), // x
+                box_width.mul_add(-0.5, panning_center_y), // y
+                box_width,                                 // width
+                box_width,                                 // height
+                corner_radius,                             // radius
+                feather,                                   // feather
                 Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 127).into(),
                 Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(),
             );
@@ -1063,10 +1063,10 @@ impl DelayGraph {
 
             // Outer rectangle for glow spread
             glow_path.rect(
-                panning_center_x - box_width * 0.5 - padding,
-                panning_center_y - box_width * 0.5 - padding,
-                box_width + padding * 2.0,
-                box_width + padding * 2.0,
+                box_width.mul_add(-0.5, panning_center_x) - padding,
+                box_width.mul_add(-0.5, panning_center_y) - padding,
+                padding.mul_add(2.0, box_width),
+                padding.mul_add(2.0, box_width),
             );
 
             // Inner diamond shape for the note
@@ -1092,12 +1092,12 @@ impl DelayGraph {
 
         // Draw first note with glow
         let glow_paint = vg::Paint::box_gradient(
-            first_note_center_x - box_width * 0.5, // x
-            first_note_center_y - box_width * 0.5, // y
-            box_width,                             // width
-            box_width,                             // height
-            corner_radius,                         // radius
-            feather,                               // feather
+            box_width.mul_add(-0.5, first_note_center_x), // x
+            box_width.mul_add(-0.5, first_note_center_y), // y
+            box_width,                                    // width
+            box_width,                                    // height
+            corner_radius,                                // radius
+            feather,                                      // feather
             vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142), // Core color
             vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0), // Fade out
         );
@@ -1106,10 +1106,10 @@ impl DelayGraph {
 
         // Outer rectangle for glow spread
         glow_path.rect(
-            first_note_center_x - box_width * 0.5 - padding,
-            first_note_center_y - box_width * 0.5 - padding,
-            box_width + padding * 2.0,
-            box_width + padding * 2.0,
+            box_width.mul_add(-0.5, first_note_center_x) - padding,
+            box_width.mul_add(-0.5, first_note_center_y) - padding,
+            padding.mul_add(2.0, box_width),
+            padding.mul_add(2.0, box_width),
         );
         note_path.move_to(first_note_center_x, first_note_center_y + note_half_size);
         note_path.line_to(first_note_center_x + note_half_size, first_note_center_y);
@@ -1141,12 +1141,12 @@ impl DelayGraph {
 
             // Add glow effect for each note
             let glow_paint = vg::Paint::box_gradient(
-                note_center_x - box_width * 0.5, // x
-                note_center_y - box_width * 0.5, // y
-                box_width,                       // width
-                box_width,                       // height
-                corner_radius,                   // radius
-                feather,                         // feather
+                box_width.mul_add(-0.5, note_center_x), // x
+                box_width.mul_add(-0.5, note_center_y), // y
+                box_width,                              // width
+                box_width,                              // height
+                corner_radius,                          // radius
+                feather,                                // feather
                 vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142), // Core color
                 vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0), // Fade out
             );
@@ -1155,10 +1155,10 @@ impl DelayGraph {
 
             // Outer rectangle for glow spread
             glow_path.rect(
-                note_center_x - box_width * 0.5 - padding,
-                note_center_y - box_width * 0.5 - padding,
-                box_width + padding * 2.0,
-                box_width + padding * 2.0,
+                box_width.mul_add(-0.5, note_center_x) - padding,
+                box_width.mul_add(-0.5, note_center_y) - padding,
+                padding.mul_add(2.0, box_width),
+                padding.mul_add(2.0, box_width),
             );
 
             glow_path.move_to(note_center_x + note_half_size, note_center_y);
@@ -1221,7 +1221,7 @@ impl DelayGraph {
             );
             let pan_glow_paint = vg::Paint::box_gradient(
                 glow_x,                                                           // x
-                note_center_y - pan_glow_height * 0.5,                            // y
+                pan_glow_height.mul_add(-0.5, note_center_y),                     // y
                 pan_foreground_length.abs(),                                      // width
                 pan_glow_height,                                                  // height
                 pan_glow_height * 0.5,                                            // radius
@@ -1518,7 +1518,7 @@ impl View for ActionTrigger {
         };
 
         canvas.fill_path(&path, &paint);
-        let glow_width = 3.5;
+        let glow_width: f32 = 3.5;
         let corner_radius = glow_width * 0.5;
         let feather = glow_width * 1.75;
 
@@ -1529,8 +1529,8 @@ impl View for ActionTrigger {
         );
         // Create glow gradient for border
         let glow_paint = vg::Paint::box_gradient(
-            x - glow_width * 0.5,
-            y - glow_width * 0.5,
+            glow_width.mul_add(-0.5, x),
+            glow_width.mul_add(-0.5, y),
             w + glow_width,
             h + glow_width,
             corner_radius,
@@ -1547,8 +1547,8 @@ impl View for ActionTrigger {
         glow_path.rect(
             x - padding,
             y - padding,
-            w + padding * 2.0,
-            h + padding * 2.0,
+            padding.mul_add(2.0, w),
+            padding.mul_add(2.0, h),
         );
         // Inner rectangle for core glow
         glow_path.rounded_rect(x, y, w, h, corner_radius);

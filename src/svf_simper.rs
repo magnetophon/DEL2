@@ -52,13 +52,13 @@ impl SVFSimper {
     pub fn new(cutoff: f32, resonance: f32, sample_rate: f32) -> Self {
         let g = (consts::PI * (cutoff / sample_rate)).tan();
         // let k = 2f32 - (1.9f32 * resonance.min(1f32).max(0f32));
-        let k = 2f32 - (2.0f32 * resonance.min(1f32).max(0f32));
+        let k = 2.0f32.mul_add(-resonance.min(1f32).max(0f32), 2f32);
 
-        let a1 = 1.0 / (1.0 + (g * (g + k)));
+        let a1 = 1.0 / g.mul_add(g + k, 1.0);
         let a2 = g * a1;
         let a3 = g * a2;
 
-        SVFSimper {
+        Self {
             a1: f32x4::splat(a1),
             a2: f32x4::splat(a2),
             a3: f32x4::splat(a3),
