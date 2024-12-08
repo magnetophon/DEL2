@@ -35,15 +35,14 @@ param-slider {
     border-width: 1px;
     background-color: #4e4e4e;
     border-color: #fabdf0;
-    box-shadow: 0px 0px 10px #fabdf082;
-    transition: box-shadow 240ms;
+    box-shadow: 0px 0px 10px #fabdf069;
+    transition: background-color 240ms;
 }
 
 param-slider:active,
 param-slider:hover {
-    background-color: #4e4e4e;
-    box-shadow: 0px 0px 16px #fabdf0a0;
-    transition: box-shadow 60ms;
+    background-color: #292929;
+    transition: background-color 120ms;
 }
 
 param-slider .fill {
@@ -73,7 +72,7 @@ param-slider .value-entry .selection {
     top: 13px;
     right: 21px;
     bottom: 0px;
-    box-shadow: 0px 0px 16px #fabdf013;
+    box-shadow: 0px 0px 16px #fabdf009;
 }
 
 .group-title {
@@ -83,7 +82,7 @@ param-slider .value-entry .selection {
     right: 1s;
     top: 0px;
     bottom: 9px;
-    box-shadow: 0px 0px 24px #e0ce9113;
+    box-shadow: 0px 0px 24px #e0ce9109;
 }
 
 .mid-group-title {
@@ -93,7 +92,7 @@ param-slider .value-entry .selection {
     right: 1s;
     top: 1s;
     bottom: 9px;
-    box-shadow: 0px 0px 24px #e0ce9113;
+    box-shadow: 0px 0px 24px #e0ce9109;
 }
 .column-title-group {
     height: auto;
@@ -106,7 +105,7 @@ param-slider .value-entry .selection {
     font-size: 23;
     left: 1s;
     right: 0px;
-    box-shadow: 0px 0px 24px #e0ce9113;
+    box-shadow: 0px 0px 24px #e0ce9109;
 }
 
 .slider-label {
@@ -114,7 +113,7 @@ param-slider .value-entry .selection {
     right: 9px;
     top: 1s;
     bottom: 1s;
-    box-shadow: 0px 0px 24px #e0ce9113;
+    box-shadow: 0px 0px 24px #e0ce9109;
 }
 
 delay-graph {
@@ -135,14 +134,14 @@ delay-graph {
     right: 11px;
     top: 1s;
     bottom: 7px;
-    box-shadow: 0px 0px 24px #e0ce9113;
+    box-shadow: 0px 0px 24px #e0ce9109;
 }
 .tap-length-label {
     left: 1s;
     right: 11px;
     top: 0px;
     bottom: 7px;
-    box-shadow: 0px 0px 24px #e0ce9113;
+    box-shadow: 0px 0px 24px #e0ce9109;
 }
 
 action-trigger {
@@ -156,19 +155,18 @@ action-trigger {
     selection-color: #fabdf0;
     border-width: 1px;
     box-shadow: 0px 0px 5px #fabdf0;
-    transition: box-shadow 500ms;
+    transition: background-color 240ms;
 }
 
 action-trigger:hover {
-    background-color: #4e4e4e;
-    box-shadow: 0px 0px 9px #fabdf0;
-    transition: box-shadow 100ms;
+    background-color: #292929;
+    transition: background-color 120ms;
 }
 .action-name {
     right: 9px;
     top: 1s;
     bottom: 4px;
-    box-shadow: 0px 0px 24px #e0ce9113;
+    box-shadow: 0px 0px 24px #e0ce9109;
 }
 .row {
     height: 30px;

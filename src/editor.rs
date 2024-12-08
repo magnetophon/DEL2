@@ -1485,7 +1485,42 @@ impl View for ActionTrigger {
         };
 
         canvas.fill_path(&path, &paint);
+        let glow_width = 3.5;
+        let corner_radius = glow_width * 0.5;
+        let feather = glow_width * 1.75;
 
+        let color_bytes = (
+            (border_color.r * 255.0) as u8,
+            (border_color.g * 255.0) as u8,
+            (border_color.b * 255.0) as u8,
+        );
+        // Create glow gradient for border
+        let glow_paint = vg::Paint::box_gradient(
+            x - glow_width * 0.5,
+            y - glow_width * 0.5,
+            w + glow_width,
+            h + glow_width,
+            corner_radius,
+            feather,
+            Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 105).into(), // Core glow
+            Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(),   // Fade out
+        );
+
+        // Draw glow effect
+        let mut glow_path = vg::Path::new();
+        let padding = feather * 2.0;
+
+        // Outer rectangle for glow spread
+        glow_path.rect(
+            x - padding,
+            y - padding,
+            w + padding * 2.0,
+            h + padding * 2.0,
+        );
+        // Inner rectangle for core glow
+        glow_path.rounded_rect(x, y, w, h, corner_radius);
+        glow_path.solidity(vg::Solidity::Hole);
+        canvas.fill_path(&glow_path, &glow_paint);
         // Drawing the border around the rectangle
         let mut path = vg::Path::new();
         path.rect(x, y, w, h);
