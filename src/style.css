@@ -26,7 +26,8 @@
     width: 50%;
 }
 .parameters-all {
-    height: 402px;
+    /* height: 402px; */
+    height: 380px;
 }
 .parameters-minimal {
     top: 0px;
@@ -78,7 +79,7 @@ param-slider .value-entry .selection {
     background-color: #fabdf0;
 }
 .show-full-parameters {
-    font-size: 27;
+    font-size: 69;
     color: #4e4e4e;
     height: 30px;
     width: 30px;
@@ -86,12 +87,14 @@ param-slider .value-entry .selection {
     top: 1s;
     bottom: 9px;
     transition: color 240ms;
+    box-shadow: 0px 0px 08px #4e4e4e;
 }
 .show-full-parameters:active,
 .show-full-parameters:hover {
     color: #5879af;
     transition: color 120ms;
 }
+
 .plugin-name {
     color: #fabdf0;
     font-size: 42;

@@ -1716,25 +1716,17 @@ impl CollapseButton {
                 show_full_parameters.map(|show_full_parameters| {
                     // ▲ ▼ ◀ ▶
                     if show_full_parameters.load(Ordering::SeqCst) {
-                        String::from("▲")
+                        String::from("▴")
                     } else {
-                        String::from("▶")
+                        String::from("▸")
                     }
                 }),
-            )
-
-            // .class("action-label")
-                ;
+            );
         })
     }
 }
 
 impl View for CollapseButton {
-    // For CSS:
-    fn element(&self) -> Option<&'static str> {
-        Some("show-full-parameters")
-    }
-
     fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
         event.map(|window_event, meta| match window_event {
             // We don't need special double and triple click handling
