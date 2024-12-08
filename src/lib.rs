@@ -703,6 +703,7 @@ impl Plugin for Del2 {
         }
     }
 
+    #[allow(clippy::float_cmp)]
     fn process(
         &mut self,
         buffer: &mut Buffer,
