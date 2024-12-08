@@ -882,7 +882,7 @@ impl DelayGraph {
                 y_end - y_start,                                                      // height
                 corner_radius,                                                        // radius
                 feather,                                                              // feather
-                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142).into(), // Core color
+                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 169).into(), // Core color
                 Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(),   // Fade out
             );
 
@@ -1214,25 +1214,20 @@ impl DelayGraph {
                     note_center_x
                 };
 
+            let color_bytes = (
+                (font_color.r * 255.0) as u8,
+                (font_color.g * 255.0) as u8,
+                (font_color.b * 255.0) as u8,
+            );
             let pan_glow_paint = vg::Paint::box_gradient(
-                glow_x,                                // x
-                note_center_y - pan_glow_height * 0.5, // y
-                pan_foreground_length.abs(),           // width
-                pan_glow_height,                       // height
-                pan_glow_height * 0.5,                 // radius
-                pan_feather,                           // feather
-                vg::Color::rgba(
-                    (font_color.r * 255.0) as u8,
-                    (font_color.g * 255.0) as u8,
-                    (font_color.b * 255.0) as u8,
-                    69,
-                ), // Core color
-                vg::Color::rgba(
-                    (font_color.r * 255.0) as u8,
-                    (font_color.g * 255.0) as u8,
-                    (font_color.b * 255.0) as u8,
-                    0,
-                ), // Fade out
+                glow_x,                                                           // x
+                note_center_y - pan_glow_height * 0.5,                            // y
+                pan_foreground_length.abs(),                                      // width
+                pan_glow_height,                                                  // height
+                pan_glow_height * 0.5,                                            // radius
+                pan_feather,                                                      // feather
+                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 74), // Core color
+                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0),  // Fade out
             );
 
             // Create rectangle for pan glow
@@ -1540,7 +1535,7 @@ impl View for ActionTrigger {
             h + glow_width,
             corner_radius,
             feather,
-            Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 105).into(), // Core glow
+            Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 165).into(), // Core glow
             Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(),   // Fade out
         );
 

@@ -35,7 +35,7 @@ param-slider {
     border-width: 1px;
     background-color: #4e4e4e;
     border-color: #fabdf0;
-    box-shadow: 0px 0px 10px #fabdf069;
+    box-shadow: 0px 0px 08px #fabdf0b9;
     transition: background-color 240ms;
 }
 
