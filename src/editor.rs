@@ -896,14 +896,6 @@ impl DelayGraph {
                 box_width + padding * 2.0,
                 y_end - y_start + padding * 2.0,
             );
-            // Inner rectangle for core glow
-            path.rounded_rect(
-                x_val - box_width * 0.5,
-                y_start,
-                box_width,
-                y_end - y_start,
-                corner_radius,
-            );
             canvas.fill_path(&path, &glow_paint);
 
             // Draw solid core line
@@ -1210,6 +1202,52 @@ impl DelayGraph {
                 &params.previous_pan_background_lengths[i],
                 gui_decay_weight,
             );
+            let pan_glow_height = line_width * 1.5;
+            let pan_feather = pan_glow_height * 1.75;
+            let corner_radius = pan_glow_height * 0.5;
+
+            let glow_x =
+            // note_center_x + pan_foreground_length;
+                if pan_foreground_length < 0.0 {
+                    note_center_x + pan_foreground_length
+                } else {
+                    note_center_x
+                };
+
+            let pan_glow_paint = vg::Paint::box_gradient(
+                glow_x,                                // x
+                note_center_y - pan_glow_height * 0.5, // y
+                pan_foreground_length.abs(),           // width
+                pan_glow_height,                       // height
+                pan_glow_height * 0.5,                 // radius
+                pan_feather,                           // feather
+                vg::Color::rgba(
+                    (font_color.r * 255.0) as u8,
+                    (font_color.g * 255.0) as u8,
+                    (font_color.b * 255.0) as u8,
+                    69,
+                ), // Core color
+                vg::Color::rgba(
+                    (font_color.r * 255.0) as u8,
+                    (font_color.g * 255.0) as u8,
+                    (font_color.b * 255.0) as u8,
+                    0,
+                ), // Fade out
+            );
+
+            // Create rectangle for pan glow
+            let mut pan_glow_path = vg::Path::new();
+
+            // Outer rectangle for glow spread
+            pan_glow_path.rounded_rect(
+                glow_x.clamp(bounds.x + 1.0, bounds.x + bounds.w - 1.0),
+                note_center_y - pan_glow_height,
+                pan_foreground_length.abs(),
+                pan_glow_height * 2.0,
+                corner_radius,
+            );
+
+            canvas.fill_path(&pan_glow_path, &pan_glow_paint);
 
             pan_background_path.move_to(note_center_x, note_center_y);
             pan_background_path.line_to(
