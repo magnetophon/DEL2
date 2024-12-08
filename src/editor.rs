@@ -49,6 +49,7 @@ pub struct Data {
     pub last_learned_notes: Arc<AtomicByteArray>,
     pub last_played_notes: Arc<LastPlayedNotes>,
     pub enabled_actions: Arc<AtomicBoolArray>,
+    pub show_full_parameters: Arc<AtomicBool>,
 }
 
 impl Model for Data {}
@@ -77,17 +78,17 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     ;
                 Label::new(cx, "DEL2").class("plugin-name");
             });
+            let show_parameters =
+                Data::show_full_parameters.map(|params| params.load(Ordering::SeqCst));
 
-            let show_full_parameters =
-                Data::params.map(|params| params.global.show_full_parameters.value());
-
-            Binding::new(cx, show_full_parameters, |cx, show_full_parameters| {
-                if show_full_parameters.get(cx) {
+            Binding::new(cx, show_parameters, |cx, show_parameters| {
+                if show_parameters.get(cx) {
                     full_parameters(cx);
                 } else {
                     minimal_parameters(cx);
                 }
             });
+
             ResizeHandle::new(cx);
         });
     })
@@ -177,12 +178,8 @@ fn full_parameters(cx: &mut Context) {
                 .class("row");
             })
             .class("param-group");
-            HStack::new(cx, |cx| {
-                ParamSlider::new(cx, Data::params, |params| {
-                    &params.global.show_full_parameters
-                })
-                .set_style(ParamSliderStyle::CurrentStep { even: false })
-                .class("widget");
+            ZStack::new(cx, |cx| {
+                CollapseButton::new(cx, Data::show_full_parameters).class("show-full-parameters");
                 Label::new(cx, "triggers").class("mid-group-title");
             });
             HStack::new(cx, |cx| {
@@ -371,122 +368,136 @@ fn full_parameters(cx: &mut Context) {
 }
 
 fn minimal_parameters(cx: &mut Context) {
-    HStack::new(cx, |cx| {
-        VStack::new(cx, |cx| {
-            // Label::new(cx, "triggers").class("mid-group-title");
-            HStack::new(cx, |cx| {
+    VStack::new(cx, |cx| {
+        ZStack::new(cx, |cx| {
+            CollapseButton::new(cx, Data::show_full_parameters).class("show-full-parameters");
+            Label::new(cx, "triggers").class("mid-group-title");
+        });
+        HStack::new(cx, |cx| {
+            VStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "mute in").class("action-name");
-                    ActionTrigger::new(
-                        cx,
-                        Data::params,
-                        Data::is_learning,
-                        Data::learning_index,
-                        Data::learned_notes,
-                        Data::last_learned_notes,
-                        Data::last_played_notes,
-                        Data::enabled_actions,
-                        MUTE_IN,
-                    );
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "mute in").class("action-name");
+                        ActionTrigger::new(
+                            cx,
+                            Data::params,
+                            Data::is_learning,
+                            Data::learning_index,
+                            Data::learned_notes,
+                            Data::last_learned_notes,
+                            Data::last_played_notes,
+                            Data::enabled_actions,
+                            MUTE_IN,
+                        );
+                    })
+                    .class("row");
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "clear taps").class("action-name");
+                        ActionTrigger::new(
+                            cx,
+                            Data::params,
+                            Data::is_learning,
+                            Data::learning_index,
+                            Data::learned_notes,
+                            Data::last_learned_notes,
+                            Data::last_played_notes,
+                            Data::enabled_actions,
+                            CLEAR_TAPS,
+                        );
+                    })
+                    .class("row");
                 })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "clear taps").class("action-name");
-                    ActionTrigger::new(
-                        cx,
-                        Data::params,
-                        Data::is_learning,
-                        Data::learning_index,
-                        Data::learned_notes,
-                        Data::last_learned_notes,
-                        Data::last_played_notes,
-                        Data::enabled_actions,
-                        CLEAR_TAPS,
-                    );
-                })
-                .class("row");
-            })
-            .class("param-group");
+                .class("param-group");
 
-            HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "mute out").class("action-name");
-                    ActionTrigger::new(
-                        cx,
-                        Data::params,
-                        Data::is_learning,
-                        Data::learning_index,
-                        Data::learned_notes,
-                        Data::last_learned_notes,
-                        Data::last_played_notes,
-                        Data::enabled_actions,
-                        MUTE_OUT,
-                    );
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "mute out").class("action-name");
+                        ActionTrigger::new(
+                            cx,
+                            Data::params,
+                            Data::is_learning,
+                            Data::learning_index,
+                            Data::learned_notes,
+                            Data::last_learned_notes,
+                            Data::last_played_notes,
+                            Data::enabled_actions,
+                            MUTE_OUT,
+                        );
+                    })
+                    .class("row");
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "lock taps").class("action-name");
+                        ActionTrigger::new(
+                            cx,
+                            Data::params,
+                            Data::is_learning,
+                            Data::learning_index,
+                            Data::learned_notes,
+                            Data::last_learned_notes,
+                            Data::last_played_notes,
+                            Data::enabled_actions,
+                            LOCK_TAPS,
+                        );
+                    })
+                    .class("row");
                 })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "lock taps").class("action-name");
-                    ActionTrigger::new(
-                        cx,
-                        Data::params,
-                        Data::is_learning,
-                        Data::learning_index,
-                        Data::learned_notes,
-                        Data::last_learned_notes,
-                        Data::last_played_notes,
-                        Data::enabled_actions,
-                        LOCK_TAPS,
-                    );
-                })
-                .class("row");
+                .class("param-group");
             })
-            .class("param-group");
+            .class("parameters-left");
+
+            VStack::new(cx, |cx| {
+                // Label::new(cx, "filters").class("mid-group-title");
+
+                // HStack::new(cx, |cx| {
+                // Label::new(cx, "low velocity").class("column-title");
+                // Label::new(cx, "high velocity").class("column-title");
+                // })
+                // .class("column-title-group");
+                HStack::new(cx, |cx| {
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "cutoff").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| {
+                            &params.taps.velocity_low.cutoff
+                        })
+                        .class("widget");
+                    })
+                    .class("row");
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "cutoff").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| {
+                            &params.taps.velocity_high.cutoff
+                        })
+                        .class("widget");
+                    })
+                    .class("row");
+                })
+                .class("param-group");
+
+                HStack::new(cx, |cx| {
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "drive").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| {
+                            &params.taps.velocity_low.drive
+                        })
+                        .class("widget");
+                    })
+                    .class("row");
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "drive").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| {
+                            &params.taps.velocity_high.drive
+                        })
+                        .class("widget");
+                    })
+                    .class("row");
+                })
+                .class("param-group");
+            })
+            .class("parameters-right");
         })
-        .class("parameters-left");
-
-        VStack::new(cx, |cx| {
-            // Label::new(cx, "filters").class("mid-group-title");
-
-            // HStack::new(cx, |cx| {
-            // Label::new(cx, "low velocity").class("column-title");
-            // Label::new(cx, "high velocity").class("column-title");
-            // })
-            // .class("column-title-group");
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_low.cutoff)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.cutoff)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
-
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_low.drive)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.drive)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
-        })
-        .class("parameters-right");
+        .class("parameters-minimal");
     })
-    .class("parameters-minimal");
+    .class("parameters-labels-minimal");
 }
 ///////////////////////////////////////////////////////////////////////////////
 //                             DelayGraph                            //
@@ -1679,4 +1690,66 @@ impl View for ActionTrigger {
             &vg::Paint::color(border_color).with_line_width(border_width),
         );
     }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//                               CollapseButton                               //
+///////////////////////////////////////////////////////////////////////////////
+
+pub struct CollapseButton {
+    show_full_parameters: Arc<AtomicBool>,
+}
+impl CollapseButton {
+    pub fn new<ShowFullParametersL>(
+        cx: &mut Context,
+        show_full_parameters: ShowFullParametersL,
+    ) -> Handle<Self>
+    where
+        ShowFullParametersL: Lens<Target = Arc<AtomicBool>>,
+    {
+        Self {
+            show_full_parameters: show_full_parameters.get(cx),
+        }
+        .build(cx, move |cx| {
+            Label::new(
+                cx,
+                show_full_parameters.map(|show_full_parameters| {
+                    // ▲ ▼ ◀ ▶
+                    if show_full_parameters.load(Ordering::SeqCst) {
+                        String::from("▲")
+                    } else {
+                        String::from("▶")
+                    }
+                }),
+            )
+
+            // .class("action-label")
+                ;
+        })
+    }
+}
+
+impl View for CollapseButton {
+    // For CSS:
+    fn element(&self) -> Option<&'static str> {
+        Some("show-full-parameters")
+    }
+
+    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
+        event.map(|window_event, meta| match window_event {
+            // We don't need special double and triple click handling
+            WindowEvent::MouseDown(MouseButton::Left)
+            | WindowEvent::MouseDoubleClick(MouseButton::Left)
+            | WindowEvent::MouseTripleClick(MouseButton::Left) => {
+                if self.show_full_parameters.load(Ordering::SeqCst) {
+                    self.show_full_parameters.store(false, Ordering::SeqCst)
+                } else {
+                    self.show_full_parameters.store(true, Ordering::SeqCst)
+                }
+                meta.consume();
+            }
+            _ => {}
+        });
+    }
+    fn draw(&self, _draw_context: &mut DrawContext, _canvas: &mut Canvas) {}
 }

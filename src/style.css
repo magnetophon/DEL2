@@ -29,10 +29,18 @@
     height: 402px;
 }
 .parameters-minimal {
-    top: 13px;
-    height: 90px;
+    top: 0px;
+    bottom: 0px;
+    /* background-color: #5879af; */
+    /* top: 13px; */
+    height: 80px;
 }
 
+.parameters-labels-minimal {
+    top: 4px;
+    bottom: 4px;
+    height: 124px;
+}
 param-slider {
     height: 30px;
     width: 194px;
@@ -69,7 +77,21 @@ param-slider .value-entry .caret {
 param-slider .value-entry .selection {
     background-color: #fabdf0;
 }
-
+.show-full-parameters {
+    font-size: 27;
+    color: #4e4e4e;
+    height: 30px;
+    width: 30px;
+    left: 13px;
+    top: 1s;
+    bottom: 9px;
+    transition: color 240ms;
+}
+.show-full-parameters:active,
+.show-full-parameters:hover {
+    color: #5879af;
+    transition: color 120ms;
+}
 .plugin-name {
     color: #fabdf0;
     font-size: 42;

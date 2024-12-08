@@ -129,6 +129,7 @@ pub struct Del2 {
     counting_state: CountingState,
     should_update_filter: Arc<AtomicBool>,
     enabled_actions: Arc<AtomicBoolArray>,
+    show_full_parameters: Arc<AtomicBool>,
     running_delay_tempo: f32,
     first_process_after_reset: bool,
 }
@@ -198,8 +199,6 @@ struct GlobalParams {
     pub channel: IntParam,
     #[id = "sync"]
     pub sync: BoolParam,
-    #[id = "show_full_parameters"]
-    pub show_full_parameters: BoolParam,
 }
 
 impl GlobalParams {
@@ -306,9 +305,6 @@ impl GlobalParams {
             sync: BoolParam::new("sync", true).with_value_to_string(Arc::new(|value| {
                 String::from(if value { "bpm" } else { "free" })
             })),
-            show_full_parameters: BoolParam::new("Show all parameters", true).with_value_to_string(
-                Arc::new(|value| String::from(if value { "full" } else { "minimal" })),
-            ),
         }
     }
 }
@@ -536,6 +532,7 @@ impl Default for Del2 {
             counting_state: CountingState::TimeOut,
             should_update_filter,
             enabled_actions,
+            show_full_parameters: Arc::new(AtomicBool::new(true)),
             running_delay_tempo: DEFAULT_TEMPO,
             first_process_after_reset: true,
         }
@@ -637,6 +634,7 @@ impl Plugin for Del2 {
                 last_learned_notes: self.last_learned_notes.clone(),
                 last_played_notes: self.last_played_notes.clone(),
                 enabled_actions: self.enabled_actions.clone(),
+                show_full_parameters: self.show_full_parameters.clone(),
             },
             self.params.editor_state.clone(),
         )
