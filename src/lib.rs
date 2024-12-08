@@ -198,6 +198,8 @@ struct GlobalParams {
     pub channel: IntParam,
     #[id = "sync"]
     pub sync: BoolParam,
+    #[id = "show_full_parameters"]
+    pub show_full_parameters: BoolParam,
 }
 
 impl GlobalParams {
@@ -304,6 +306,9 @@ impl GlobalParams {
             sync: BoolParam::new("sync", true).with_value_to_string(Arc::new(|value| {
                 String::from(if value { "bpm" } else { "free" })
             })),
+            show_full_parameters: BoolParam::new("Show all parameters", true).with_value_to_string(
+                Arc::new(|value| String::from(if value { "full" } else { "minimal" })),
+            ),
         }
     }
 }
@@ -549,7 +554,6 @@ impl Del2Params {
             global: GlobalParams::new(enabled_actions.clone(), learned_notes.clone()),
             learned_notes: ArcAtomicByteArray(learned_notes),
             enabled_actions: ArcAtomicBoolArray(enabled_actions),
-
             tap_counter: Arc::new(AtomicUsize::new(0)),
             old_nr_taps: Arc::new(AtomicUsize::new(0)),
             delay_times: AtomicF32Array(array_init(|_| Arc::new(AtomicF32::new(0.0)))),

@@ -27,8 +27,12 @@
 }
 .parameters-all {
     height: 402px;
-
 }
+.parameters-minimal {
+    top: 13px;
+    height: 90px;
+}
+
 param-slider {
     height: 30px;
     width: 194px;
