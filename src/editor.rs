@@ -370,8 +370,13 @@ fn full_parameters(cx: &mut Context) {
 fn minimal_parameters(cx: &mut Context) {
     VStack::new(cx, |cx| {
         ZStack::new(cx, |cx| {
+            HStack::new(cx, |cx| {
+                Label::new(cx, "triggers").class("mid-group-title");
+                Label::new(cx, "low velocity").class("low-velocity-minimal-title");
+                Label::new(cx, "high velocity").class("column-title");
+            })
+            .class("column-title-group-minimal");
             CollapseButton::new(cx, Data::show_full_parameters).class("show-full-parameters");
-            Label::new(cx, "triggers").class("mid-group-title");
         });
         HStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
@@ -448,11 +453,6 @@ fn minimal_parameters(cx: &mut Context) {
             VStack::new(cx, |cx| {
                 // Label::new(cx, "filters").class("mid-group-title");
 
-                // HStack::new(cx, |cx| {
-                // Label::new(cx, "low velocity").class("column-title");
-                // Label::new(cx, "high velocity").class("column-title");
-                // })
-                // .class("column-title-group");
                 HStack::new(cx, |cx| {
                     HStack::new(cx, |cx| {
                         Label::new(cx, "cutoff").class("slider-label");

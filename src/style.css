@@ -27,7 +27,7 @@
 }
 .parameters-all {
     /* height: 402px; */
-    height: 380px;
+    height: 390px;
 }
 .parameters-minimal {
     top: 0px;
@@ -83,9 +83,9 @@ param-slider .value-entry .selection {
     color: #4e4e4e;
     height: 30px;
     width: 30px;
-    left: 13px;
+    left: 10px;
     top: 1s;
-    bottom: 9px;
+    bottom: 19px;
     transition: color 240ms;
     box-shadow: 0px 0px 08px #4e4e4e;
 }
@@ -123,20 +123,33 @@ param-slider .value-entry .selection {
     bottom: 9px;
     box-shadow: 0px 0px 24px #e0ce9109;
 }
-.column-title-group {
-    height: auto;
-    left: 18px;
-    right: 0px;
-    top: 17px;
-    bottom: 9px;
-}
+
 .column-title {
     font-size: 23;
     left: 1s;
     right: 0px;
     box-shadow: 0px 0px 24px #e0ce9109;
 }
-
+.low-velocity-minimal-title {
+    font-size: 23;
+    left: 280px;
+    /* right: 0px; */
+    box-shadow: 0px 0px 24px #e0ce9109;
+}
+.column-title-group {
+    height: auto;
+    left: 18px;
+    right: 0px;
+    top: 3px;
+    bottom: 9px;
+}
+.column-title-group-minimal {
+    /* height: 30px; */
+    left: 0px;
+    right: 13px;
+    top: 0px;
+    bottom: 0px;
+}
 .slider-label {
     left: 1s;
     right: 9px;
