@@ -864,9 +864,9 @@ impl DelayGraph {
         let x_pos = bounds.x + x_offset;
 
         // Constants for glow effect
-        let box_width = line_width * 1.0;
+        let box_width = line_width * 1.3;
         let corner_radius = 0.0;
-        let feather = box_width * 4.0;
+        let feather = box_width * 2.2;
         let box_height = bounds.y + bounds.h - bounds.y;
 
         // Create glow gradient
@@ -883,8 +883,8 @@ impl DelayGraph {
             box_height,                                                        // height
             corner_radius,                                                     // radius
             feather,                                                           // feather
-            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142), // Core color
-            Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(), // Fade out
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 137), // Core color
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0),   // Fade out
         );
 
         // Create and fill glow path
@@ -1002,14 +1002,14 @@ impl DelayGraph {
 
             // Create glow gradient
             let glow_paint = vg::Paint::box_gradient(
-                box_width.mul_add(-0.5, x_val), // x
-                y_start,                        // y
-                box_width,                      // width
-                y_end - y_start,                // height
-                corner_radius,                  // radius
-                feather,                        // feather
-                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 169).into(), // Core color
-                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(), // Fade out
+                box_width.mul_add(-0.5, x_val),                                    // x
+                y_start,                                                           // y
+                box_width,                                                         // width
+                y_end - y_start,                                                   // height
+                corner_radius,                                                     // radius
+                feather,                                                           // feather
+                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 169), // Core color
+                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0),   // Fade out
             );
 
             // Create and fill glow path
@@ -1180,8 +1180,8 @@ impl DelayGraph {
                 box_width,                                 // height
                 corner_radius,                             // radius
                 feather,                                   // feather
-                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 127).into(),
-                Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(),
+                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 127),
+                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0),
             );
 
             // Create and fill glow path
@@ -1644,7 +1644,8 @@ impl View for ActionTrigger {
         };
 
         canvas.fill_path(&path, &paint);
-        let glow_width: f32 = 3.5;
+        // let glow_width: f32 = 2.9;
+        let glow_width: f32 = border_width * 1.75;
         let corner_radius = glow_width * 0.5;
         let feather = glow_width * 1.75;
 
@@ -1661,8 +1662,8 @@ impl View for ActionTrigger {
             h + glow_width,
             corner_radius,
             feather,
-            Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 165).into(), // Core glow
-            Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0).into(),   // Fade out
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 165), // Core glow
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0),   // Fade out
         );
 
         // Draw glow effect
