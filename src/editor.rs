@@ -49,7 +49,7 @@ pub struct Data {
     pub last_learned_notes: Arc<AtomicByteArray>,
     pub last_played_notes: Arc<LastPlayedNotes>,
     pub enabled_actions: Arc<AtomicBoolArray>,
-    pub show_full_parameters: Arc<AtomicBool>,
+    pub show_full_parameters: bool,
 }
 
 impl Model for Data {}
@@ -78,8 +78,7 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     ;
                 Label::new(cx, "DEL2").class("plugin-name");
             });
-            let show_parameters =
-                Data::show_full_parameters.map(|params| params.load(Ordering::SeqCst));
+            let show_parameters = Data::show_full_parameters;
 
             Binding::new(cx, show_parameters, |cx, show_parameters| {
                 if show_parameters.get(cx) {
@@ -1699,7 +1698,7 @@ impl View for ActionTrigger {
 ///////////////////////////////////////////////////////////////////////////////
 
 pub struct CollapseButton {
-    show_full_parameters: Arc<AtomicBool>,
+    show_full_parameters: bool,
 }
 impl CollapseButton {
     pub fn new<ShowFullParametersL>(
@@ -1707,7 +1706,7 @@ impl CollapseButton {
         show_full_parameters: ShowFullParametersL,
     ) -> Handle<Self>
     where
-        ShowFullParametersL: Lens<Target = Arc<AtomicBool>>,
+        ShowFullParametersL: Lens<Target = bool>,
     {
         Self {
             show_full_parameters: show_full_parameters.get(cx),
@@ -1717,7 +1716,7 @@ impl CollapseButton {
                 cx,
                 show_full_parameters.map(|show_full_parameters| {
                     // ▲ ▼ ◀ ▶
-                    if show_full_parameters.load(Ordering::SeqCst) {
+                    if *show_full_parameters {
                         String::from("▴")
                     } else {
                         String::from("▸")
@@ -1735,10 +1734,10 @@ impl View for CollapseButton {
             WindowEvent::MouseDown(MouseButton::Left)
             | WindowEvent::MouseDoubleClick(MouseButton::Left)
             | WindowEvent::MouseTripleClick(MouseButton::Left) => {
-                if self.show_full_parameters.load(Ordering::SeqCst) {
-                    self.show_full_parameters.store(false, Ordering::SeqCst)
+                if self.show_full_parameters {
+                    self.show_full_parameters = false;
                 } else {
-                    self.show_full_parameters.store(true, Ordering::SeqCst)
+                    self.show_full_parameters = true;
                 }
                 meta.consume();
             }

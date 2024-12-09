@@ -129,7 +129,7 @@ pub struct Del2 {
     counting_state: CountingState,
     should_update_filter: Arc<AtomicBool>,
     enabled_actions: Arc<AtomicBoolArray>,
-    show_full_parameters: Arc<AtomicBool>,
+    show_full_parameters: bool,
     running_delay_tempo: f32,
     first_process_after_reset: bool,
 }
@@ -532,7 +532,7 @@ impl Default for Del2 {
             counting_state: CountingState::TimeOut,
             should_update_filter,
             enabled_actions,
-            show_full_parameters: Arc::new(AtomicBool::new(true)),
+            show_full_parameters: true,
             running_delay_tempo: DEFAULT_TEMPO,
             first_process_after_reset: true,
         }
