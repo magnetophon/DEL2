@@ -54,6 +54,9 @@
     xorg.libX11 # libX11-xcb.so
     xorg.xcbutilwm # libxcb-icccm.so
 
+    fontconfig
+    egl-wayland
+    wayland
   ];
 
   # https://devenv.sh/scripts/
