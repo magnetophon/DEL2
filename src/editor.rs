@@ -977,8 +977,8 @@ impl DelayGraph {
 
         // Define glow box dimensions
         let box_width = line_width * 1.5;
-        let corner_radius = box_width * 0.5;
-        let feather = box_width * 1.75;
+        let corner_radius = box_width * 0.35;
+        let feather = box_width * 2.05;
         // Convert velocity color to RGB bytes once
         let color_bytes = (
             (velocity_color.r * 255.0) as u8,
@@ -1008,7 +1008,7 @@ impl DelayGraph {
                 y_end - y_start,                                                   // height
                 corner_radius,                                                     // radius
                 feather,                                                           // feather
-                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 169), // Core color
+                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142), // Core color
                 vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0),   // Fade out
             );
 
@@ -1644,26 +1644,26 @@ impl View for ActionTrigger {
         };
 
         canvas.fill_path(&path, &paint);
-        // let glow_width: f32 = 2.9;
-        let glow_width: f32 = border_width * 1.75;
-        let corner_radius = glow_width * 0.5;
-        let feather = glow_width * 1.75;
+        let glow_width: f32 = border_width;
+        let corner_radius = glow_width;
+        let feather = glow_width * 15.0;
 
         let color_bytes = (
             (border_color.r * 255.0) as u8,
             (border_color.g * 255.0) as u8,
             (border_color.b * 255.0) as u8,
         );
+
         // Create glow gradient for border
         let glow_paint = vg::Paint::box_gradient(
-            glow_width.mul_add(-0.5, x),
-            glow_width.mul_add(-0.5, y),
-            w + glow_width,
-            h + glow_width,
-            corner_radius,
-            feather,
-            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 165), // Core glow
-            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0),   // Fade out
+            x,
+            y,
+            w,
+            h,
+            corner_radius,                                                    // radius
+            feather,                                                          // feather
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 81), // Core color
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0),  // Fade out
         );
 
         // Draw glow effect
@@ -1671,11 +1671,12 @@ impl View for ActionTrigger {
         let padding = feather * 2.0;
 
         // Outer rectangle for glow spread
-        glow_path.rect(
+        glow_path.rounded_rect(
             x - padding,
             y - padding,
             padding.mul_add(2.0, w),
             padding.mul_add(2.0, h),
+            corner_radius,
         );
         // Inner rectangle for core glow
         glow_path.rounded_rect(x, y, w, h, corner_radius);
