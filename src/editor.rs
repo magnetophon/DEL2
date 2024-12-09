@@ -1392,6 +1392,9 @@ impl View for ActionTrigger {
         });
     }
     fn draw(&self, draw_context: &mut DrawContext, canvas: &Canvas) {
+
+        draw_context.needs_redraw();
+
         let bounds = draw_context.bounds();
         let background_color: vg::Color = draw_context.background_color().into();
         let border_color: vg::Color = draw_context.border_color().into();
