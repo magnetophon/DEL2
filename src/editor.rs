@@ -390,6 +390,9 @@ impl View for DelayGraph {
     }
 
     fn draw(&self, draw_context: &mut DrawContext, canvas: &Canvas) {
+
+        draw_context.needs_redraw();
+
         let params = self.params.clone();
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
         let tap_meters = self.tap_meters.clone();
