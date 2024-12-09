@@ -52,7 +52,17 @@ pub struct Data {
     pub show_full_parameters: bool,
 }
 
-impl Model for Data {}
+enum AppEvent {
+    ToggleShowView,
+}
+
+impl Model for Data {
+    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
+        event.map(|app_event, _| match app_event {
+            AppEvent::ToggleShowView => self.show_full_parameters ^= true,
+        });
+    }
+}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub fn default_state() -> Arc<ViziaState> {
@@ -78,10 +88,8 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     ;
                 Label::new(cx, "DEL2").class("plugin-name");
             });
-            let show_parameters = Data::show_full_parameters;
-
-            Binding::new(cx, show_parameters, |cx, show_parameters| {
-                if show_parameters.get(cx) {
+            Binding::new(cx, Data::show_full_parameters, |cx, show| {
+                if show.get(cx) {
                     full_parameters(cx);
                 } else {
                     minimal_parameters(cx);
@@ -178,7 +186,7 @@ fn full_parameters(cx: &mut Context) {
             })
             .class("param-group");
             ZStack::new(cx, |cx| {
-                CollapseButton::new(cx, Data::show_full_parameters).class("show-full-parameters");
+                CollapseButton::new(cx).class("show-full-parameters");
                 Label::new(cx, "triggers").class("mid-group-title");
             });
             HStack::new(cx, |cx| {
@@ -375,7 +383,7 @@ fn minimal_parameters(cx: &mut Context) {
                 Label::new(cx, "high velocity").class("column-title");
             })
             .class("column-title-group-minimal");
-            CollapseButton::new(cx, Data::show_full_parameters).class("show-full-parameters");
+            CollapseButton::new(cx).class("show-full-parameters");
         });
         HStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
@@ -1697,24 +1705,13 @@ impl View for ActionTrigger {
 //                               CollapseButton                               //
 ///////////////////////////////////////////////////////////////////////////////
 
-pub struct CollapseButton {
-    show_full_parameters: bool,
-}
+pub struct CollapseButton {}
 impl CollapseButton {
-    pub fn new<ShowFullParametersL>(
-        cx: &mut Context,
-        show_full_parameters: ShowFullParametersL,
-    ) -> Handle<Self>
-    where
-        ShowFullParametersL: Lens<Target = bool>,
-    {
-        Self {
-            show_full_parameters: show_full_parameters.get(cx),
-        }
-        .build(cx, move |cx| {
+    pub fn new(cx: &mut Context) -> Handle<Self> {
+        Self {}.build(cx, move |cx| {
             Label::new(
                 cx,
-                show_full_parameters.map(|show_full_parameters| {
+                Data::show_full_parameters.map(|show_full_parameters| {
                     // ▲ ▼ ◀ ▶
                     if *show_full_parameters {
                         String::from("▴")
@@ -1728,17 +1725,13 @@ impl CollapseButton {
 }
 
 impl View for CollapseButton {
-    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
         event.map(|window_event, meta| match window_event {
             // We don't need special double and triple click handling
             WindowEvent::MouseDown(MouseButton::Left)
             | WindowEvent::MouseDoubleClick(MouseButton::Left)
             | WindowEvent::MouseTripleClick(MouseButton::Left) => {
-                if self.show_full_parameters {
-                    self.show_full_parameters = false;
-                } else {
-                    self.show_full_parameters = true;
-                }
+                cx.emit(AppEvent::ToggleShowView);
                 meta.consume();
             }
             _ => {}
