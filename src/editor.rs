@@ -535,7 +535,7 @@ impl DelayGraph {
             Label::new(cx, params.map(Self::create_tap_length_text)).class("tap-length-label");
         })
         .bind(params.map(|v| v.current_time.load(Ordering::SeqCst)), |mut handle, _| handle.needs_redraw())
-        .bind(params.map(|v| v.tap_counter.load(Ordering::SeqCst)), |mut handle, _| handle.needs_redraw())
+        .bind(input_meter.map(|v| v.load(Ordering::SeqCst)), |mut handle, _| handle.needs_redraw())
     }
     fn create_tap_length_text(params: &Arc<Del2Params>) -> String {
         const TOTAL_DIGITS: usize = 3;
