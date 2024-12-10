@@ -422,7 +422,7 @@ impl View for DelayGraph {
             .recip();
 
         // Start drawing
-        Self::draw_background(canvas, bounds, background_color);
+        // Self::draw_background(canvas, bounds, background_color);
 
         if tap_counter > 0 {
             Self::draw_delay_times_as_lines(
@@ -484,6 +484,15 @@ impl View for DelayGraph {
                 );
             }
         }
+        // Self::_draw_test_block(
+        // canvas,
+        // &params,
+        // bounds,
+        // selection_color,
+        // outline_width,
+        // time_scaling_factor,
+        // border_width,
+        // );
 
         Self::draw_bounding_outline(canvas, bounds, border_color, border_width);
     }
@@ -725,7 +734,7 @@ impl DelayGraph {
         canvas.draw_path(&path, &paint);
     }
 
-    fn draw_background(canvas: &Canvas, bounds: BoundingBox, color: vg::Color) {
+    fn _draw_background(canvas: &Canvas, bounds: BoundingBox, color: vg::Color) {
         let mut path = vg::Path::new();
         // Use the original bounds directly
         path.add_rect(
@@ -740,7 +749,6 @@ impl DelayGraph {
 
         canvas.draw_path(&path, &paint);
     }
-
     fn draw_time_line(
         canvas: &Canvas,
         params: &Arc<Del2Params>,
@@ -750,33 +758,85 @@ impl DelayGraph {
         time_scaling_factor: f32,
         border_width: f32,
     ) {
+        let current_time = params.current_time.load(Ordering::SeqCst);
+        let x_offset = current_time.mul_add(time_scaling_factor, border_width * 0.5);
+        let y_move = border_width.mul_add(-0.5, bounds.y + bounds.h);
+
+        let mut glow_path = vg::Path::new();
+        glow_path.add_rect(
+            vg::Rect::from_xywh(
+                bounds.x + x_offset,
+                bounds.y + border_width,
+                line_width,
+                bounds.h - border_width * 2.0,
+            ),
+            None,
+        );
+        glow_path.close();
+
+        let z_plane = vg::Point3::new(0.0, 0.0, 17.0); // Raised z-plane
+        let light_pos = vg::Point3::default(); // light position only matters for the part I'm not drawing
+        let (r, g, b) = (color.r(), color.g(), color.b());
+        let ambient_color = Color::rgba(r, g, b, 74);
+        let spot_color = Color::rgba(0, 0, 0, 0); // don't draw this
+
+        canvas.draw_shadow(
+            &glow_path,
+            z_plane,
+            light_pos,
+            0.0,
+            ambient_color,
+            spot_color,
+            None,
+        );
+
+        let mut core_paint = vg::Paint::default();
+        core_paint.set_color(color);
+        core_paint.set_anti_alias(true);
+        canvas.draw_path(&glow_path, &core_paint);
+    }
+
+    fn _draw_test_block(
+        canvas: &Canvas,
+        params: &Arc<Del2Params>,
+        bounds: BoundingBox,
+        color: vg::Color,
+        line_width: f32,
+        time_scaling_factor: f32,
+        border_width: f32,
+    ) {
+        let current_time = params.current_time.load(Ordering::SeqCst);
+        let x_offset = current_time.mul_add(time_scaling_factor, border_width * 0.5);
+
         // Simple test rectangle
         let mut path = vg::Path::new();
-        path.add_rect(vg::Rect::from_xywh(400.0, 150.0, 3.0, 200.0), None);
+        path.add_rect(vg::Rect::from_xywh(800.0, 150.0, 3.0, 200.0), None);
         path.close();
 
         // Much more extreme shadow parameters
         let z_plane = vg::Point3::new(0.0, 0.0, 20.0); // Raised z-plane
-                                                       // let light_pos = vg::Point3::new(0.0, 0.0, 1000.0); // Light much further away
-        let light_pos = vg::Point3::new(20.0, 10.0, 19.0); // Light much further away
+        let light_pos = vg::Point3::new(-40.0 + 0.05 * x_offset, -10.0 + 0.1 * x_offset, 9.0); // Light much further away
 
         // Maximum contrast shadow
-        let shadow_color = Color::rgba(0, 255, 0, 255); // Pure black shadow
-        let fade_color = Color::rgba(255, 255, 255, 255); // Also pure black, no fade
+        let shadow_color = Color::rgba(0, 255, 0, 255);
+        let fade_color = Color::rgba(255, 255, 255, 255);
 
         // Try different flag combinations
         let flags =
-            vg::utils::shadow_utils::ShadowFlags::TRANSPARENT_OCCLUDER
-        // | vg::utils::shadow_utils::ShadowFlags::GEOMETRIC_ONLY
-            | vg::utils::shadow_utils::ShadowFlags::DIRECTIONAL_LIGHT
-        // | vg::utils::shadow_utils::ShadowFlags::CONCAVE_BLUR_ONLY
+        // vg::utils::shadow_utils::ShadowFlags::TRANSPARENT_OCCLUDER
+        // |
+        // vg::utils::shadow_utils::ShadowFlags::GEOMETRIC_ONLY
+        // |
+            vg::utils::shadow_utils::ShadowFlags::DIRECTIONAL_LIGHT
+        // |
+        // vg::utils::shadow_utils::ShadowFlags::CONCAVE_BLUR_ONLY
             ;
 
         canvas.draw_shadow(
             &path,
             z_plane,
             light_pos,
-            5.0, // Massive light radius
+            1.0, // Massive light radius
             shadow_color,
             fade_color,
             // None,
@@ -805,13 +865,13 @@ impl DelayGraph {
             (tick_fraction * bounds.h).max(0.0)
         };
         let mut path = vg::Path::new();
-        let x_val = line_width.mul_add(0.75, bounds.x);
+        let x_val = line_width.mul_add(0.5, bounds.x);
         path.move_to((x_val, bounds.y + bounds.h - input_height));
         path.line_to((x_val, bounds.y + bounds.h));
 
         let mut paint = vg::Paint::default();
         paint.set_color(meter_color);
-        paint.set_stroke_width(line_width * 1.5);
+        paint.set_stroke_width(line_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
         canvas.draw_path(&path, &paint);
@@ -823,13 +883,13 @@ impl DelayGraph {
             (tick_fraction * bounds.h).max(0.0)
         };
         path = vg::Path::new();
-        let x_val = line_width.mul_add(-0.75, bounds.x + bounds.w);
+        let x_val = line_width.mul_add(-0.5, bounds.x + bounds.w);
         path.move_to((x_val, bounds.y + bounds.h - output_height));
         path.line_to((x_val, bounds.y + bounds.h));
 
         let mut paint = vg::Paint::default();
         paint.set_color(meter_color);
-        paint.set_stroke_width(line_width * 1.5);
+        paint.set_stroke_width(line_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
         canvas.draw_path(&path, &paint);
@@ -857,13 +917,13 @@ impl DelayGraph {
 
             // Draw the velocity path
             let mut path = vg::Path::new();
-            let x_val = line_width.mul_add(-0.75, bounds.x + x_offset);
+            let x_val = line_width.mul_add(-0.5, bounds.x + x_offset);
             path.move_to((x_val, bounds.y + bounds.h - velocity_height));
             path.line_to((x_val, bounds.y + bounds.h));
 
             let mut paint = vg::Paint::default();
             paint.set_color(velocity_color);
-            paint.set_stroke_width(line_width * 1.5);
+            paint.set_stroke_width(line_width);
             paint.set_style(vg::PaintStyle::Stroke);
 
             canvas.draw_path(&path, &paint);
@@ -888,7 +948,7 @@ impl DelayGraph {
 
             let mut paint = vg::Paint::default();
             paint.set_color(meter_color);
-            paint.set_stroke_width(line_width * 1.5);
+            paint.set_stroke_width(line_width);
             paint.set_style(vg::PaintStyle::Stroke);
 
             canvas.draw_path(&path, &paint);
@@ -961,8 +1021,8 @@ impl DelayGraph {
             (f32::from(final_min), f32::from(final_max))
         };
 
-        let note_size = line_width * 2.0; // Width and height of a note
-        let margin = 10.0 * line_width;
+        let note_size = line_width * 1.44; // Width and height of a note
+        let margin = 7.0 * line_width;
         let available_height = (-(margin + note_size + border_width)).mul_add(2.0, bounds.h);
 
         let get_normalized_value = |value: u8, min: f32, max: f32| -> f32 {
@@ -982,7 +1042,7 @@ impl DelayGraph {
         )
         .mul_add(available_height, margin + note_size);
 
-        let note_half_size = line_width;
+        let note_half_size = note_size * 0.5;
 
         let panning_center_x = bounds.x;
         let panning_center_y = bounds.y + panning_center_height;
@@ -1004,7 +1064,6 @@ impl DelayGraph {
 
         let first_note_center_x = bounds.x;
         let first_note_center_y = bounds.y + note_height;
-        let note_half_size = line_width;
 
         note_path.move_to((first_note_center_x, first_note_center_y + note_half_size));
         note_path.line_to((first_note_center_x + note_half_size, first_note_center_y));
@@ -1026,7 +1085,6 @@ impl DelayGraph {
 
             let note_center_x = bounds.x + x_offset;
             let note_center_y = bounds.y + note_height;
-            let note_half_size = line_width;
 
             note_path.move_to((note_center_x + note_half_size, note_center_y));
             note_path.line_to((note_center_x, note_center_y + note_half_size));
@@ -1078,28 +1136,28 @@ impl DelayGraph {
 
         let mut paint = vg::Paint::default();
         paint.set_color(border_color);
-        paint.set_stroke_width(line_width);
+        paint.set_stroke_width(line_width * 0.7);
         paint.set_style(vg::PaintStyle::Stroke);
 
         canvas.draw_path(&pan_background_path, &paint);
 
         let mut paint = vg::Paint::default();
         paint.set_color(font_color);
-        paint.set_stroke_width(line_width);
+        paint.set_stroke_width(line_width * 0.7);
         paint.set_style(vg::PaintStyle::Stroke);
 
         canvas.draw_path(&center_path, &paint);
 
         let mut paint = vg::Paint::default();
         paint.set_color(font_color);
-        paint.set_stroke_width(line_width);
+        paint.set_stroke_width(line_width * 0.7);
         paint.set_style(vg::PaintStyle::Stroke);
 
         canvas.draw_path(&pan_foreground_path, &paint);
 
         let mut paint = vg::Paint::default();
         paint.set_color(color);
-        paint.set_stroke_width(line_width);
+        paint.set_stroke_width(line_width * 0.7);
         paint.set_style(vg::PaintStyle::Stroke);
 
         canvas.draw_path(&note_path, &paint);
