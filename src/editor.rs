@@ -413,7 +413,7 @@ impl View for DelayGraph {
 
         let target_time_scaling_factor = Self::compute_time_scaling_factor(&params);
         let gui_decay_weight = Self::calculate_gui_decay_weight(&params);
-        let available_width = outline_width.mul_add(-0.5, bounds.w - border_width);
+        let available_width = bounds.w - outline_width - border_width * 2.0;
         let time_scaling_factor = (Self::gui_smooth(
             target_time_scaling_factor,
             &params.previous_time_scaling_factor,
@@ -424,6 +424,7 @@ impl View for DelayGraph {
         // Start drawing
         // Self::draw_background(canvas, bounds, background_color);
 
+        Self::draw_bounding_outline(canvas, bounds, border_color, border_width);
         if tap_counter > 0 {
             Self::draw_delay_times_as_lines(
                 canvas,
@@ -484,17 +485,6 @@ impl View for DelayGraph {
                 );
             }
         }
-        // Self::_draw_test_block(
-        // canvas,
-        // &params,
-        // bounds,
-        // selection_color,
-        // outline_width,
-        // time_scaling_factor,
-        // border_width,
-        // );
-
-        Self::draw_bounding_outline(canvas, bounds, border_color, border_width);
     }
 }
 
@@ -759,8 +749,7 @@ impl DelayGraph {
         border_width: f32,
     ) {
         let current_time = params.current_time.load(Ordering::SeqCst);
-        let x_offset = current_time.mul_add(time_scaling_factor, border_width * 0.5);
-        let y_move = border_width.mul_add(-0.5, bounds.y + bounds.h);
+        let x_offset = current_time.mul_add(time_scaling_factor, border_width);
 
         let mut glow_path = vg::Path::new();
         glow_path.add_rect(
@@ -777,7 +766,7 @@ impl DelayGraph {
         let z_plane = vg::Point3::new(0.0, 0.0, 17.0); // Raised z-plane
         let light_pos = vg::Point3::default(); // light position only matters for the part I'm not drawing
         let (r, g, b) = (color.r(), color.g(), color.b());
-        let ambient_color = Color::rgba(r, g, b, 74);
+        let ambient_color = Color::rgba(r, g, b, 69);
         let spot_color = Color::rgba(0, 0, 0, 0); // don't draw this
 
         canvas.draw_shadow(
@@ -794,60 +783,6 @@ impl DelayGraph {
         core_paint.set_color(color);
         core_paint.set_anti_alias(true);
         canvas.draw_path(&glow_path, &core_paint);
-    }
-
-    fn _draw_test_block(
-        canvas: &Canvas,
-        params: &Arc<Del2Params>,
-        bounds: BoundingBox,
-        color: vg::Color,
-        line_width: f32,
-        time_scaling_factor: f32,
-        border_width: f32,
-    ) {
-        let current_time = params.current_time.load(Ordering::SeqCst);
-        let x_offset = current_time.mul_add(time_scaling_factor, border_width * 0.5);
-
-        // Simple test rectangle
-        let mut path = vg::Path::new();
-        path.add_rect(vg::Rect::from_xywh(800.0, 150.0, 3.0, 200.0), None);
-        path.close();
-
-        // Much more extreme shadow parameters
-        let z_plane = vg::Point3::new(0.0, 0.0, 20.0); // Raised z-plane
-        let light_pos = vg::Point3::new(-40.0 + 0.05 * x_offset, -10.0 + 0.1 * x_offset, 9.0); // Light much further away
-
-        // Maximum contrast shadow
-        let shadow_color = Color::rgba(0, 255, 0, 255);
-        let fade_color = Color::rgba(255, 255, 255, 255);
-
-        // Try different flag combinations
-        let flags =
-        // vg::utils::shadow_utils::ShadowFlags::TRANSPARENT_OCCLUDER
-        // |
-        // vg::utils::shadow_utils::ShadowFlags::GEOMETRIC_ONLY
-        // |
-            vg::utils::shadow_utils::ShadowFlags::DIRECTIONAL_LIGHT
-        // |
-        // vg::utils::shadow_utils::ShadowFlags::CONCAVE_BLUR_ONLY
-            ;
-
-        canvas.draw_shadow(
-            &path,
-            z_plane,
-            light_pos,
-            1.0, // Massive light radius
-            shadow_color,
-            fade_color,
-            // None,
-            Some(flags),
-        );
-
-        // Draw the shape in red
-        let mut paint = vg::Paint::default();
-        paint.set_color(Color::rgba(255, 0, 0, 255));
-        paint.set_style(vg::PaintStyle::Fill);
-        canvas.draw_path(&path, &paint);
     }
 
     fn draw_in_out_meters(
@@ -910,23 +845,56 @@ impl DelayGraph {
 
         for i in 0..tap_counter {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst);
-            let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
+            let x_offset = delay_time.mul_add(time_scaling_factor, border_width);
 
             let velocity_value = params.velocities[i].load(Ordering::SeqCst);
-            let velocity_height = velocity_value.mul_add(bounds.h, -border_width);
+            let velocity_height = -1.0 * velocity_value * (bounds.h - border_width * 2.0);
+
+            let mut path = vg::Path::new();
+            path.add_rect(
+                vg::Rect::from_xywh(
+                    bounds.x + x_offset,
+                    bounds.y + bounds.h - border_width,
+                    line_width,
+                    velocity_height,
+                ),
+                None,
+            );
+            path.close();
+
+            let z_plane = vg::Point3::new(0.0, 0.0, 17.0); // Raised z-plane
+            let light_pos = vg::Point3::default(); // light position only matters for the part I'm not drawing
+            let (r, g, b) = (velocity_color.r(), velocity_color.g(), velocity_color.b());
+            let ambient_color = Color::rgba(r, g, b, 84);
+            let spot_color = Color::rgba(0, 0, 0, 0); // don't draw this
+
+            canvas.draw_shadow(
+                &path,
+                z_plane,
+                light_pos,
+                0.0,
+                ambient_color,
+                spot_color,
+                None,
+            );
+
+            let mut core_paint = vg::Paint::default();
+            core_paint.set_color(velocity_color);
+            core_paint.set_anti_alias(true);
+            canvas.draw_path(&path, &core_paint);
 
             // Draw the velocity path
-            let mut path = vg::Path::new();
-            let x_val = line_width.mul_add(-0.5, bounds.x + x_offset);
-            path.move_to((x_val, bounds.y + bounds.h - velocity_height));
-            path.line_to((x_val, bounds.y + bounds.h));
+            // let mut path = vg::Path::new();
+            // let x_val = line_width.mul_add(-0.5, bounds.x + x_offset);
+            // path.move_to((x_val, bounds.y + bounds.h - velocity_height));
+            // path.line_to((x_val, bounds.y + bounds.h));
 
-            let mut paint = vg::Paint::default();
-            paint.set_color(velocity_color);
-            paint.set_stroke_width(line_width);
-            paint.set_style(vg::PaintStyle::Stroke);
+            // let mut paint = vg::Paint::default();
+            // paint.set_color(velocity_color);
+            // paint.set_stroke_width(line_width);
+            // paint.set_style(vg::PaintStyle::Stroke);
 
-            canvas.draw_path(&path, &paint);
+            // canvas.draw_path(&path, &paint);
         }
 
         for i in 0..tap_counter {
