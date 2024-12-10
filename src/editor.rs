@@ -422,7 +422,7 @@ impl View for DelayGraph {
             .recip();
 
         // Start drawing
-        // Self::draw_background(canvas, bounds, background_color);
+        Self::draw_background(canvas, bounds, background_color);
 
         if tap_counter > 0 {
             Self::draw_delay_times_as_lines(
@@ -725,7 +725,7 @@ impl DelayGraph {
         canvas.draw_path(&path, &paint);
     }
 
-    fn _draw_background(canvas: &Canvas, bounds: BoundingBox, color: vg::Color) {
+    fn draw_background(canvas: &Canvas, bounds: BoundingBox, color: vg::Color) {
         let mut path = vg::Path::new();
         // Use the original bounds directly
         path.add_rect(
@@ -750,25 +750,43 @@ impl DelayGraph {
         time_scaling_factor: f32,
         border_width: f32,
     ) {
-        // Load the values once
-        let current_time = params.current_time.load(Ordering::SeqCst);
-
-        // Compute offset using mul_add for precision and performance
-        let x_offset = current_time.mul_add(time_scaling_factor, border_width * 0.5);
-
-        // Calculate y_move using mul_add
-        let y_move = border_width.mul_add(-0.5, bounds.y + bounds.h);
-
+        // Simple test rectangle
         let mut path = vg::Path::new();
-        path.move_to((bounds.x + x_offset, y_move));
-        path.line_to((bounds.x + x_offset, bounds.y));
+        path.add_rect(vg::Rect::from_xywh(400.0, 150.0, 3.0, 200.0), None);
         path.close();
 
-        let mut paint = vg::Paint::default();
-        paint.set_color(color);
-        paint.set_stroke_width(line_width);
-        paint.set_style(vg::PaintStyle::Stroke);
+        // Much more extreme shadow parameters
+        let z_plane = vg::Point3::new(0.0, 0.0, 20.0); // Raised z-plane
+                                                       // let light_pos = vg::Point3::new(0.0, 0.0, 1000.0); // Light much further away
+        let light_pos = vg::Point3::new(20.0, 10.0, 19.0); // Light much further away
 
+        // Maximum contrast shadow
+        let shadow_color = Color::rgba(0, 255, 0, 255); // Pure black shadow
+        let fade_color = Color::rgba(255, 255, 255, 255); // Also pure black, no fade
+
+        // Try different flag combinations
+        let flags =
+            vg::utils::shadow_utils::ShadowFlags::TRANSPARENT_OCCLUDER
+        // | vg::utils::shadow_utils::ShadowFlags::GEOMETRIC_ONLY
+            | vg::utils::shadow_utils::ShadowFlags::DIRECTIONAL_LIGHT
+        // | vg::utils::shadow_utils::ShadowFlags::CONCAVE_BLUR_ONLY
+            ;
+
+        canvas.draw_shadow(
+            &path,
+            z_plane,
+            light_pos,
+            5.0, // Massive light radius
+            shadow_color,
+            fade_color,
+            // None,
+            Some(flags),
+        );
+
+        // Draw the shape in red
+        let mut paint = vg::Paint::default();
+        paint.set_color(Color::rgba(255, 0, 0, 255));
+        paint.set_style(vg::PaintStyle::Fill);
         canvas.draw_path(&path, &paint);
     }
 
