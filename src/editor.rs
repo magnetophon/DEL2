@@ -60,7 +60,6 @@ pub fn default_state() -> Arc<ViziaState> {
 
 pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
-
         // Add the stylesheet to the app
         cx.add_stylesheet(include_style!("src/style.css"))
             .expect("Failed to load stylesheet");
@@ -390,7 +389,6 @@ impl View for DelayGraph {
     }
 
     fn draw(&self, draw_context: &mut DrawContext, canvas: &Canvas) {
-
         draw_context.needs_redraw();
 
         let params = self.params.clone();
@@ -537,8 +535,14 @@ impl DelayGraph {
 
             Label::new(cx, params.map(Self::create_tap_length_text)).class("tap-length-label");
         })
-        .bind(params.map(|v| v.current_time.load(Ordering::SeqCst)), |mut handle, _| handle.needs_redraw())
-        .bind(input_meter.map(|v| v.load(Ordering::SeqCst)), |mut handle, _| handle.needs_redraw())
+        .bind(
+            params.map(|v| v.current_time.load(Ordering::SeqCst)),
+            |mut handle, _| handle.needs_redraw(),
+        )
+        .bind(
+            input_meter.map(|v| v.load(Ordering::SeqCst)),
+            |mut handle, _| handle.needs_redraw(),
+        )
     }
     fn create_tap_length_text(params: &Arc<Del2Params>) -> String {
         const TOTAL_DIGITS: usize = 3;
@@ -718,26 +722,23 @@ impl DelayGraph {
         paint.set_stroke_width(0.7);
         paint.set_style(vg::PaintStyle::Stroke);
 
-        canvas.draw_path(
-            &path,
-            &paint,
-        );
+        canvas.draw_path(&path, &paint);
     }
 
     fn _draw_background(canvas: &Canvas, bounds: BoundingBox, color: vg::Color) {
         let mut path = vg::Path::new();
         // Use the original bounds directly
-        path.add_rect(vg::Rect::from_xywh(bounds.x, bounds.y, bounds.w, bounds.h), None);
+        path.add_rect(
+            vg::Rect::from_xywh(bounds.x, bounds.y, bounds.w, bounds.h),
+            None,
+        );
         path.close();
 
         let mut paint = vg::Paint::default();
         paint.set_color(color);
         paint.set_style(vg::PaintStyle::Fill);
 
-        canvas.draw_path(
-            &path,
-            &paint,
-        );
+        canvas.draw_path(&path, &paint);
     }
 
     fn draw_time_line(
@@ -768,10 +769,7 @@ impl DelayGraph {
         paint.set_stroke_width(line_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
-        canvas.draw_path(
-            &path,
-            &paint,
-        );
+        canvas.draw_path(&path, &paint);
     }
 
     fn draw_in_out_meters(
@@ -798,10 +796,7 @@ impl DelayGraph {
         paint.set_stroke_width(line_width * 1.5);
         paint.set_style(vg::PaintStyle::Stroke);
 
-        canvas.draw_path(
-            &path,
-            &paint,
-        );
+        canvas.draw_path(&path, &paint);
 
         // Calculate and draw output meter
         let output_db = util::gain_to_db(output_meter.load(Ordering::Relaxed));
@@ -819,10 +814,7 @@ impl DelayGraph {
         paint.set_stroke_width(line_width * 1.5);
         paint.set_style(vg::PaintStyle::Stroke);
 
-        canvas.draw_path(
-            &path,
-            &paint,
-        );
+        canvas.draw_path(&path, &paint);
     }
     fn draw_tap_velocities_and_meters(
         canvas: &Canvas,
@@ -856,10 +848,7 @@ impl DelayGraph {
             paint.set_stroke_width(line_width * 1.5);
             paint.set_style(vg::PaintStyle::Stroke);
 
-            canvas.draw_path(
-                &path,
-                &paint,
-            );
+            canvas.draw_path(&path, &paint);
         }
 
         for i in 0..tap_counter {
@@ -884,10 +873,7 @@ impl DelayGraph {
             paint.set_stroke_width(line_width * 1.5);
             paint.set_style(vg::PaintStyle::Stroke);
 
-            canvas.draw_path(
-                &path,
-                &paint,
-            );
+            canvas.draw_path(&path, &paint);
         }
     }
 
@@ -1058,18 +1044,18 @@ impl DelayGraph {
             );
 
             pan_background_path.move_to((note_center_x, note_center_y));
-            pan_background_path.line_to(
-                ((note_center_x + pan_background_length)
+            pan_background_path.line_to((
+                (note_center_x + pan_background_length)
                     .clamp(bounds.x + 1.0, bounds.x + bounds.w - 1.0),
-                note_center_y,)
-            );
+                note_center_y,
+            ));
 
             pan_foreground_path.move_to((note_center_x, note_center_y));
-            pan_foreground_path.line_to(
-                ((note_center_x + pan_foreground_length)
+            pan_foreground_path.line_to((
+                (note_center_x + pan_foreground_length)
                     .clamp(bounds.x + 1.0, bounds.x + bounds.w - 1.0),
-                note_center_y,)
-            );
+                note_center_y,
+            ));
         }
 
         let mut paint = vg::Paint::default();
@@ -1077,40 +1063,28 @@ impl DelayGraph {
         paint.set_stroke_width(line_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
-        canvas.draw_path(
-            &pan_background_path,
-            &paint,
-        );
+        canvas.draw_path(&pan_background_path, &paint);
 
         let mut paint = vg::Paint::default();
         paint.set_color(font_color);
         paint.set_stroke_width(line_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
-        canvas.draw_path(
-            &center_path,
-            &paint,
-        );
+        canvas.draw_path(&center_path, &paint);
 
         let mut paint = vg::Paint::default();
         paint.set_color(font_color);
         paint.set_stroke_width(line_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
-        canvas.draw_path(
-            &pan_foreground_path,
-            &paint,
-        );
+        canvas.draw_path(&pan_foreground_path, &paint);
 
         let mut paint = vg::Paint::default();
         paint.set_color(color);
         paint.set_stroke_width(line_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
-        canvas.draw_path(
-            &note_path,
-            &paint,
-        );
+        canvas.draw_path(&note_path, &paint);
 
         // Fix cover line drawing as needed
         let mut cover_line_path = vg::Path::new();
@@ -1123,10 +1097,7 @@ impl DelayGraph {
         paint.set_stroke_width(line_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
-        canvas.draw_path(
-            &cover_line_path,
-            &paint,
-        );
+        canvas.draw_path(&cover_line_path, &paint);
     }
 
     fn draw_bounding_outline(
@@ -1138,11 +1109,15 @@ impl DelayGraph {
         let half_border = border_width / 2.0;
 
         let mut path = vg::Path::new();
-        path.add_rect(vg::Rect::from_xywh(bounds.x + half_border,
-            bounds.y + half_border,
-            bounds.w - border_width,
-            bounds.h - border_width,
-        ), None);
+        path.add_rect(
+            vg::Rect::from_xywh(
+                bounds.x + half_border,
+                bounds.y + half_border,
+                bounds.w - border_width,
+                bounds.h - border_width,
+            ),
+            None,
+        );
         path.close();
 
         let mut paint = vg::Paint::default();
@@ -1150,10 +1125,7 @@ impl DelayGraph {
         paint.set_stroke_width(border_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
-        canvas.draw_path(
-            &path,
-            &paint,
-        );
+        canvas.draw_path(&path, &paint);
     }
 }
 
@@ -1363,10 +1335,7 @@ impl ActionTrigger {
         paint.set_stroke_width(border_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
-        canvas.draw_path(
-            &path,
-            &paint,
-        );
+        canvas.draw_path(&path, &paint);
     }
 }
 
@@ -1394,7 +1363,6 @@ impl View for ActionTrigger {
         });
     }
     fn draw(&self, draw_context: &mut DrawContext, canvas: &Canvas) {
-
         draw_context.needs_redraw();
 
         let bounds = draw_context.bounds();
