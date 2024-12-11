@@ -27,7 +27,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - { name: ubuntu-24.10,       os: ubuntu-24.10,   cross-target: '' }
+          - { name: ubuntu-22.04,       os: ubuntu-22.04,   cross-target: '' }
           - { name: macos-universal,    os: macos-13,       cross-target: aarch64-apple-darwin }
           - { name: windows,            os: windows-latest, cross-target: '' }
     name: Package plugin binaries
@@ -41,7 +41,7 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libgl-dev libjack-dev libx11-xcb-dev  libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libwayland-egl1 libwayland-egl++1 libwayland-client++1 libwayland-cursor0 libwayland-dev libwayland-egl-backend-dev fontconfig
+          sudo apt-get install -y libasound2-dev libgl-dev libjack-dev libx11-xcb-dev  libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev libwayland-egl1 libwayland-egl++1 libwayland-client++0 libwayland-cursor0 libwayland-dev libwayland-egl-backend-dev fontconfig
 
       - uses: actions/cache@v4.1.1
         # FIXME: Caching `target/` causes the Windows runner to blow up after some time
@@ -97,7 +97,7 @@ jobs:
           runner_name=${{ matrix.name }}
           if [[ $runner_name = 'macos-universal' ]]; then
             curl -L "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip" -o pluginval.zip; unzip pluginval
-          elif [[ $runner_name = 'ubuntu-24.10' ]]; then
+          elif [[ $runner_name = 'ubuntu-22.04' ]]; then
             curl -L "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Linux.zip" -o pluginval.zip; unzip pluginval
           elif [[ $runner_name = 'windows' ]]; then
             powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pluginval.zip"
@@ -110,7 +110,7 @@ jobs:
           runner_name=${{ matrix.name }}
           if [[ $runner_name = 'macos-universal' ]]; then
             pluginval.app/Contents/MacOS/pluginval --verbose --strictness-level 1 target/bundled/DEL2.vst3 || exit 1
-          elif [[ $runner_name = 'ubuntu-24.10' ]]; then
+          elif [[ $runner_name = 'ubuntu-22.04' ]]; then
             ./pluginval --verbose --strictness-level 1 target/bundled/DEL2.vst3 || exit 1
           elif [[ $runner_name = 'windows' ]]; then
             powershell -Command "& { .\pluginval.exe --verbose --strictness-level 10 target/bundled/DEL2.vst3; if ($LASTEXITCODE -ne 0) { exit 1 } }"
