@@ -28,7 +28,7 @@ jobs:
       matrix:
         include:
           - { name: ubuntu-24.04,       os: ubuntu-24.04,   cross-target: '' }
-          - { name: macos-universal,    os: macos-13,       cross-target: aarch64-apple-darwin }
+          - { name: macos-universal,    os: macos-14,       cross-target: aarch64-apple-darwin }
           - { name: windows,            os: windows-latest, cross-target: '' }
     name: Package plugin binaries
     runs-on: ${{ matrix.os }}
@@ -81,7 +81,7 @@ jobs:
 
           runner_name=${{ matrix.name }}
           if [[ $runner_name = 'macos-universal' ]]; then
-            export MACOSX_DEPLOYMENT_TARGET=10.13
+            export MACOSX_DEPLOYMENT_TARGET=10.14
             cargo xtask bundle-universal "${package_args[@]}" --release
           else
             cross_target=${{ matrix.cross-target }}
