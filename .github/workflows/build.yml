@@ -81,6 +81,7 @@ jobs:
 
           runner_name=${{ matrix.name }}
           if [[ $runner_name = 'macos-universal' ]]; then
+            rustup target add x86_64-apple-darwin
             export MACOSX_DEPLOYMENT_TARGET=10.14
             cargo xtask bundle-universal "${package_args[@]}" --release
           else
