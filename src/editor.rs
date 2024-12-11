@@ -28,6 +28,12 @@ const MAX_LEARNING_NANOS: u64 = 10_000_000_000; // 10 seconds
 const MIN_TICK: f32 = -60.0;
 /// The maximum decibel value that the meters display
 const MAX_TICK: f32 = 0.0;
+const GLOW_SIZE: vg::Point3 = vg::Point3::new(0.0, 0.0, 24.0);
+const LIGHT_POS: vg::Point3 = vg::Point3::new(0.0, 0.0, 0.0); // light position only matters for the part I'm not drawing
+const SPOT_COLOR: Color = Color::rgba(0, 0, 0, 0); // don't draw this
+const PINK_GLOW_ALPHA: u8 = 67;
+const YELLOW_GLOW_ALPHA: u8 = 60;
+const BLUE_GLOW_ALPHA: u8 = 79;
 
 // warning still there. ¯\_(ツ)_/¯
 // seems like there shouldn't be a warning in the first place
@@ -736,6 +742,7 @@ impl DelayGraph {
 
         let mut paint = vg::Paint::default();
         paint.set_color(color);
+        paint.set_anti_alias(true);
         paint.set_style(vg::PaintStyle::Fill);
 
         canvas.draw_path(&path, &paint);
@@ -763,26 +770,23 @@ impl DelayGraph {
             None,
         );
 
-        let z_plane = vg::Point3::new(0.0, 0.0, 23.0); // Raised z-plane
-        let light_pos = vg::Point3::default(); // light position only matters for the part I'm not drawing
         let (r, g, b) = (color.r(), color.g(), color.b());
-        let ambient_color = Color::rgba(r, g, b, 78);
-        let spot_color = Color::rgba(0, 0, 0, 0); // don't draw this
+        let ambient_color = Color::rgba(r, g, b, PINK_GLOW_ALPHA);
 
         canvas.draw_shadow(
             &path,
-            z_plane,
-            light_pos,
+            GLOW_SIZE,
+            LIGHT_POS,
             0.0,
             ambient_color,
-            spot_color,
+            SPOT_COLOR,
             None,
         );
 
-        let mut core_paint = vg::Paint::default();
-        core_paint.set_color(color);
-        core_paint.set_anti_alias(true);
-        canvas.draw_path(&path, &core_paint);
+        let mut paint = vg::Paint::default();
+        paint.set_color(color);
+        paint.set_anti_alias(true);
+        canvas.draw_path(&path, &paint);
     }
 
     fn draw_in_out_meters(
@@ -809,6 +813,7 @@ impl DelayGraph {
 
         let mut paint = vg::Paint::default();
         paint.set_color(meter_color);
+        paint.set_anti_alias(true);
         paint.set_stroke_width(line_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
@@ -830,6 +835,7 @@ impl DelayGraph {
 
         let mut paint = vg::Paint::default();
         paint.set_color(meter_color);
+        paint.set_anti_alias(true);
         paint.set_stroke_width(line_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
@@ -850,12 +856,8 @@ impl DelayGraph {
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
         let available_height = bounds.h - border_width * 2.0;
 
-        let z_plane = vg::Point3::new(0.0, 0.0, 23.0); // Raised z-plane
-                                                       // let light_pos  = vg::Point3::new(0.0, 0.0, 0.0); // Raised z-plane
-        let light_pos = vg::Point3::default(); // light position only matters for the part I'm not drawing
         let (r, g, b) = (velocity_color.r(), velocity_color.g(), velocity_color.b());
-        let ambient_color = Color::rgba(r, g, b, 78);
-        let spot_color = Color::rgba(r, g, b, 0); // don't draw this
+        let ambient_color = Color::rgba(r, g, b, BLUE_GLOW_ALPHA);
 
         // let flags =
         // vg::utils::shadow_utils::ShadowFlags::TRANSPARENT_OCCLUDER
@@ -866,6 +868,7 @@ impl DelayGraph {
         // |
         // vg::utils::shadow_utils::ShadowFlags::CONCAVE_BLUR_ONLY
         // ;
+
         for i in 0..tap_counter {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst);
             let x_offset = delay_time.mul_add(time_scaling_factor, border_width);
@@ -885,18 +888,18 @@ impl DelayGraph {
             );
             canvas.draw_shadow(
                 &velocity_path,
-                z_plane,
-                light_pos,
-                0.0,
+                GLOW_SIZE,
+                LIGHT_POS,
+                1.0,
                 ambient_color,
-                spot_color,
+                SPOT_COLOR,
                 // Some(flags),
                 None,
             );
-            let mut core_paint = vg::Paint::default();
-            core_paint.set_color(velocity_color);
-            core_paint.set_anti_alias(true);
-            canvas.draw_path(&velocity_path, &core_paint);
+            let mut paint = vg::Paint::default();
+            paint.set_color(velocity_color);
+            paint.set_anti_alias(true);
+            canvas.draw_path(&velocity_path, &paint);
         }
 
         let mut path = vg::Path::new();
@@ -923,6 +926,7 @@ impl DelayGraph {
         }
         let mut paint = vg::Paint::default();
         paint.set_color(meter_color);
+        paint.set_anti_alias(true);
         canvas.draw_path(&path, &paint);
     }
 
@@ -1041,23 +1045,21 @@ impl DelayGraph {
         note_path.line_to((first_note_x, first_note_y - note_half_size));
         note_path.close();
 
-        let z_plane = vg::Point3::new(0.0, 0.0, 23.0); // Raised z-plane
-        let light_pos = vg::Point3::default(); // light position only matters for the part I'm not drawing
         let (r, g, b) = (color.r(), color.g(), color.b());
-        let ambient_color = Color::rgba(r, g, b, 69);
-        let spot_color = Color::rgba(0, 0, 0, 0); // don't draw this
+        let ambient_color = Color::rgba(r, g, b, PINK_GLOW_ALPHA);
+
         canvas.draw_shadow(
             &note_path,
-            z_plane,
-            light_pos,
+            GLOW_SIZE,
+            LIGHT_POS,
             0.0,
             ambient_color,
-            spot_color,
+            SPOT_COLOR,
             None,
         );
         let mut paint = vg::Paint::default();
-        paint.set_anti_alias(true);
         paint.set_color(color);
+        paint.set_anti_alias(true);
         canvas.draw_path(&note_path, &paint);
 
         for i in 0..tap_counter {
@@ -1122,8 +1124,8 @@ impl DelayGraph {
             ));
 
             let mut paint = vg::Paint::default();
-            paint.set_anti_alias(true);
             paint.set_color(border_color);
+            paint.set_anti_alias(true);
             paint.set_stroke_width(line_width * 0.7);
             paint.set_style(vg::PaintStyle::Stroke);
             canvas.draw_path(&pan_background_path, &paint);
@@ -1138,58 +1140,56 @@ impl DelayGraph {
                 ),
                 None,
             );
+            let pan_glow_size = vg::Point3::new(0.0, 0.0, 21.0); // set the glow size
             let (r, g, b) = (font_color.r(), font_color.g(), font_color.b());
-            let ambient_color = Color::rgba(r, g, b, 69);
-            let spot_color = Color::rgba(0, 0, 0, 0); // don't draw this
+            let ambient_color = Color::rgba(r, g, b, YELLOW_GLOW_ALPHA);
             canvas.draw_shadow(
                 &pan_foreground_path,
-                z_plane,
-                light_pos,
+                pan_glow_size,
+                LIGHT_POS,
                 0.0,
                 ambient_color,
-                spot_color,
+                SPOT_COLOR,
                 None,
             );
             let mut fg_paint = vg::Paint::default();
-            fg_paint.set_anti_alias(true);
             fg_paint.set_color(font_color);
+            fg_paint.set_anti_alias(true);
             canvas.draw_path(&pan_foreground_path, &fg_paint);
 
             let (r, g, b) = (color.r(), color.g(), color.b());
-            let ambient_color = Color::rgba(r, g, b, 69);
-            let spot_color = Color::rgba(0, 0, 0, 0); // don't draw this
+            let ambient_color = Color::rgba(r, g, b, PINK_GLOW_ALPHA);
             canvas.draw_shadow(
                 &note_path,
-                z_plane,
-                light_pos,
+                GLOW_SIZE,
+                LIGHT_POS,
                 0.0,
                 ambient_color,
-                spot_color,
+                SPOT_COLOR,
                 None,
             );
             let mut paint = vg::Paint::default();
-            paint.set_anti_alias(true);
             paint.set_color(color);
+            paint.set_anti_alias(true);
             canvas.draw_path(&note_path, &paint);
         }
 
         let (r, g, b) = (font_color.r(), font_color.g(), font_color.b());
-        let ambient_color = Color::rgba(r, g, b, 78);
-        let spot_color = Color::rgba(0, 0, 0, 0); // don't draw this
+        let ambient_color = Color::rgba(r, g, b, YELLOW_GLOW_ALPHA);
 
         if (panning_center_y - first_note_y).abs() > 3.0 {
             canvas.draw_shadow(
                 &center_path,
-                z_plane,
-                light_pos,
+                GLOW_SIZE,
+                LIGHT_POS,
                 0.0,
                 ambient_color,
-                spot_color,
+                SPOT_COLOR,
                 None,
             );
             let mut paint = vg::Paint::default();
-            paint.set_anti_alias(true);
             paint.set_color(font_color);
+            paint.set_anti_alias(true);
             canvas.draw_path(&center_path, &paint);
         }
     }
@@ -1215,6 +1215,7 @@ impl DelayGraph {
 
         let mut paint = vg::Paint::default();
         paint.set_color(color);
+        paint.set_anti_alias(true);
         paint.set_stroke_width(border_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
@@ -1413,6 +1414,7 @@ impl ActionTrigger {
 
         let mut paint = vg::Paint::default();
         paint.set_color(paint_color);
+        paint.set_anti_alias(true);
 
         canvas.draw_path(&path, &paint);
 
@@ -1422,6 +1424,7 @@ impl ActionTrigger {
 
         let mut paint = vg::Paint::default();
         paint.set_color(border_color);
+        paint.set_anti_alias(true);
         paint.set_stroke_width(border_width);
         paint.set_style(vg::PaintStyle::Stroke);
 
