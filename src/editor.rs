@@ -869,6 +869,7 @@ impl DelayGraph {
         // vg::utils::shadow_utils::ShadowFlags::CONCAVE_BLUR_ONLY
         // ;
 
+        let radius = line_width * 0.25;
         for i in 0..tap_counter {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst);
             let x_offset = delay_time.mul_add(time_scaling_factor, border_width);
@@ -877,13 +878,14 @@ impl DelayGraph {
             let velocity_height = -1.0 * velocity_value * available_height;
 
             let mut velocity_path = vg::Path::new();
-            velocity_path.add_rect(
+            velocity_path.add_round_rect(
                 vg::Rect::from_xywh(
                     bounds.x + x_offset - line_width,
                     bounds.y + bounds.h - border_width,
                     line_width,
                     velocity_height,
                 ),
+                (radius, radius),
                 None,
             );
             canvas.draw_shadow(
