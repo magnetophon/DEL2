@@ -24,7 +24,20 @@
     width: 50%;
 }
 .parameters-all {
-    height: 50%;
+    height: 396px;
+}
+.parameters-minimal {
+    top: 0px;
+    bottom: 0px;
+    /* background-color: #5879af; */
+    /* top: 13px; */
+    height: 80px;
+}
+
+.parameters-labels-minimal {
+    top: 4px;
+    bottom: 4px;
+    height: 124px;
 }
 param-slider {
     height: 30px;
@@ -62,6 +75,22 @@ param-slider .value-entry .caret {
 }
 param-slider .value-entry .selection {
     background-color: #fabdf0;
+}
+.show-full-parameters {
+    font-size: 42;
+    color: #4e4e4e;
+    height: 30px;
+    width: 30px;
+    left: 10px;
+    top: 1s;
+    bottom: 19px;
+    transition: color 240ms;
+    box-shadow: 0px 0px 08px #4e4e4e;
+}
+.show-full-parameters:active,
+.show-full-parameters:hover {
+    color: #5879af;
+    transition: color 120ms;
 }
 
 .plugin-name {
@@ -117,10 +146,12 @@ param-slider .value-entry .selection {
     top: 19px;
     bottom: 9px;
 }
-.column-title {
-    font-size: 23;
-    left: 1s;
-    right: 0px;
+.column-title-group-minimal {
+    /* height: 30px; */
+    left: 0px;
+    right: 13px;
+    top: 0px;
+    bottom: 0px;
 }
 
 .slider-label {

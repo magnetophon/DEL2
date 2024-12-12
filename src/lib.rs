@@ -633,6 +633,7 @@ impl Plugin for Del2 {
                 last_learned_notes: self.last_learned_notes.clone(),
                 last_played_notes: self.last_played_notes.clone(),
                 enabled_actions: self.enabled_actions.clone(),
+                show_full_parameters: true,
             },
             self.params.editor_state.clone(),
         )
