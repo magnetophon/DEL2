@@ -5,10 +5,6 @@
     color: #e0ce91;
     font-size: 19;
     font-family: 'Noto Sans';
-    /*
-     * NOTE: vizia's font rendering looks way too dark and thick. Going one font
-     *       weight lower seems to compensate for this.
-     */
     font-weight: 200;
 }
 
@@ -48,6 +44,7 @@ param-slider:hover {
 
 param-slider .fill {
     background-color: #5879af;
+    /* shadow: 0px 0px 9px #5879afbf; */
 }
 /* param-slider .fill--modulation { */
 /* background-color: #a4eafc69; */

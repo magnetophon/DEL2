@@ -28,12 +28,12 @@ const MAX_LEARNING_NANOS: u64 = 10_000_000_000; // 10 seconds
 const MIN_TICK: f32 = -60.0;
 /// The maximum decibel value that the meters display
 const MAX_TICK: f32 = 0.0;
-const GLOW_SIZE: vg::Point3 = vg::Point3::new(0.0, 0.0, 21.0);
+const GLOW_SIZE: vg::Point3 = vg::Point3::new(0.0, 0.0, 20.0);
 const LIGHT_POS: vg::Point3 = vg::Point3::new(0.0, 0.0, 0.0); // light position only matters for the part I'm not drawing
 const SPOT_COLOR: Color = Color::rgba(0, 0, 0, 0); // don't draw this
-const PINK_GLOW_ALPHA: u8 = 65;
+const PINK_GLOW_ALPHA: u8 = 57;
 const YELLOW_GLOW_ALPHA: u8 = 50;
-const BLUE_GLOW_ALPHA: u8 = 74;
+const BLUE_GLOW_ALPHA: u8 = 71;
 
 // warning still there. ¯\_(ツ)_/¯
 // seems like there shouldn't be a warning in the first place
