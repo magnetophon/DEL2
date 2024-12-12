@@ -541,14 +541,6 @@ impl DelayGraph {
 
             Label::new(cx, params.map(Self::create_tap_length_text)).class("tap-length-label");
         })
-        .bind(
-            params.map(|v| v.current_time.load(Ordering::SeqCst)),
-            |mut handle, _| handle.needs_redraw(),
-        )
-        .bind(
-            input_meter.map(|v| v.load(Ordering::SeqCst)),
-            |mut handle, _| handle.needs_redraw(),
-        )
     }
     fn create_tap_length_text(params: &Arc<Del2Params>) -> String {
         const TOTAL_DIGITS: usize = 3;
@@ -1279,6 +1271,7 @@ impl ActionTrigger {
             own_index,
         }
         .build(cx, move |cx| {
+            Element::new(cx).class("trigger-element").hoverable(true);
             Label::new(
                 cx,
                 learned_notes.map(move |notes| {
@@ -1292,6 +1285,7 @@ impl ActionTrigger {
             }))
             .class("action-label");
         })
+        .hoverable(true)
     }
 
     pub fn start_learning(&self) {
@@ -1374,8 +1368,16 @@ impl ActionTrigger {
         // Adjust bounds for borders
         let x = border_width.mul_add(0.5, bounds.x);
         let y = border_width.mul_add(0.5, bounds.y);
-        let w = bounds.w - border_width;
-        let h = bounds.h - border_width;
+        // let w = bounds.w - border_width;
+        // let h = bounds.h - border_width;
+        // let x = border_width.mul_add(-0.5, bounds.x);
+        // let y = border_width.mul_add(-0.5, bounds.y);
+        // let w = bounds.w + border_width;
+        // let h = bounds.h + border_width;
+        // let x = bounds.x;
+        // let y = bounds.y;
+        let w = bounds.w;
+        let h = bounds.h;
 
         // Drawing the background rectangle
         let mut path = vg::Path::new();
@@ -1421,16 +1423,69 @@ impl ActionTrigger {
         canvas.draw_path(&path, &paint);
 
         // Drawing the border around the rectangle
-        let mut path = vg::Path::new();
-        path.add_rect(vg::Rect::from_xywh(x, y, w, h), None);
+        // let mut path = vg::Path::new();
+        // path.add_rect(vg::Rect::from_xywh(x, y, w, h), None);
 
-        let mut paint = vg::Paint::default();
-        paint.set_color(border_color);
-        paint.set_anti_alias(true);
-        paint.set_stroke_width(border_width);
-        paint.set_style(vg::PaintStyle::Stroke);
+        // let mut paint = vg::Paint::default();
+        // paint.set_color(border_color);
+        // paint.set_anti_alias(true);
+        // paint.set_stroke_width(border_width);
+        // paint.set_style(vg::PaintStyle::Stroke);
 
-        canvas.draw_path(&path, &paint);
+        // canvas.draw_path(&path, &paint);
+    }
+
+    // clippy's suggestion doesn't work, cause we need the early exit
+    // #[allow(clippy::match_same_arms)]
+    // fn OLD_get_action_class() -> String {
+    // let class = match (
+    // self.is_learning(),
+    // self.params.global.mute_is_toggle.value(),
+    // self.is_enabled(),
+    // self.is_playing(),
+    // self.own_index == CLEAR_TAPS,
+    // ) {
+    // (true, _, _, _, _) => "learning",
+    // (_, _, _, true, true) => "muted",
+    // (_, true, true, _, _) => "muted",
+    // (_, true, false, _, _) => "default",
+    // (_, _, true, _, _) => "muted",
+    // (_, _, _, true, _) => "live",
+    // _ => "default", // Default: paint with background color
+    // };
+    // class
+    // }
+    #[allow(clippy::match_same_arms)]
+    fn get_action_class(
+        params: &Arc<Del2Params>,
+        is_learning: Arc<AtomicBool>,
+        learned_notes: Arc<AtomicByteArray>,
+        last_played_notes: Arc<LastPlayedNotes>,
+        enabled_actions: Arc<AtomicBoolArray>,
+        own_index: usize,
+    ) -> &str {
+        let is_learning =
+            is_learning.load(Ordering::SeqCst) && learned_notes.load(own_index) == LEARNING;
+        let is_playing = last_played_notes.is_playing(learned_notes.load(own_index));
+        let is_enabled = enabled_actions.load(own_index);
+
+        // Determine the paint color based on the state
+        match (
+            // true,true,true,true,true,
+            is_learning,
+            params.global.mute_is_toggle.value(),
+            is_enabled,
+            is_playing,
+            own_index == CLEAR_TAPS,
+        ) {
+            (true, _, _, _, _) => "learning",
+            (_, _, _, true, true) => "muted",
+            (_, true, true, _, _) => "muted",
+            (_, true, false, _, _) => "default",
+            (_, _, true, _, _) => "muted",
+            (_, _, _, true, _) => "live",
+            _ => "default", // Default: paint with background color
+        }
     }
 }
 
@@ -1440,7 +1495,7 @@ impl View for ActionTrigger {
         Some("action-trigger")
     }
 
-    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
         event.map(|window_event, meta| match window_event {
             // We don't need special double and triple click handling
             WindowEvent::MouseDown(MouseButton::Left)
@@ -1451,7 +1506,6 @@ impl View for ActionTrigger {
                 } else {
                     self.start_learning();
                 }
-                cx.needs_redraw();
                 meta.consume();
             }
             _ => {}
@@ -1466,7 +1520,6 @@ impl View for ActionTrigger {
         let outline_color: vg::Color = draw_context.outline_color().into();
         let selection_color: vg::Color = draw_context.selection_color().into();
         let border_width = draw_context.border_width();
-        // let outline_width = draw_context.outline_width();
 
         self.draw_background(
             canvas,
