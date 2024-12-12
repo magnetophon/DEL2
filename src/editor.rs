@@ -1544,40 +1544,6 @@ impl ActionTrigger {
 
         canvas.draw_path(&path, &paint);
     }
-
-    // clippy's suggestion doesn't work, cause we need the early exit
-    #[allow(clippy::match_same_arms)]
-    fn get_action_class(
-        params: &Arc<Del2Params>,
-        is_learning: Arc<AtomicBool>,
-        learned_notes: Arc<AtomicByteArray>,
-        last_played_notes: Arc<LastPlayedNotes>,
-        enabled_actions: Arc<AtomicBoolArray>,
-        own_index: usize,
-    ) -> &str {
-        let is_learning =
-            is_learning.load(Ordering::SeqCst) && learned_notes.load(own_index) == LEARNING;
-        let is_playing = last_played_notes.is_playing(learned_notes.load(own_index));
-        let is_enabled = enabled_actions.load(own_index);
-
-        // Determine the paint color based on the state
-        match (
-            // true,true,true,true,true,
-            is_learning,
-            params.global.mute_is_toggle.value(),
-            is_enabled,
-            is_playing,
-            own_index == CLEAR_TAPS,
-        ) {
-            (true, _, _, _, _) => "learning",
-            (_, _, _, true, true) => "muted",
-            (_, true, true, _, _) => "muted",
-            (_, true, false, _, _) => "default",
-            (_, _, true, _, _) => "muted",
-            (_, _, _, true, _) => "live",
-            _ => "default", // Default: paint with background color
-        }
-    }
 }
 
 impl View for ActionTrigger {

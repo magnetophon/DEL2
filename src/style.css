@@ -85,7 +85,6 @@ param-slider .value-entry .selection {
     top: 1s;
     bottom: 19px;
     transition: color 240ms;
-    box-shadow: 0px 0px 08px #4e4e4e;
 }
 .show-full-parameters:active,
 .show-full-parameters:hover {
