@@ -28,12 +28,12 @@ const MAX_LEARNING_NANOS: u64 = 10_000_000_000; // 10 seconds
 const MIN_TICK: f32 = -60.0;
 /// The maximum decibel value that the meters display
 const MAX_TICK: f32 = 0.0;
-const GLOW_SIZE: vg::Point3 = vg::Point3::new(0.0, 0.0, 24.0);
+const GLOW_SIZE: vg::Point3 = vg::Point3::new(0.0, 0.0, 21.0);
 const LIGHT_POS: vg::Point3 = vg::Point3::new(0.0, 0.0, 0.0); // light position only matters for the part I'm not drawing
 const SPOT_COLOR: Color = Color::rgba(0, 0, 0, 0); // don't draw this
-const PINK_GLOW_ALPHA: u8 = 67;
-const YELLOW_GLOW_ALPHA: u8 = 60;
-const BLUE_GLOW_ALPHA: u8 = 79;
+const PINK_GLOW_ALPHA: u8 = 65;
+const YELLOW_GLOW_ALPHA: u8 = 50;
+const BLUE_GLOW_ALPHA: u8 = 74;
 
 // warning still there. ¯\_(ツ)_/¯
 // seems like there shouldn't be a warning in the first place
@@ -1142,7 +1142,7 @@ impl DelayGraph {
                 ),
                 None,
             );
-            let pan_glow_size = vg::Point3::new(0.0, 0.0, 21.0); // set the glow size
+            let pan_glow_size = vg::Point3::new(0.0, 0.0, 16.0); // set the glow size
             let (r, g, b) = (font_color.r(), font_color.g(), font_color.b());
             let ambient_color = Color::rgba(r, g, b, YELLOW_GLOW_ALPHA);
             canvas.draw_shadow(
