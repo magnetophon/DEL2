@@ -36,13 +36,14 @@ param-slider {
     border-width: 1px;
     background-color: #4e4e4e;
     border-color: #fabdf0;
-    transition: background-color 300ms;
+    shadow: 0px 0px 13px #fabdf03f;
+    transition: background-color 240ms;
 }
 
 param-slider:active,
 param-slider:hover {
     background-color: #292929;
-    transition: background-color 100ms;
+    transition: background-color 120ms;
 }
 
 param-slider .fill {
@@ -71,6 +72,9 @@ param-slider .value-entry .selection {
     font-size: 42;
     top: 13px;
     right: 21px;
+    bottom: 0px;
+    shadow: 0px 0px 16px #fabdf010;
+    background-color: #fabdf00a;
 }
 
 .group-title {
@@ -80,6 +84,8 @@ param-slider .value-entry .selection {
     right: 1s;
     top: 0px;
     bottom: 9px;
+    shadow: 0px 0px 13px #e0ce9109;
+    background-color: #e0ce9106;
 }
 
 .mid-group-title {
@@ -89,6 +95,23 @@ param-slider .value-entry .selection {
     right: 1s;
     top: 1s;
     bottom: 9px;
+    shadow: 0px 0px 13px #e0ce9109;
+    background-color: #e0ce9106;
+}
+
+.column-title {
+    font-size: 23;
+    left: 1s;
+    right: 0px;
+    shadow: 0px 0px 13px #e0ce9109;
+    background-color: #e0ce9106;
+}
+.low-velocity-minimal-title {
+    font-size: 23;
+    left: 280px;
+    /* right: 0px; */
+    shadow: 0px 0px 13px #e0ce9109;
+    background-color: #e0ce9106;
 }
 .column-title-group {
     height: auto;
@@ -108,6 +131,8 @@ param-slider .value-entry .selection {
     right: 9px;
     top: 1s;
     bottom: 1s;
+    shadow: 0px 0px 13px #e0ce9109;
+    background-color: #e0ce9106;
 }
 
 delay-graph {
@@ -128,12 +153,16 @@ delay-graph {
     right: 11px;
     top: 1s;
     bottom: 7px;
+    shadow: 0px 0px 13px #e0ce9109;
+    background-color: #e0ce9106;
 }
 .tap-length-label {
     left: 1s;
     right: 11px;
     top: 0px;
     bottom: 7px;
+    shadow: 0px 0px 13px #e0ce9109;
+    background-color: #e0ce9106;
 }
 
 action-trigger {
@@ -146,17 +175,20 @@ action-trigger {
     outline-color: #e0ce91;
     selection-color: #fabdf0;
     border-width: 1px;
-    transition: background-color 300ms;
+    shadow: 0px 0px 5px #fabdf0;
+    transition: background-color 240ms;
 }
 
 action-trigger:hover {
-    background-color: #292929;
-    transition: background-color 100ms;
+    /* background-color: #292929; */
+    transition: background-color 120ms;
 }
 .action-name {
     right: 9px;
     top: 1s;
     bottom: 4px;
+    shadow: 0px 0px 13px #e0ce9109;
+    background-color: #e0ce9106;
 }
 .row {
     height: 30px;
