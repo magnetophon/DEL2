@@ -262,8 +262,8 @@ fn full_parameters(cx: &mut Context) {
 
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "center").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.panning_center)
+                    Label::new(cx, "offset").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.panning_offset)
                         .class("widget");
                 })
                 .class("row");
@@ -1063,29 +1063,22 @@ impl DelayGraph {
         font_color: vg::Color,
         border_color: vg::Color,
     ) {
-        let first_note = params.first_note.load(Ordering::SeqCst);
+        let first = f32::from(params.first_note.load(Ordering::SeqCst));
 
         let mut center_path = vg::Path::new();
 
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
-        let panning_center_value = params.taps.panning_center.value();
+        let panning_center = (first + params.taps.panning_offset.value() * 127.0).clamp(0.0, 127.0);
         let panning_amount = params.taps.panning_amount.value();
-
-        let panning_center = if panning_center_value < 0 {
-            first_note
-        } else {
-            panning_center_value as u8
-        };
 
         let (min_note_value, max_note_value) = {
             // Initialize min and max with first_note and panning_center
-            let mut min = first_note.min(panning_center) as u16;
-            let mut max = first_note.max(panning_center) as u16;
-            let first = first_note as u16;
+            let mut min = first.min(panning_center);
+            let mut max = first.max(panning_center);
 
             // Iterate through notes to find min and max
             for i in 0..tap_counter {
-                let loaded_note = params.notes[i].load(Ordering::SeqCst) as u16;
+                let loaded_note = params.notes[i].load(Ordering::SeqCst) as f32;
                 if loaded_note < min {
                     min = loaded_note;
                 } else if loaded_note > max {
@@ -1093,11 +1086,11 @@ impl DelayGraph {
                 }
             }
 
-            const ZOOM_NOTES: u16 = 12;
-            const HALF_ZOOM_NOTES: u16 = (ZOOM_NOTES as f32 * 0.5) as u16;
+            const ZOOM_NOTES: f32 = 12.0;
+            const HALF_ZOOM_NOTES: f32 = ZOOM_NOTES * 0.5;
             let final_min = (first - HALF_ZOOM_NOTES).max(max - ZOOM_NOTES).min(min);
             let final_max = (first + HALF_ZOOM_NOTES).min(min + ZOOM_NOTES).max(max);
-            (f32::from(final_min), f32::from(final_max))
+            (final_min, final_max)
         };
         let smoothed_min_note_value = Self::gui_smooth(
             min_note_value,
@@ -1142,10 +1135,12 @@ impl DelayGraph {
         let panning_center_y = bounds.y + panning_center_height;
 
         // Draw half a note for the first note at time 0
+
+        let first = f32::from(params.first_note.load(Ordering::SeqCst));
         let normalized_first_note = if range_diff < 0.5 {
             0.5 // Put it in the center
         } else {
-            1.0 - ((f32::from(first_note) - min_note_value) / range_diff)
+            1.0 - ((first - min_note_value) / range_diff)
         };
 
         let first_note_height = Self::gui_smooth(
@@ -1298,7 +1293,7 @@ impl DelayGraph {
             canvas.draw_path(&note_path, &paint);
         }
 
-        if (panning_center_y - first_note_y).abs() > 3.0 {
+        if (panning_center_y - first_note_y).abs() > 1.0 {
             let panning_center_x = bounds.x + border_width;
             center_path.move_to((panning_center_x, panning_center_y + note_half_size));
             center_path.line_to((panning_center_x + note_half_size, panning_center_y));

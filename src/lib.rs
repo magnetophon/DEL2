@@ -326,8 +326,8 @@ impl GlobalParams {
 /// Contains the high and low tap parameters.
 #[derive(Params)]
 pub struct TapsParams {
-    #[id = "panning_center"]
-    pub panning_center: IntParam,
+    #[id = "panning_offset"]
+    pub panning_offset: FloatParam,
     #[id = "panning_amount"]
     pub panning_amount: FloatParam,
     #[id = "note_to_cutoff_amount"]
@@ -344,15 +344,22 @@ pub struct TapsParams {
 impl TapsParams {
     pub fn new(should_update_filter: Arc<AtomicBool>) -> Self {
         Self {
-            panning_center: IntParam::new(
-                "panning center",
-                -1,
-                IntRange::Linear { min: -1, max: 127 },
+            panning_offset: FloatParam::new(
+                "panning offset",
+                0.0,
+                FloatRange::SymmetricalSkewed {
+                    min: -1.0,
+                    max: 1.0,
+                    factor: FloatRange::skew_factor(-1.8),
+                    center: 0.0,
+                },
             )
-            .with_value_to_string(Del2::v2s_i32_note())
-            .with_string_to_value(Del2::s2v_i32_note()),
+            .with_unit(" %")
+            .with_value_to_string(formatters::v2s_f32_percentage(0))
+            .with_string_to_value(formatters::s2v_f32_percentage()),
+
             panning_amount: FloatParam::new(
-                "panning_amount",
+                "panning amount",
                 0.0,
                 FloatRange::SymmetricalSkewed {
                     min: -1.0,
@@ -791,11 +798,10 @@ impl Plugin for Del2 {
         // Write the audio buffer into the delay
         self.write_into_delay(buffer);
 
-        let panning_center = if self.params.taps.panning_center.value() < 0 {
-            f32::from(self.params.first_note.load(Ordering::SeqCst))
-        } else {
-            self.params.taps.panning_center.value() as f32
-        };
+        let panning_center = (f32::from(self.params.first_note.load(Ordering::SeqCst))
+            + self.params.taps.panning_offset.value() as f32 * 127.0)
+            .clamp(0.0, 127.0);
+
         let panning_amount = self.params.taps.panning_amount.value();
 
         while block_start < num_samples {
@@ -1534,7 +1540,7 @@ impl Del2 {
             string.parse::<f32>().ok()
         })
     }
-    fn v2s_i32_note() -> Arc<dyn Fn(i32) -> String + Send + Sync> {
+    fn _v2s_i32_note() -> Arc<dyn Fn(i32) -> String + Send + Sync> {
         Arc::new(move |value| {
             let note_nr = value as u8; // Convert the floating-point value to the nearest u8
             if value < 0 {
@@ -1546,7 +1552,7 @@ impl Del2 {
             }
         })
     }
-    fn s2v_i32_note() -> Arc<dyn Fn(&str) -> Option<i32> + Send + Sync> {
+    fn _s2v_i32_note() -> Arc<dyn Fn(&str) -> Option<i32> + Send + Sync> {
         Arc::new(move |string| {
             let trimmed_string = string.trim().to_lowercase();
 
