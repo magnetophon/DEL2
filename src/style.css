@@ -55,11 +55,12 @@ param-slider:hover {
 
 param-slider .fill {
     background-color: #5879af;
+    /* TODO: make this add to the other glow */
     /* shadow: 0px 0px 9px #5879afbf; */
 }
-/* param-slider .fill--modulation { */
-/* background-color: #a4eafc69; */
-/* } */
+param-slider .fill--modulation {
+    background-color: #e0ce9109;
+}
 
 /* This is a textbox, but we want it to appear just like the label */
 param-slider .value-entry {
