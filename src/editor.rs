@@ -1082,12 +1082,13 @@ impl DelayGraph {
 
         let (min_note_value, max_note_value) = {
             // Initialize min and max with first_note and panning_center
-            let mut min = first_note.min(panning_center);
-            let mut max = first_note.max(panning_center);
+            let mut min = first_note.min(panning_center) as u16;
+            let mut max = first_note.max(panning_center) as u16;
+            let first = first_note as u16;
 
             // Iterate through notes to find min and max
             for i in 0..tap_counter {
-                let loaded_note = params.notes[i].load(Ordering::SeqCst);
+                let loaded_note = params.notes[i].load(Ordering::SeqCst) as u16;
                 if loaded_note < min {
                     min = loaded_note;
                 } else if loaded_note > max {
@@ -1095,24 +1096,10 @@ impl DelayGraph {
                 }
             }
 
-            let zoom_min = if first_note < min + 12 {
-                first_note.saturating_sub(12)
-            } else {
-                min
-            };
-            let zoom_max = if max < first_note + 12 {
-                first_note.saturating_add(12)
-            } else {
-                max
-            };
-
-            let range_too_large = (i16::from(min) - i16::from(max)).abs() > 24;
-            let (final_min, final_max) = if range_too_large {
-                (min, max)
-            } else {
-                (zoom_min, zoom_max)
-            };
-
+            const ZOOM_NOTES: u16 = 12;
+            const HALF_ZOOM_NOTES: u16 = (ZOOM_NOTES as f32 * 0.5) as u16;
+            let final_min = (first - HALF_ZOOM_NOTES).max(max - ZOOM_NOTES).min(min);
+            let final_max = (first + HALF_ZOOM_NOTES).min(min + ZOOM_NOTES).max(max);
             (f32::from(final_min), f32::from(final_max))
         };
 
@@ -1122,8 +1109,8 @@ impl DelayGraph {
         let available_height = (-(margin + border_width)).mul_add(2.0, bounds.h);
 
         let get_normalized_value = |value: u8, min: f32, max: f32| -> f32 {
-            if (max - min).abs() < 0.5 {
-                f32::from(value) / 127.0
+            if max - min < 0.5 {
+                0.5 // put it in the center
             } else {
                 (f32::from(value) - min) / (max - min)
             }
