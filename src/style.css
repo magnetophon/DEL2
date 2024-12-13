@@ -1,5 +1,14 @@
 /* Overrides for default VIZIA widgets */
 
+/*
+
+TODO:
+
+make the overlapping things a separate class
+each element can be part of multiple classes
+
+*/
+
 :root {
     background-color: #292929;
     color: #e0ce91;

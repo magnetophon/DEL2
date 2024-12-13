@@ -951,9 +951,6 @@ impl DelayGraph {
         let x_val = 0.5f32.mul_add(-line_width, bounds.x + bounds.w - border_width);
         path.move_to((x_val, bounds.y + bounds.h - border_width));
         path.line_to((x_val, bounds.y + bounds.h - border_width - output_height));
-        // let x_val = line_width.mul_add(-0.5, bounds.x + bounds.w);
-        // path.move_to((x_val, bounds.y + bounds.h - output_height));
-        // path.line_to((x_val, bounds.y + bounds.h));
 
         let mut paint = vg::Paint::default();
         paint.set_color(meter_color);
@@ -1102,44 +1099,57 @@ impl DelayGraph {
             let final_max = (first + HALF_ZOOM_NOTES).min(min + ZOOM_NOTES).max(max);
             (f32::from(final_min), f32::from(final_max))
         };
+        let smoothed_min_note_value = Self::gui_smooth(
+            min_note_value,
+            &params.previous_min_note_value,
+            gui_decay_weight,
+        );
 
+        let smoothed_max_note_value = Self::gui_smooth(
+            max_note_value,
+            &params.previous_max_note_value,
+            gui_decay_weight,
+        );
         // let note_size = line_width * 2.8284; // Width and height of a note
         let note_size = line_width * 2.5; // Width and height of a note
         let margin = 57.0;
         let available_height = (-(margin + border_width)).mul_add(2.0, bounds.h);
 
-        let get_normalized_value = |value: u8, min: f32, max: f32| -> f32 {
-            if max - min < 0.5 {
-                0.5 // put it in the center
+        let get_height = |value: u8| -> f32 {
+            let smoothed_range_diff = smoothed_max_note_value - smoothed_min_note_value;
+            if smoothed_range_diff < 0.5 {
+                0.5 // Put it in the center
             } else {
-                (f32::from(value) - min) / (max - min)
+                1.0 - ((f32::from(value) - smoothed_min_note_value) / smoothed_range_diff)
             }
+            .mul_add(available_height, margin)
         };
-        // Draw half a note for panning center
-        let normalized_panning_center =
-            get_normalized_value(panning_center, min_note_value, max_note_value);
+
+        let range_diff = max_note_value - min_note_value;
+        let normalized_panning_center = if range_diff < 0.5 {
+            0.5 // Put it in the center
+        } else {
+            1.0 - ((f32::from(panning_center) - min_note_value) / range_diff)
+        };
+
         let panning_center_height = Self::gui_smooth(
-            1.0 - normalized_panning_center,
+            normalized_panning_center,
             &params.previous_panning_center_height,
             gui_decay_weight,
         )
         .mul_add(available_height, margin);
 
-        let note_half_size = note_size * 0.5;
-
-        let panning_center_x = bounds.x + border_width;
         let panning_center_y = bounds.y + panning_center_height;
 
-        center_path.move_to((panning_center_x, panning_center_y + note_half_size));
-        center_path.line_to((panning_center_x + note_half_size, panning_center_y));
-        center_path.line_to((panning_center_x, panning_center_y - note_half_size));
-        center_path.close();
-
         // Draw half a note for the first note at time 0
-        let normalized_first_note =
-            get_normalized_value(first_note, min_note_value, max_note_value);
+        let normalized_first_note = if range_diff < 0.5 {
+            0.5 // Put it in the center
+        } else {
+            1.0 - ((f32::from(first_note) - min_note_value) / range_diff)
+        };
+
         let first_note_height = Self::gui_smooth(
-            1.0 - normalized_first_note,
+            normalized_first_note,
             &params.previous_first_note_height,
             gui_decay_weight,
         )
@@ -1177,14 +1187,23 @@ impl DelayGraph {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst);
             let x_offset = delay_time.mul_add(time_scaling_factor, border_width);
 
-            let note_value = params.notes[i].load(Ordering::SeqCst);
-            let normalized_note = get_normalized_value(note_value, min_note_value, max_note_value);
-            let note_height = Self::gui_smooth(
-                1.0 - normalized_note,
-                &params.previous_note_heights[i],
-                gui_decay_weight,
-            )
-            .mul_add(available_height, margin);
+            let note = params.notes[i].load(Ordering::SeqCst);
+            let note_height = if (i + 1) == tap_counter {
+                let normalized_note = if range_diff < 0.5 {
+                    0.5 // Put it in the center
+                } else {
+                    1.0 - ((f32::from(note) - min_note_value) / range_diff)
+                };
+
+                Self::gui_smooth(
+                    normalized_note,
+                    &params.previous_note_height,
+                    gui_decay_weight,
+                )
+                .mul_add(available_height, margin)
+            } else {
+                get_height(note)
+            };
 
             let note_center_x = bounds.x + x_offset;
             let note_center_y = bounds.y + note_height;
@@ -1196,8 +1215,8 @@ impl DelayGraph {
             note_path.line_to((note_center_x, note_center_y - note_half_size));
             note_path.close();
 
-            let pan_value = ((f32::from(note_value) - f32::from(panning_center)) * panning_amount)
-                .clamp(-1.0, 1.0);
+            let pan_value =
+                ((f32::from(note) - f32::from(panning_center)) * panning_amount).clamp(-1.0, 1.0);
 
             let line_length = if pan_value.abs() > 1.0 / 50.0 {
                 50.0
@@ -1205,27 +1224,21 @@ impl DelayGraph {
                 0.0
             };
 
-            let target_pan_foreground_length = pan_value * line_length;
             let target_pan_background_length = if pan_value < 0.0 {
                 -line_length
             } else {
                 line_length
             };
 
-            let smoothed_pan_foreground_length = Self::gui_smooth(
-                target_pan_foreground_length,
-                &params.previous_pan_foreground_lengths[i],
-                gui_decay_weight,
-            );
-            let pan_foreground_length = smoothed_pan_foreground_length
-                .max(bounds.x - note_center_x + border_width)
-                .min(bounds.x + bounds.w - note_center_x - border_width);
             let pan_background_length = Self::gui_smooth(
                 target_pan_background_length,
                 &params.previous_pan_background_lengths[i],
                 gui_decay_weight,
             );
 
+            let pan_foreground_length = (pan_value.abs() * pan_background_length)
+                .max(bounds.x - note_center_x + border_width)
+                .min(bounds.x + bounds.w - note_center_x - border_width);
             let mut pan_background_path = vg::Path::new();
             pan_background_path.move_to((note_center_x, note_center_y));
             pan_background_path.line_to((
@@ -1285,10 +1298,15 @@ impl DelayGraph {
             canvas.draw_path(&note_path, &paint);
         }
 
-        let (r, g, b) = (font_color.r(), font_color.g(), font_color.b());
-        let ambient_color = Color::rgba(r, g, b, YELLOW_GLOW_ALPHA);
-
         if (panning_center_y - first_note_y).abs() > 3.0 {
+            let panning_center_x = bounds.x + border_width;
+            center_path.move_to((panning_center_x, panning_center_y + note_half_size));
+            center_path.line_to((panning_center_x + note_half_size, panning_center_y));
+            center_path.line_to((panning_center_x, panning_center_y - note_half_size));
+            center_path.close();
+
+            let (r, g, b) = (font_color.r(), font_color.g(), font_color.b());
+            let ambient_color = Color::rgba(r, g, b, YELLOW_GLOW_ALPHA);
             canvas.draw_shadow(
                 &center_path,
                 GLOW_SIZE,

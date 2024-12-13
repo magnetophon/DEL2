@@ -159,12 +159,27 @@ pub struct Del2Params {
     max_tap_time: Arc<AtomicF32>,
     #[persist = "first-note"]
     first_note: Arc<AtomicU8>,
+    // for the horizontal gui smoother
     previous_time_scaling_factor: Arc<AtomicF32>,
-    previous_note_heights: AtomicF32Array,
-    previous_first_note_height: Arc<AtomicF32>,
+    // for the vertical gui smoother
+    previous_min_note_value: Arc<AtomicF32>,
+    // for the vertical gui smoother
+    previous_max_note_value: Arc<AtomicF32>,
+    // separate smoother cause it needs to also smooth when the min and max note don't change
+    // and cause it can change after the tapping is done
+    // TODO: related to ^^
+    // find out which values we can make non atomic
+    // some will need an AtomicBool to denote NO_GUI_SMOOTHING
+    // some will be OK as is: test by not setting NO_GUI_SMOOTHING
     previous_panning_center_height: Arc<AtomicF32>,
-    previous_pan_foreground_lengths: AtomicF32Array,
+    // separate smoother because when this is linked to the overall min and max note,
+    // we get a slightly different value, that's ahead of the previous_panning_center_height
+    previous_first_note_height: Arc<AtomicF32>,
+    // the last added tap/note gets a separate smoother, cause we want it to appear at the correct place immediately
+    previous_note_height: Arc<AtomicF32>,
+    // the pans are moother separately cause they come in and out of existence per tap, when the pan amount for that tap is big enough
     previous_pan_background_lengths: AtomicF32Array,
+    // for making the gui smoother frame rate independent
     last_frame_time: AtomicU64,
     // the rate we are nunning at now
     sample_rate: AtomicF32,
@@ -559,12 +574,11 @@ impl Del2Params {
             max_tap_time: Arc::new(AtomicF32::new(0.0)),
             first_note: Arc::new(AtomicU8::new(NO_LEARNED_NOTE)),
             previous_time_scaling_factor: Arc::new(AtomicF32::new(0.0)),
-            previous_note_heights: AtomicF32Array(array_init(|_| Arc::new(AtomicF32::new(0.0)))),
+            previous_min_note_value: Arc::new(AtomicF32::new(0.0)),
+            previous_max_note_value: Arc::new(AtomicF32::new(0.0)),
             previous_first_note_height: Arc::new(AtomicF32::new(0.0)),
             previous_panning_center_height: Arc::new(AtomicF32::new(0.0)),
-            previous_pan_foreground_lengths: AtomicF32Array(array_init(|_| {
-                Arc::new(AtomicF32::new(0.0))
-            })),
+            previous_note_height: Arc::new(AtomicF32::new(0.0)),
             previous_pan_background_lengths: AtomicF32Array(array_init(|_| {
                 Arc::new(AtomicF32::new(0.0))
             })),
@@ -694,11 +708,14 @@ impl Plugin for Del2 {
             self.last_learned_notes.store(i, self.learned_notes.load(i));
         }
 
+        self.params
+            .previous_min_note_value
+            .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+        self.params
+            .previous_max_note_value
+            .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
         // don't smooth the gui for the new taps
         for i in (self.params.old_nr_taps.load(Ordering::SeqCst) + 1)..tap_counter {
-            self.params.previous_note_heights[i].store(NO_GUI_SMOOTHING, Ordering::SeqCst);
-            self.params.previous_pan_foreground_lengths[i]
-                .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
             self.params.previous_pan_background_lengths[i]
                 .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
         }
@@ -1174,6 +1191,10 @@ impl Del2 {
 
             tap_counter += 1;
             self.params.tap_counter.store(tap_counter, Ordering::SeqCst);
+            self.params
+                .previous_note_height
+                .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+
             if tap_counter == NUM_TAPS {
                 self.counting_state = CountingState::TimeOut;
                 self.timing_last_event = 0;
@@ -1231,15 +1252,21 @@ impl Del2 {
             .previous_time_scaling_factor
             .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
         self.params
+            .previous_min_note_value
+            .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+        self.params
+            .previous_max_note_value
+            .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+        self.params
             .previous_first_note_height
             .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
         self.params
             .previous_panning_center_height
             .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+        self.params
+            .previous_note_height
+            .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
         for i in 0..NUM_TAPS {
-            self.params.previous_note_heights[i].store(NO_GUI_SMOOTHING, Ordering::SeqCst);
-            self.params.previous_pan_foreground_lengths[i]
-                .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
             self.params.previous_pan_background_lengths[i]
                 .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
         }
