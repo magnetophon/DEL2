@@ -1213,11 +1213,7 @@ impl DelayGraph {
             let pan_value =
                 ((f32::from(note) - f32::from(panning_center)) * panning_amount).clamp(-1.0, 1.0);
 
-            let line_length = if pan_value.abs() > 1.0 / 50.0 {
-                50.0
-            } else {
-                0.0
-            };
+            let line_length = if pan_value.abs() > 0.007 { 50.0 } else { 0.0 };
 
             let target_pan_background_length = if pan_value < 0.0 {
                 -line_length
