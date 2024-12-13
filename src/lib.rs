@@ -1457,9 +1457,9 @@ impl Del2 {
     fn v2s_f32_hz_then_khz_three_digits() -> Arc<dyn Fn(f32) -> String + Send + Sync> {
         Arc::new(move |value| {
             if value < 100.0 {
-                format!("{:.1} Hz", value)
+                format!("{value:.1} Hz")
             } else if value < 1000.0 {
-                format!("{:.0} Hz", value)
+                format!("{value:.0} Hz")
             } else if value < 10000.0 {
                 format!("{:.2} kHz", value / 1000.0)
             } else {

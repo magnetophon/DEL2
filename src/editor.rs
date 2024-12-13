@@ -549,7 +549,7 @@ impl View for DelayGraph {
 
         let target_time_scaling_factor = Self::compute_time_scaling_factor(&params);
         let gui_decay_weight = Self::calculate_gui_decay_weight(&params);
-        let available_width = bounds.w - outline_width - border_width * 2.0;
+        let available_width = border_width.mul_add(-2.0, bounds.w - outline_width);
         let time_scaling_factor = (Self::gui_smooth(
             target_time_scaling_factor,
             &params.previous_time_scaling_factor,
@@ -887,7 +887,7 @@ impl DelayGraph {
                 bounds.x + x_offset,
                 bounds.y + border_width,
                 line_width,
-                bounds.h - border_width * 2.0,
+                border_width.mul_add(-2.0, bounds.h),
             ),
             None,
         );
@@ -920,7 +920,7 @@ impl DelayGraph {
         line_width: f32,
         border_width: f32,
     ) {
-        let available_height = bounds.h - border_width * 2.0;
+        let available_height = border_width.mul_add(-2.0, bounds.h);
         // Calculate and draw input meter
         let input_db = util::gain_to_db(input_meter.load(Ordering::Relaxed));
         let input_height = {
@@ -948,7 +948,7 @@ impl DelayGraph {
             (tick_fraction * available_height).max(0.0)
         };
         path = vg::Path::new();
-        let x_val = bounds.x + bounds.w - border_width - 0.5 * line_width;
+        let x_val = 0.5f32.mul_add(-line_width, bounds.x + bounds.w - border_width);
         path.move_to((x_val, bounds.y + bounds.h - border_width));
         path.line_to((x_val, bounds.y + bounds.h - border_width - output_height));
         // let x_val = line_width.mul_add(-0.5, bounds.x + bounds.w);
@@ -976,7 +976,7 @@ impl DelayGraph {
         border_width: f32,
     ) {
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
-        let available_height = bounds.h - border_width * 2.0;
+        let available_height = border_width.mul_add(-2.0, bounds.h);
 
         let (r, g, b) = (velocity_color.r(), velocity_color.g(), velocity_color.b());
         let ambient_color = Color::rgba(r, g, b, BLUE_GLOW_ALPHA);
@@ -1258,7 +1258,7 @@ impl DelayGraph {
             pan_foreground_path.add_rect(
                 vg::Rect::from_xywh(
                     note_center_x,
-                    note_center_y - line_width * 0.35,
+                    line_width.mul_add(-0.35, note_center_y),
                     pan_foreground_length,
                     line_width * 0.7,
                 ),
