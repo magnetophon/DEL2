@@ -14,7 +14,7 @@ You record a delay rhythm by playing midi notes into the plugin.
 The first note starts counting, and each note after that creates a delay tap, with a maximum of 16. 
 
 - Independent effects per tap:  
-  - A [Moog style filter](#Filters) with creamy drive
+  - A [Moog style filter](#Filters) with creamy drive  
   The parameters are (optionally) linked to velocity and note.
   - [Panning](#Panning) linked to the note
 - Four [midi triggers](#Triggers):
@@ -22,9 +22,6 @@ The first note starts counting, and each note after that creates a delay tap, wi
   - mute output
   - clear taps
   - lock taps
-  There are two modes for the input and output mute: "toggle" and "direct":
-    - Toggle-mode is how most mutes work: the triggers turn the mute on when it's off and vice versa.
-    - Direct-mode is more like an instrument: the mute is on by default and the trigger turns it off only as long as you hold the trigger note.
 - The rhythm pattern is saved alongside the other parameters in the preset and DAW session.
 - [Stereo from end to end](#Faux-HRTF-panning).
 
@@ -90,16 +87,19 @@ Since this panner is only on the delay and not on any of the main channels of yo
 
 ### Triggers
 To set which note controls the trigger, just click the button and play a note.  
-  - There are two modes for the input and output mute: "toggle" and "direct":  
-    - **Toggle-mode** is how most mutes work: the triggers turn the mute on when it's off and vice versa.  
-    - **Direct-mode** is more like an instrument: the mute is on by default and the trigger turns it off only as long as you hold the trigger note.  
+- There are two modes for the **input** and **output mute**: "toggle" and "direct":  
+  - **Toggle-mode** is how most mutes work: the triggers turn the mute on when it's off and vice versa.  
+  - **Direct-mode** is more like an instrument: the mute is on by default and the trigger turns it off only as long as you hold the trigger note.  
 it also (retroactively) turns the other mute off when you press it.  
-  **attack** and **release** set how long it takes for the mute to turn on or off.  
+- **clear taps** removes the delay taps.
+- **lock taps** ignores any midi that would have changed the pattern otherwise.  
+It still listens for triggers though, unlike the **listen to** parameter, which will completely ignore any midi that is on the wrong channel.
   
 ### Other parameters
 **dry/wet** mix between the unaltered dry signal and the effect.  
 **wet gain**this is a post effect make up gain.  
-**global drive*** lets you adjust the overall amount of distortion.  
+**global drive** lets you adjust the overall amount of distortion.  
+**attack** and **release** set how long it takes for the mute to turn on or off.  
 
 ### Slider usage
 Apart from regular dragging and mouse-wheel-scrolling, you can:
