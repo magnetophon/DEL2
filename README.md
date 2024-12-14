@@ -9,24 +9,25 @@ In VST3 and CLAP format, for Linux, Mac and Windows.
 
 ## Features & Quickstart
 
-- **Midi rhythm delay**  
+- [Midi rhythm delay](#Recording-a-rhythm)  
 You record a delay rhythm by playing midi notes into the plugin.  
 The first note starts counting, and each note after that creates a delay tap, with a maximum of 16. 
 
-- Independent **effects per tap** 
-  - A **moog style filter** with creamy drive
+- Independent effects per tap:  
+  - A [Moog style filter](#Filters) with creamy drive
   The parameters are (optionally) linked to velocity and note.
-  - **Panning**, linked to the note
-- Four **midi triggers:**
-  - **mute input**
-  - **mute output**
-  - **clear taps**
-  - **lock taps**
-  - There are two modes for the input and output mute: "toggle" and "direct":
-    - **Toggle-mode** is how most mutes work: the triggers turn the mute on when it's off and vice versa.
-    - **Direct-mode** is more like an instrument: the mute is on by default and the trigger turns it off only as long as you hold the trigger note.
+  - [Panning](#Panning) linked to the note
+- Four [midi triggers](#Triggers):
+  - mute input
+  - mute output
+  - clear taps
+  - lock taps
+  There are two modes for the input and output mute: "toggle" and "direct":
+    - Toggle-mode is how most mutes work: the triggers turn the mute on when it's off and vice versa.
+    - Direct-mode is more like an instrument: the mute is on by default and the trigger turns it off only as long as you hold the trigger note.
 - The rhythm pattern is saved alongside the other parameters in the preset and DAW session.
-- Stereo from end to end
+- [Stereo from end to end](#Faux-HRTF-panning).
+
 
 ## Manual
 
@@ -67,10 +68,25 @@ The first note determines the center of the stereo image
 The **center** slider allows you to change that to another note.  
 **panning amount** controls how much each note is panned.  
 
-Not just the delay and the filter, but also the panner is fully stereo.  
-Instead of turning down the level for one channel a lot, when you want tox pan to the other side, these panners ad a tiny bit more delay to one side, and they make that side slightly duller and quieter.  
-The overall effect is that the sound seems to be coming from the opposite side.  
-The signal retains it's stereo-width:  sounds that where coming from the opposite side of where you panned, will still mostly come from there.
+
+##### Faux HRTF panning
+Normal panners operate on the level of each input.  
+Let's say we want to pan left.  
+A regular stereo panner would either turn down the right channel, or mix some of the right input into the left output.  
+When you hard-pan, the first method will turn off the right input, and the second method will have a mono mix of both channels in the left output.  
+
+The panners in DEL2 work differently.  
+When you pan left, they do three things:
+- Add a bit more delay to the right input.
+This is called the [Haas Effect](https://www.izotope.com/en/learn/what-is-the-haas-effect.html).  
+- Make the right side slightly duller  
+- Make it a bit quieter.  
+Together they emulate a [HRTF](https://en.wikipedia.org/wiki/Head-related_transfer_function)".  
+
+The upside is that the signal retains it's stereo-width and sounds that where hard-panned in the input don't get lost.  
+The downside is that you get comb filtering when you listen in mono.  
+Since this panner is only on the delay and not on any of the main channels of your mix, the stereo width you get is more than worth it.
+
 
 ### Triggers
 To set which note controls the trigger, just click the button and play a note.  
