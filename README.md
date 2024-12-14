@@ -65,7 +65,7 @@ If the input is loud, high drive can sound quieter than low drive.
 ### Panning
 By playing lower or higher notes, you pan each tap to the left or right.  
 The first note determines the center of the stereo image   
-The **center** slider allows you to change that to another note.  
+The **offset** slider adjusts that center.  
 **panning amount** controls how much each note is panned.  
 
 
