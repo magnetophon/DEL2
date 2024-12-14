@@ -11,10 +11,10 @@ In VST3 and CLAP format, for Linux, Mac and Windows.
 
 - [Midi rhythm delay](#Recording-a-rhythm)  
 You record a delay rhythm by playing midi notes into the plugin.  
-The first note starts counting, and each note after that creates a delay tap, with a maximum of 16. 
+The first note starts counting, and each note after that creates a new delay tap.
 
-- Independent effects per tap:  
-  - A [Moog style filter](#Filters) with creamy drive  
+- Independent effects for each of the 16 taps:  
+  - A [Moog style filter](#Filters) with creamy drive.  
   The parameters are (optionally) linked to velocity and note.
   - [Panning](#Panning) linked to the note
 - Four [midi triggers](#Triggers):
@@ -41,27 +41,38 @@ You could also put an instrument plugin before DEL2 and use the audio from that.
 
 ### Recording a rhythm
 The first note starts counting, and each note after that creates a delay tap.  
+
 The **max tap** slider sets how long a tap can take.  
 The pink line in the graph shows how much time there is left to add new taps to the rhythm  
 When you add a tap the graph zooms out to show how the new available time.  
+
 **min tap** is the minimum time between two taps, mainly for de-bouncing, but it can also be used creatively.  
+
 **sync** lets you choose between a free running delay, or one synced to the host tempo.  
 BPM mode doesn't quantize the tap timing; it just changes the duration of the taps when the host tempo changes.  
+
 **listen to** lets you choose which midi channel the rhythm notes come from: "any channel", or 1 to 16
 
 ### Filters
 There's a set of filter parameters for low velocity and one for high velocity.  
 Each individual filter follows the velocity of the tap.  
 You can also link the note to the cutoff frequency, to play melodies with the resonance.  
-**vel>cut** sets how much influence the velocity has on the cutoff.  
-**note>cut** sets how much influence the notes have on the cutoff.  
-**drive** lets you adjust how much the filter distorts  
-If the input is loud, high drive can sound quieter than low drive.  
-**mode** lets you choose between low-pass, high-pass, and notch filters of various steepness.
+
+- Parameters that affect all taps the same:
+  - **vel>cut** sets how much influence the velocity has on the cutoff.  
+  - **note>cut** sets how much influence the notes have on the cutoff.  
+- Velocity dependent parameters:
+  - **cutoff** sets the filter cutoff frequency.
+  - **res** sets the filter resonance.
+  - **drive** lets you adjust how much the filter distorts.  
+Paradoxically, when the input signal is loud, a high amount of drive can sound quieter than low one.  
+This is because internally, for each dB you turn up the drive (aka input gain), the output turns one dB down.  
+When there's no distortion, they cancel each other out, but with lots of distortion the output will sound quieter.  
+  -   **mode** lets you choose between low-pass, band-pass and high-pass in various steepness, and notch filters.
 
 ### Panning
 By playing lower or higher notes, you pan each tap to the left or right.  
-The first note determines the center of the stereo image   
+The first note determines the center of the stereo image.  
 The **center** slider allows you to change that to another note.  
 **panning amount** controls how much each note is panned.  
 
@@ -74,7 +85,7 @@ When you hard-pan, the first method will turn off the right input, and the secon
 
 The panners in DEL2 work differently.  
 When you pan left, they do three things:
-- Add a bit more delay to the right input.
+- Add a bit more delay to the right input.  
 This is called the [Haas Effect](https://www.izotope.com/en/learn/what-is-the-haas-effect.html).  
 - Make the right side slightly duller  
 - Make it a bit quieter.  
@@ -99,7 +110,7 @@ It still listens for triggers though, unlike the **listen to** parameter, which 
 **dry/wet** mix between the unaltered dry signal and the effect.  
 **wet gain**this is a post effect make up gain.  
 **global drive** lets you adjust the overall amount of distortion.  
-**attack** and **release** set how long it takes for the mute to turn on or off.  
+**attack** and **release** set how long it takes for the mute to turn on and off.  
 
 ### Slider usage
 Apart from regular dragging and mouse-wheel-scrolling, you can:
