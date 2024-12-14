@@ -1,6 +1,6 @@
 # DEL2
 
-The delay that you play!
+The delay that you play.
 
 https://github.com/user-attachments/assets/cd501d5a-0c7d-404d-b970-8f6272594568
 
@@ -45,7 +45,7 @@ You could also put an instrument plugin before DEL2 and use the audio from that.
 The first note starts counting, and each note after that creates a delay tap.  
 The **max tap** slider sets how long a tap can take.  
 The pink line in the graph shows how much time there is left to add new taps to the rhythm  
-Every time you add a tap, the counter resets.  
+When you add a tap the graph zooms out to show how the new available time.  
 **min tap** is the minimum time between two taps, mainly for de-bouncing, but it can also be used creatively.  
 **sync** lets you choose between a free running delay, or one synced to the host tempo.  
 BPM mode doesn't quantize the tap timing; it just changes the duration of the taps when the host tempo changes.  
@@ -84,6 +84,13 @@ it also (retroactively) turns the other mute off when you press it.
 **dry/wet** mix between the unaltered dry signal and the effect.  
 **wet gain**this is a post effect make up gain.  
 **global drive*** lets you adjust the overall amount of distortion.  
+
+### Slider usage
+Apart from regular dragging and mouse-wheel-scrolling, you can:
+
+- Shift + drag or mouse-wheel: fine adjustments, relative to the current position of the slider.
+- Alt + click on a slider: type a value
+- Double-click or right-click on a slider: back to the default value.
 
 
 ## Thanks
