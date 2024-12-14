@@ -36,8 +36,24 @@ Mac users will have to [disable GateKeeper](https://disable-gatekeeper.github.io
 - Connect a midi source.  
 This can be an instrument, a foot-pedal, a sequencer, or anything else that sends midi.
 - Connect an audio source.  
-Most DAWs allow you to send a live or recorded audio track into the plugin, alongside the midi from the previous step.  
-You could also put an instrument plugin before DEL2 and use the audio from that.
+Live, recorded or from an instrument plugin.
+
+Here's how you connect both audio and midi to a plugin:
+- [Ardour](https://manual.ardour.org/signal-routing/)
+- [Ableton Live](https://www.waves.com/support/how-to-control-waves-plugins-with-midi-in-ableton-live/)
+- [Cubase](https://www.waves.com/support/how-to-control-waves-plugins-with-midi-in-cubase)
+- [FL Studio](https://www.waves.com/support/how-to-control-waves-plugins-with-midi-in-fl-studio)
+- [Logic Pro](https://www.waves.com/support/how-to-control-waves-plugins-with-midi-in-logic-pro)
+- [REAPER](https://www.waves.com/support/how-to-control-waves-plugins-with-midi-in-reaper)
+- [Studio One](https://www.waves.com/support/how-to-control-waves-plugins-with-midiin-studio-one)
+- [Bitwig Studio](https://www.waves.com/support/how-to-control-waves-plugins-with-midi-in-bitwig-studio)
+- [Samplitude](https://www.waves.com/support/how-to-control-waves-plugins-with-midi-in-samplitude)
+- [Reason](https://www.waves.com/support/how-to-control-waves-plugins-with-midi-in-reason)
+- [Cakewalk](https://www.waves.com/support/how-to-control-waves-plugins-with-midi-in-cakewalk)
+- [Luna](https://www.waves.com/support/how-to-control-waves-plugins-with-midi-in-luna)
+- [DaVinci Resolve](https://www.waves.com/support/how-to-control-waves-plugins-with-midi-in-davinci-resolve)
+
+You can also put an instrument plugin before DEL2 and use the audio from that.
 
 ### Recording a rhythm
 The first note starts counting, and each note after that creates a delay tap.  
