@@ -160,7 +160,7 @@ fn full_parameters(cx: &mut Context) {
             .class("param-group");
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "min tap").class("slider-label");
+                    Label::new(cx, "debounce").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| {
                         &params.global.min_tap_milliseconds
                     })
@@ -168,7 +168,7 @@ fn full_parameters(cx: &mut Context) {
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "max tap").class("slider-label");
+                    Label::new(cx, "time-out").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.global.max_tap_ms)
                         .set_style(ParamSliderStyle::FromLeft)
                         .class("widget");
