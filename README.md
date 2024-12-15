@@ -2,7 +2,7 @@
 
 The delay that you play.
 
-https://github.com/user-attachments/assets/cd501d5a-0c7d-404d-b970-8f6272594568
+[![a user video](https://img.youtube.com/vi/8IrrcDl4wwk/0.jpg)](https://www.youtube.com/watch?v=8IrrcDl4wwk)
 
 In VST3 and CLAP format, for Linux, Mac and Windows.
 
