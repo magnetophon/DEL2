@@ -101,7 +101,13 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
 fn full_parameters(cx: &mut Context) {
     HStack::new(cx, |cx| {
         VStack::new(cx, |cx| {
-            Label::new(cx, "global").class("group-title");
+            ZStack::new(cx, |cx| {
+                HStack::new(cx, |cx| {
+                    CollapseButton::new(cx).class("show-full-parameters");
+                })
+                .class("row");
+                Label::new(cx, "global").class("group-title");
+            });
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "dry/wet").class("slider-label");
@@ -110,28 +116,32 @@ fn full_parameters(cx: &mut Context) {
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "listen to").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.global.channel)
+                    Label::new(cx, "mutes").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
+                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");
                 })
                 .class("row");
             })
             .class("param-group");
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "wet gain").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.global.wet_gain)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.global.global_drive)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
+
+            // TODO: fully remove, also the backend
+
+            // HStack::new(cx, |cx| {
+            // HStack::new(cx, |cx| {
+            // Label::new(cx, "wet gain").class("slider-label");
+            // ParamSlider::new(cx, Data::params, |params| &params.global.wet_gain)
+            // .class("widget");
+            // })
+            // .class("row");
+            // HStack::new(cx, |cx| {
+            // Label::new(cx, "drive").class("slider-label");
+            // ParamSlider::new(cx, Data::params, |params| &params.global.global_drive)
+            // .class("widget");
+            // })
+            // .class("row");
+            // })
+            // .class("param-group");
 
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
@@ -175,18 +185,14 @@ fn full_parameters(cx: &mut Context) {
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "mutes").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
-                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
+                    Label::new(cx, "listen to").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.global.channel)
                         .class("widget");
                 })
                 .class("row");
             })
             .class("param-group");
-            ZStack::new(cx, |cx| {
-                CollapseButton::new(cx).class("show-full-parameters");
-                Label::new(cx, "triggers").class("mid-group-title");
-            });
+            Label::new(cx, "triggers").class("mid-group-title");
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "mute in").class("action-name");
@@ -356,19 +362,14 @@ fn full_parameters(cx: &mut Context) {
 fn minimal_parameters(cx: &mut Context) {
     HStack::new(cx, |cx| {
         VStack::new(cx, |cx| {
-            // Label::new(cx, "global").class("group-title");
-            HStack::new(cx, |cx| {
+            ZStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     CollapseButton::new(cx).class("show-full-parameters");
                 })
                 .class("row");
-                // HStack::new(cx, |cx| {
-                // Label::new(cx, "dry/wet").class("slider-label");
-                // ParamSlider::new(cx, Data::params, |params| &params.global.dry_wet).class("widget");
-                // })
-                // .class("row");
+                Label::new(cx, "global").class("group-title");
             })
-            .class("param-group");
+            .class("show-global");
 
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
@@ -459,7 +460,7 @@ fn minimal_parameters(cx: &mut Context) {
         .class("parameters-left");
 
         VStack::new(cx, |cx| {
-            Label::new(cx, "filters").class("mid-group-title");
+            Label::new(cx, "filters").class("group-title");
 
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
@@ -478,6 +479,8 @@ fn minimal_parameters(cx: &mut Context) {
                 .class("row");
             })
             .class("param-group");
+
+            HStack::new(cx, |cx| {}); // spacer
             HStack::new(cx, |cx| {
                 Label::new(cx, "low velocity").class("column-title");
                 Label::new(cx, "high velocity").class("column-title");
@@ -1631,9 +1634,9 @@ impl CollapseButton {
                 Data::show_full_parameters.map(|show_full_parameters| {
                     // ▲ ▼ ◀ ▶
                     if *show_full_parameters {
-                        String::from("expert mode")
+                        String::from("show less")
                     } else {
-                        String::from("easy mode")
+                        String::from("show more")
                     }
                 }),
             );

@@ -33,12 +33,12 @@ each element can be part of multiple classes
     width: 50%;
 }
 .parameters-all {
-    height: 396px;
+    height: 370px;
 }
 .parameters-minimal {
     top: 0px;
     bottom: 0px;
-    height: 377px;
+    height: 260px;
 }
 
 .parameters-labels-minimal {
@@ -87,11 +87,11 @@ param-slider .value-entry .selection {
 .show-full-parameters {
     font-size: 30;
     color: #4e4e4e;
-    height: 30px;
-    width: 303px;
-    left: 10px;
-    top: 1s;
-    bottom: 0px;
+    /* height: 30px; */
+    width: auto;
+    left: 13px;
+
+    top: 8px;
     transition: color 240ms;
 }
 .show-full-parameters:active,
@@ -109,7 +109,9 @@ param-slider .value-entry .selection {
     shadow: 0px 0px 16px #fabdf010;
     background-color: #fabdf00a;
 }
-
+.show-global {
+    height: 48px;
+}
 .group-title {
     font-size: 30;
     /* // This should align nicely with the right edge of the slider */
@@ -139,12 +141,14 @@ param-slider .value-entry .selection {
     shadow: 0px 0px 13px #e0ce9109;
     background-color: #e0ce9106;
 }
-.low-velocity-minimal-title {
-    font-size: 23;
-    left: 280px;
+.column-title-group-minimal {
+    /* height: auto; */
+    background-color: #fabdf00a;
+    /* width: 100%; */
+    /* left: 18px; */
     /* right: 0px; */
-    shadow: 0px 0px 13px #e0ce9109;
-    background-color: #e0ce9106;
+    /* top: 19px; */
+    /* bottom: 9px; */
 }
 .column-title-group {
     height: auto;
@@ -249,6 +253,7 @@ action-trigger {
     layout-type: column;
 }
 .param-group {
+    /* top: 0px; */
     height: auto;
 }
 label {
