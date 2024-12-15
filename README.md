@@ -58,11 +58,11 @@ You can also put an instrument plugin before DEL2 and use the audio from that.
 ### Recording a rhythm
 The first note starts counting, and each note after that creates a delay tap.  
 
-The **max tap** slider sets how long a tap can take.  
+The **time-out** slider sets how long a tap can take.  
 The pink line in the graph shows how much time there is left to add new taps to the rhythm  
 When you add a tap the graph zooms out to show how the new available time.  
 
-**min tap** is the minimum time between two taps, mainly for de-bouncing, but it can also be used creatively.  
+**debounce** is the minimum time between two taps, mainly for de-bouncing, but it can also be used creatively.  
 
 **sync** lets you choose between a free running delay, or one synced to the host tempo.  
 BPM mode doesn't quantize the tap timing; it just changes the duration of the taps when the host tempo changes.  
@@ -75,8 +75,8 @@ Each individual filter follows the velocity of the tap.
 You can also link the note to the cutoff frequency, to play melodies with the resonance.  
 
 - Parameters that affect all taps the same:
-  - **vel>cut** sets how much influence the velocity has on the cutoff.  
-  - **note>cut** sets how much influence the notes have on the cutoff.  
+  - With **cutoff mod** you hook up the cutoff to either velocity or note.  
+  - **type** lets you choose between low-pass, band-pass and high-pass in various steepness, and notch filters.
 - Velocity dependent parameters:
   - **cutoff** sets the filter cutoff frequency.
   - **res** sets the filter resonance.
@@ -84,7 +84,6 @@ You can also link the note to the cutoff frequency, to play melodies with the re
 Paradoxically, when the input signal is loud, a high amount of drive can sound quieter than low one.  
 This is because internally, for each dB you turn up the drive (aka input gain), the output turns one dB down.  
 When there's no distortion, they cancel each other out, but with lots of distortion the output will sound quieter.  
-  -   **mode** lets you choose between low-pass, band-pass and high-pass in various steepness, and notch filters.
 
 ### Panning
 By playing lower or higher notes, you pan each tap to the left or right.  
