@@ -333,7 +333,7 @@ pub struct TapsParams {
     #[id = "filter_type"]
     pub filter_type: EnumParam<MyLadderMode>,
     #[id = "cutoff_modulation"]
-    pub cutoff_modulation: EnumParam<CutoffModulation>,
+    cutoff_modulation: EnumParam<CutoffModulation>,
 
     #[nested(id_prefix = "velocity_low", group = "velocity_low")]
     pub velocity_low: Arc<FilterGuiParams>,
@@ -1787,6 +1787,9 @@ impl Vst3Plugin for Del2 {
     ];
 }
 
+// the name is used as a parmater value,
+// and the others are all lowercase
+#[allow(non_camel_case_types)]
 #[derive(PartialEq, Enum)]
 enum CutoffModulation {
     velocity,
@@ -1798,6 +1801,8 @@ pub struct MyLadderMode(LadderMode);
 
 impl MyLadderMode {
     // Define the order of modes for interpolation
+    // TODO: remove?
+    #[allow(dead_code)]
     const fn sequence() -> &'static [LadderMode] {
         &[
             LadderMode::LP6,
@@ -1814,11 +1819,13 @@ impl MyLadderMode {
         ]
     }
 
+    // TODO: remove?
+    #[allow(dead_code)]
     fn index(self) -> Option<usize> {
         Self::sequence().iter().position(|&mode| mode == self.0)
     }
 
-    fn lerp(start: Self, end: Self, t: f32) -> LadderMode {
+    fn _lerp(start: Self, end: Self, t: f32) -> LadderMode {
         let start_index = start.index().unwrap_or(0);
         let end_index = end.index().unwrap_or(Self::sequence().len() - 1);
 

@@ -480,7 +480,7 @@ fn minimal_parameters(cx: &mut Context) {
             })
             .class("param-group");
 
-            HStack::new(cx, |cx| {}); // spacer
+            HStack::new(cx, |_cx| {}); // spacer
             HStack::new(cx, |cx| {
                 Label::new(cx, "low velocity").class("column-title");
                 Label::new(cx, "high velocity").class("column-title");
