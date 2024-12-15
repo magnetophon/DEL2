@@ -61,8 +61,6 @@ const NUM_TAPS: usize = 16;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * NUM_TAPS;
 const MAX_SAMPLE_RATE: usize = 192_000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
-const VELOCITY_LOW_NAME_PREFIX: &str = "low velocity";
-const VELOCITY_HIGH_NAME_PREFIX: &str = "high velocity";
 // this seems to be the number JUCE is using
 const MAX_BLOCK_SIZE: usize = 32768;
 const PEAK_METER_DECAY_MS: f64 = 150.0;
@@ -332,13 +330,26 @@ pub struct TapsParams {
     pub panning_amount: FloatParam,
     #[id = "filter_type"]
     pub filter_type: EnumParam<MyLadderMode>,
-    #[id = "cutoff_modulation"]
-    cutoff_modulation: EnumParam<CutoffModulation>,
+    #[id = "cutoff_modulation_type"]
+    cutoff_modulation_type: EnumParam<CutoffModulation>,
 
-    #[nested(id_prefix = "velocity_low", group = "velocity_low")]
-    pub velocity_low: Arc<FilterGuiParams>,
-    #[nested(id_prefix = "velocity_high", group = "velocity_high")]
-    pub velocity_high: Arc<FilterGuiParams>,
+    // #[nested(id_prefix = "filter", group = "filter")]
+    // pub filter: Arc<FilterGuiParams>,
+    #[id = "cutoff"]
+    pub cutoff: FloatParam,
+    #[id = "res"]
+    pub res: FloatParam,
+    #[id = "drive"]
+    pub drive: FloatParam,
+
+    #[id = "cutoff mod"]
+    pub cutoff_mod: FloatParam,
+    #[id = "res mod"]
+    pub res_mod: FloatParam,
+    #[id = "drive mod"]
+    pub drive_mod: FloatParam,
+    // #[nested(id_prefix = "velocity_high", group = "velocity_high")]
+    // pub velocity_high: Arc<FilterGuiParams>,
 }
 
 impl TapsParams {
@@ -377,7 +388,7 @@ impl TapsParams {
                     move |_| should_update_filter.store(true, Ordering::Release)
                 })),
 
-            cutoff_modulation: EnumParam::new(
+            cutoff_modulation_type: EnumParam::new(
                 format!("cutoff modultation"),
                 CutoffModulation::velocity,
             ) // Use the passed default value
@@ -386,22 +397,95 @@ impl TapsParams {
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
 
-            velocity_low: Arc::new(FilterGuiParams::new(
-                VELOCITY_LOW_NAME_PREFIX,
-                should_update_filter.clone(),
-                124.0, // Default cutoff for velocity_low
-                0.7,   // Default res for velocity_low
-                util::db_to_gain(13.0), // Default drive for velocity_low
-                       // MyLadderMode::lp6(),    // Default mode for velocity_low
-            )),
-            velocity_high: Arc::new(FilterGuiParams::new(
-                VELOCITY_HIGH_NAME_PREFIX,
-                should_update_filter,
-                6_000.0, // Default cutoff for velocity_high
-                0.4,     // Default res for velocity_high
-                util::db_to_gain(6.0), // Default drive for velocity_high
-                         // MyLadderMode::lp6(),   // Default mode for velocity_high
-            )),
+            cutoff: FloatParam::new(
+                format!("cutoff"),
+                3_003.0,
+                FloatRange::Skewed {
+                    min: 10.0,
+                    max: 18_000.0,
+                    factor: FloatRange::skew_factor(-1.6),
+                },
+            )
+            .with_value_to_string(Del2::v2s_f32_hz_then_khz_three_digits())
+            .with_string_to_value(formatters::s2v_f32_hz_then_khz())
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter.clone();
+                move |_| should_update_filter.store(true, Ordering::Release)
+            })),
+            res: FloatParam::new(
+                format!("resonance"),
+                0.42,
+                FloatRange::Linear { min: 0., max: 1. },
+            )
+            .with_value_to_string(formatters::v2s_f32_rounded(2))
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter.clone();
+                move |_| should_update_filter.store(true, Ordering::Release)
+            })),
+            drive: FloatParam::new(
+                format!("drive"),
+                13.0, // Use the passed default value
+                FloatRange::Skewed {
+                    min: util::db_to_gain(0.0),
+                    max: util::db_to_gain(30.0),
+                    // This makes the range appear as if it was linear when displaying the values as
+                    // decibels
+                    factor: FloatRange::gain_skew_factor(0.0, 30.0),
+                },
+            )
+            .with_unit(" dB")
+            .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
+            .with_string_to_value(formatters::s2v_f32_gain_to_db())
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter.clone();
+                move |_| should_update_filter.store(true, Ordering::Release)
+            })),
+
+            cutoff_mod: FloatParam::new(
+                format!("cutoff mod"),
+                0.0,
+                FloatRange::Linear {
+                    min: -1.0,
+                    max: 1.0,
+                },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0))
+            .with_string_to_value(formatters::s2v_f32_percentage())
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter.clone();
+                move |_| should_update_filter.store(true, Ordering::Release)
+            })),
+            res_mod: FloatParam::new(
+                format!("resonance mod"),
+                0.42,
+                FloatRange::Linear {
+                    min: -1.0,
+                    max: 1.0,
+                },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0))
+            .with_string_to_value(formatters::s2v_f32_percentage())
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter.clone();
+                move |_| should_update_filter.store(true, Ordering::Release)
+            })),
+            drive_mod: FloatParam::new(
+                format!("drive mod"),
+                0.13, // Use the passed default value
+                FloatRange::Linear {
+                    min: -1.0,
+                    max: 1.0,
+                },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0))
+            .with_string_to_value(formatters::s2v_f32_percentage())
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter.clone();
+                move |_| should_update_filter.store(true, Ordering::Release)
+            })),
         }
     }
 }
@@ -417,10 +501,9 @@ pub struct FilterGuiParams {
     #[id = "drive"]
     pub drive: FloatParam,
 }
-
+// TODO: do we still need this type?
 impl FilterGuiParams {
     pub fn new(
-        name_prefix: &str,
         should_update_filter: Arc<AtomicBool>,
         default_cutoff: f32,
         default_res: f32,
@@ -429,7 +512,7 @@ impl FilterGuiParams {
     ) -> Self {
         Self {
             cutoff: FloatParam::new(
-                format!("{name_prefix} cutoff"),
+                format!("cutoff"),
                 default_cutoff, // Use the passed default value
                 FloatRange::Skewed {
                     min: 10.0,
@@ -444,7 +527,7 @@ impl FilterGuiParams {
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
             res: FloatParam::new(
-                format!("{name_prefix} res"),
+                format!("resonance"),
                 default_res, // Use the passed default value
                 FloatRange::Linear { min: 0., max: 1. },
             )
@@ -454,7 +537,7 @@ impl FilterGuiParams {
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
             drive: FloatParam::new(
-                format!("{name_prefix} drive"),
+                format!("drive"),
                 default_drive, // Use the passed default value
                 FloatRange::Skewed {
                     min: util::db_to_gain(0.0),
@@ -1330,19 +1413,17 @@ impl Del2 {
     fn update_filters(&mut self) {
         // Extract params once to avoid repeated access
         let taps_params = &self.params.taps;
-        let cutoff_modulation = &taps_params.cutoff_modulation.value();
-        let low_params = &taps_params.velocity_low;
-        let high_params = &taps_params.velocity_high;
+        let cutoff_modulation_type = &taps_params.cutoff_modulation_type.value();
+        // let taps_params = &taps_params.velocity_high;
 
         // Pre-compute static values for the iteration
-        let low_drive_db = util::gain_to_db(low_params.drive.value());
-        let high_drive_db = util::gain_to_db(high_params.drive.value());
-        let low_res = low_params.res.value();
-        let high_res = high_params.res.value();
-        let low_cutoff = low_params.cutoff.value();
-        let high_cutoff = high_params.cutoff.value();
+        let low_cutoff = taps_params.cutoff.value();
+        let high_cutoff = taps_params.cutoff_mod.value();
+        let low_res = taps_params.res.value();
+        let high_res = taps_params.res_mod.value();
+        let drive_db = util::gain_to_db(taps_params.drive.value());
+        let drive_mod = taps_params.drive_mod.value();
         let filter_type = &self.params.taps.filter_type.value();
-        // let high_mode = high_params.mode.value();
 
         // Use par_iter_mut() if the collection is large enough to benefit from parallelization
         self.delay_taps
@@ -1360,13 +1441,13 @@ impl Del2 {
                 let note_cutoff = util::midi_note_to_freq(delay_tap.note);
 
                 // Fused multiply-add operation
-                let cutoff = match cutoff_modulation {
+                let cutoff = match cutoff_modulation_type {
                     CutoffModulation::velocity => velocity_cutoff,
                     CutoffModulation::note => note_cutoff,
                 }
                 .clamp(10.0, 18_000.0);
 
-                let drive = util::db_to_gain(Self::lerp(low_drive_db, high_drive_db, velocity));
+                let drive = util::db_to_gain(drive_db * (drive_mod + 1.0) * velocity);
 
                 // Batch update filter parameters
                 filter_params.set_resonance(res);

@@ -293,9 +293,11 @@ fn full_parameters(cx: &mut Context) {
                 .class("row");
                 HStack::new(cx, |cx| {
                     Label::new(cx, "cutoff mod").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_modulation)
-                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
-                        .class("widget");
+                    ParamSlider::new(cx, Data::params, |params| {
+                        &params.taps.cutoff_modulation_type
+                    })
+                    .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
+                    .class("widget");
                 })
                 .class("row");
             })
@@ -309,13 +311,13 @@ fn full_parameters(cx: &mut Context) {
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_low.cutoff)
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff)
                         .class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.cutoff)
+                    Label::new(cx, "cutoff mod").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_mod)
                         .class("widget");
                 })
                 .class("row");
@@ -325,13 +327,12 @@ fn full_parameters(cx: &mut Context) {
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "res").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_low.res)
-                        .class("widget");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.res).class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "res").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.res)
+                    Label::new(cx, "res mod").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.res_mod)
                         .class("widget");
                 })
                 .class("row");
@@ -341,13 +342,12 @@ fn full_parameters(cx: &mut Context) {
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_low.drive)
-                        .class("widget");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.drive).class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.drive)
+                    Label::new(cx, "drive mod").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.drive_mod)
                         .class("widget");
                 })
                 .class("row");
@@ -472,9 +472,11 @@ fn minimal_parameters(cx: &mut Context) {
 
                 HStack::new(cx, |cx| {
                     Label::new(cx, "cutoff mod").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_modulation)
-                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
-                        .class("widget");
+                    ParamSlider::new(cx, Data::params, |params| {
+                        &params.taps.cutoff_modulation_type
+                    })
+                    .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
+                    .class("widget");
                 })
                 .class("row");
             })
@@ -489,13 +491,13 @@ fn minimal_parameters(cx: &mut Context) {
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_low.cutoff)
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff)
                         .class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
                     Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.cutoff)
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_mod)
                         .class("widget");
                 })
                 .class("row");
@@ -505,13 +507,12 @@ fn minimal_parameters(cx: &mut Context) {
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "res").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_low.res)
-                        .class("widget");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.res).class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
                     Label::new(cx, "res").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.res)
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.res_mod)
                         .class("widget");
                 })
                 .class("row");
@@ -520,13 +521,12 @@ fn minimal_parameters(cx: &mut Context) {
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_low.drive)
-                        .class("widget");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.drive).class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
                     Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.drive)
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.drive_mod)
                         .class("widget");
                 })
                 .class("row");

@@ -23,7 +23,7 @@ when you choose "note", you get an octave (and a transpose) knob instead of the 
 * downgrade macos (& ubuntu?)
 * friendly welcome text on first open
 * make easy/expert a normal slider
-* note> pan:  make it a range
+* note> pan:  make it a range and adjust zoom range to it?
 
 
 
