@@ -1,0 +1,40 @@
+#+title: Todo
+
+
+* instead of low-high vel, have a main param and a modulation amount
+* make offset smaller
+* make modulation a curve param, with view like vital?
+* make modulation a curve editor?
+* remove "vel>cut" and "note>cut", replace by "cutoff" button that chooses between note and velocity
+when you choose "note", you get an octave (and a transpose) knob instead of the normal cutoff controls
+* increase meter range, add pre-delay low cut
+* remove per tap mode switch
+* maybe add dry/wet for filters
+* make attack and release continuously update
+* increase minimal attack and release
+* make caption "easy mode" and "expert mode"
+* max tap -> timeout
+* min tap -> debounce
+* offset/amount  -> amount/offset
+* simd smoother, for up to 8 smoothers at once!
+* README: add chorus trick and gated delay example
+* make everything smaller, just scale down
+* reset button (for expert mode separately?)
+* downgrade macos (& ubuntu?)
+* friendly welcome text on first open
+* make easy/expert a normal slider
+* note> pan:  make it a range
+
+
+
+easy mode:
+| easy/expert   |           |   | FILTERS       | MODULATION                      |
+| direct/toggle | dry/wet   |   | filter type   | cutoff mod type (velocity/note) |
+| TRIGGERS      |           |   | cutoff/octave | cutoff mod amount/transpose     |
+| mute in       | mute out  |   | resonance     | res mod amount                  |
+| clear taps    | lock taps |   | drive         | drive mod amount                |
+
+dry/wet direct/toggle       || type (lp/bp/hp) / cutoff mod (velocity/note)
+triggers                    ||         "low vel / high vel" -> "main /  modulation"
+
+global drive is not needed with main/modulation

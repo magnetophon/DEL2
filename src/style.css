@@ -38,13 +38,13 @@ each element can be part of multiple classes
 .parameters-minimal {
     top: 0px;
     bottom: 0px;
-    height: 77px;
+    height: 377px;
 }
 
 .parameters-labels-minimal {
     top: 4px;
     bottom: 4px;
-    height: 124px;
+    height: 324px;
 }
 param-slider {
     height: 30px;
@@ -85,13 +85,13 @@ param-slider .value-entry .selection {
     background-color: #fabdf0;
 }
 .show-full-parameters {
-    font-size: 42;
+    font-size: 30;
     color: #4e4e4e;
     height: 30px;
-    width: 30px;
+    width: 303px;
     left: 10px;
     top: 1s;
-    bottom: 19px;
+    bottom: 0px;
     transition: color 240ms;
 }
 .show-full-parameters:active,

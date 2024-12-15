@@ -334,6 +334,10 @@ pub struct TapsParams {
     pub note_to_cutoff_amount: FloatParam,
     #[id = "velocity_to_cutoff_amount"]
     pub velocity_to_cutoff_amount: FloatParam,
+    #[id = "filter_type"]
+    pub filter_type: EnumParam<MyLadderMode>,
+    #[id = "cutoff_modulation"]
+    pub cutoff_modulation: EnumParam<CutoffModulation>,
 
     #[nested(id_prefix = "velocity_low", group = "velocity_low")]
     pub velocity_low: Arc<FilterGuiParams>,
@@ -395,21 +399,36 @@ impl TapsParams {
                 let should_update_filter = should_update_filter.clone();
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
+            filter_type: EnumParam::new(format!("filter type"), MyLadderMode::lp6()) // Use the passed default value
+                .with_callback(Arc::new({
+                    let should_update_filter = should_update_filter.clone();
+                    move |_| should_update_filter.store(true, Ordering::Release)
+                })),
+
+            cutoff_modulation: EnumParam::new(
+                format!("cutoff modultation"),
+                CutoffModulation::velocity,
+            ) // Use the passed default value
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter.clone();
+                move |_| should_update_filter.store(true, Ordering::Release)
+            })),
+
             velocity_low: Arc::new(FilterGuiParams::new(
                 VELOCITY_LOW_NAME_PREFIX,
                 should_update_filter.clone(),
-                124.0,                  // Default cutoff for velocity_low
-                0.7,                    // Default res for velocity_low
+                124.0, // Default cutoff for velocity_low
+                0.7,   // Default res for velocity_low
                 util::db_to_gain(13.0), // Default drive for velocity_low
-                MyLadderMode::lp6(),    // Default mode for velocity_low
+                       // MyLadderMode::lp6(),    // Default mode for velocity_low
             )),
             velocity_high: Arc::new(FilterGuiParams::new(
                 VELOCITY_HIGH_NAME_PREFIX,
                 should_update_filter,
-                6_000.0,               // Default cutoff for velocity_high
-                0.4,                   // Default res for velocity_high
+                6_000.0, // Default cutoff for velocity_high
+                0.4,     // Default res for velocity_high
                 util::db_to_gain(6.0), // Default drive for velocity_high
-                MyLadderMode::lp6(),   // Default mode for velocity_high
+                         // MyLadderMode::lp6(),   // Default mode for velocity_high
             )),
         }
     }
@@ -425,8 +444,6 @@ pub struct FilterGuiParams {
     pub res: FloatParam,
     #[id = "drive"]
     pub drive: FloatParam,
-    #[id = "mode"]
-    pub mode: EnumParam<MyLadderMode>,
 }
 
 impl FilterGuiParams {
@@ -436,7 +453,7 @@ impl FilterGuiParams {
         default_cutoff: f32,
         default_res: f32,
         default_drive: f32,
-        default_mode: MyLadderMode,
+        // default_mode: MyLadderMode,
     ) -> Self {
         Self {
             cutoff: FloatParam::new(
@@ -482,11 +499,6 @@ impl FilterGuiParams {
                 let should_update_filter = should_update_filter.clone();
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
-
-            mode: EnumParam::new(format!("{name_prefix} mode"), default_mode) // Use the passed default value
-                .with_callback(Arc::new({
-                    move |_| should_update_filter.store(true, Ordering::Release)
-                })),
         }
     }
 }
@@ -654,7 +666,7 @@ impl Plugin for Del2 {
                 last_learned_notes: self.last_learned_notes.clone(),
                 last_played_notes: self.last_played_notes.clone(),
                 enabled_actions: self.enabled_actions.clone(),
-                show_full_parameters: true,
+                show_full_parameters: false, // default to the easy editor
             },
             self.params.editor_state.clone(),
         )
@@ -1358,8 +1370,8 @@ impl Del2 {
         let high_res = high_params.res.value();
         let low_cutoff = low_params.cutoff.value();
         let high_cutoff = high_params.cutoff.value();
-        let low_mode = low_params.mode.value();
-        let high_mode = high_params.mode.value();
+        let filter_type = &self.params.taps.filter_type.value();
+        // let high_mode = high_params.mode.value();
 
         // Use par_iter_mut() if the collection is large enough to benefit from parallelization
         self.delay_taps
@@ -1382,16 +1394,15 @@ impl Del2 {
                     .clamp(10.0, 20_000.0);
 
                 let drive = util::db_to_gain(Self::lerp(low_drive_db, high_drive_db, velocity));
-                let mode = MyLadderMode::lerp(low_mode, high_mode, velocity);
 
                 // Batch update filter parameters
                 filter_params.set_resonance(res);
                 filter_params.set_frequency(cutoff);
                 filter_params.drive = drive;
-                filter_params.ladder_mode = mode;
+                filter_params.ladder_mode = filter_type.0;
 
                 // Update filter mix mode
-                delay_tap.ladders.set_mix(mode);
+                delay_tap.ladders.set_mix(filter_type.0);
             });
     }
 
@@ -1801,6 +1812,12 @@ impl Vst3Plugin for Del2 {
         Vst3SubCategory::Spatial,
         Vst3SubCategory::Stereo,
     ];
+}
+
+#[derive(PartialEq, Enum)]
+enum CutoffModulation {
+    velocity,
+    note,
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
