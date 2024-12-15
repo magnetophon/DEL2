@@ -330,10 +330,6 @@ pub struct TapsParams {
     pub panning_offset: FloatParam,
     #[id = "panning_amount"]
     pub panning_amount: FloatParam,
-    #[id = "note_to_cutoff_amount"]
-    pub note_to_cutoff_amount: FloatParam,
-    #[id = "velocity_to_cutoff_amount"]
-    pub velocity_to_cutoff_amount: FloatParam,
     #[id = "filter_type"]
     pub filter_type: EnumParam<MyLadderMode>,
     #[id = "cutoff_modulation"]
@@ -375,30 +371,6 @@ impl TapsParams {
             .with_unit(" %")
             .with_value_to_string(formatters::v2s_f32_percentage(0))
             .with_string_to_value(formatters::s2v_f32_percentage()),
-            note_to_cutoff_amount: FloatParam::new(
-                "note -> cutoff",
-                0.0,
-                FloatRange::Linear { min: 0.0, max: 1.0 },
-            )
-            .with_unit(" %")
-            .with_value_to_string(formatters::v2s_f32_percentage(0))
-            .with_string_to_value(formatters::s2v_f32_percentage())
-            .with_callback(Arc::new({
-                let should_update_filter = should_update_filter.clone();
-                move |_| should_update_filter.store(true, Ordering::Release)
-            })),
-            velocity_to_cutoff_amount: FloatParam::new(
-                "velocity -> cutoff",
-                1.0,
-                FloatRange::Linear { min: 0.0, max: 1.0 },
-            )
-            .with_unit(" %")
-            .with_value_to_string(formatters::v2s_f32_percentage(0))
-            .with_string_to_value(formatters::s2v_f32_percentage())
-            .with_callback(Arc::new({
-                let should_update_filter = should_update_filter.clone();
-                move |_| should_update_filter.store(true, Ordering::Release)
-            })),
             filter_type: EnumParam::new(format!("filter type"), MyLadderMode::lp6()) // Use the passed default value
                 .with_callback(Arc::new({
                     let should_update_filter = should_update_filter.clone();
@@ -1357,11 +1329,10 @@ impl Del2 {
 
     fn update_filters(&mut self) {
         // Extract params once to avoid repeated access
-        let velocity_params = &self.params.taps;
-        let low_params = &velocity_params.velocity_low;
-        let high_params = &velocity_params.velocity_high;
-        let note_to_cutoff = velocity_params.note_to_cutoff_amount.value();
-        let vel_to_cutoff = velocity_params.velocity_to_cutoff_amount.value();
+        let taps_params = &self.params.taps;
+        let cutoff_modulation = &taps_params.cutoff_modulation.value();
+        let low_params = &taps_params.velocity_low;
+        let high_params = &taps_params.velocity_high;
 
         // Pre-compute static values for the iteration
         let low_drive_db = util::gain_to_db(low_params.drive.value());
@@ -1389,9 +1360,11 @@ impl Del2 {
                 let note_cutoff = util::midi_note_to_freq(delay_tap.note);
 
                 // Fused multiply-add operation
-                let cutoff = note_cutoff
-                    .mul_add(note_to_cutoff, velocity_cutoff * vel_to_cutoff)
-                    .clamp(10.0, 20_000.0);
+                let cutoff = match cutoff_modulation {
+                    CutoffModulation::velocity => velocity_cutoff,
+                    CutoffModulation::note => note_cutoff,
+                }
+                .clamp(10.0, 18_000.0);
 
                 let drive = util::db_to_gain(Self::lerp(low_drive_db, high_drive_db, velocity));
 

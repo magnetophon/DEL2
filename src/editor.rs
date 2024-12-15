@@ -288,6 +288,7 @@ fn full_parameters(cx: &mut Context) {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "cutoff mod").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_modulation)
+                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");
                 })
                 .class("row");
@@ -341,22 +342,6 @@ fn full_parameters(cx: &mut Context) {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "drive").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.drive)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
-
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "type").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.filter_type)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff mod").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_modulation)
                         .class("widget");
                 })
                 .class("row");
@@ -487,6 +472,7 @@ fn minimal_parameters(cx: &mut Context) {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "cutoff mod").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_modulation)
+                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");
                 })
                 .class("row");

@@ -5,7 +5,7 @@
 * make offset smaller
 * make modulation a curve param, with view like vital?
 * make modulation a curve editor?
-* remove "vel>cut" and "note>cut", replace by "cutoff" button that chooses between note and velocity
+* remove "vel>cut" and "note>cut", replace by "cutoff mod" button that chooses between note and velocity
 when you choose "note", you get an octave (and a transpose) knob instead of the normal cutoff controls
 * increase meter range, add pre-delay low cut
 * remove per tap mode switch
