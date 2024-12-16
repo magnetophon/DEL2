@@ -18,6 +18,7 @@ pub struct DelayTap {
     pub mute_in_delayed: Box<[bool]>,
     /// Fades between 0 and 1 with timings based on the global attack and release settings.
     pub amp_envelope: Smoother<f32>,
+    pub pre_filter_gain: Smoother<f32>,
 
     /// The delay taps internal ID. Each delay tap has an internal delay tap ID one higher than the previous
     /// delay tap. This is used to steal the last delay tap in case all 16 delay taps are in use.
@@ -59,7 +60,8 @@ impl DelayTap {
             ladders: LadderFilter::new(filter_params),
             shelving_eq: SVFSimper::new(PANNER_EQ_FREQ, 0.0, 48000.0),
             mute_in_delayed: vec![false; MAX_BLOCK_SIZE].into_boxed_slice(),
-            amp_envelope: Smoother::new(SmoothingStyle::Linear(13.0)),
+            amp_envelope: Smoother::new(SmoothingStyle::Logarithmic(13.0)),
+            pre_filter_gain: Smoother::new(SmoothingStyle::Logarithmic(13.0)),
             internal_id: 0,
             delay_time: 0,
             smoothed_offset_l: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
@@ -80,12 +82,14 @@ impl DelayTap {
     pub fn init(
         &mut self,
         amp_envelope: Smoother<f32>,
+        pre_filter_gain: Smoother<f32>,
         internal_id: u64,
         delay_time: u32,
         note: u8,
         velocity: f32,
     ) {
         self.amp_envelope = amp_envelope;
+        self.pre_filter_gain = pre_filter_gain;
         self.internal_id = internal_id;
         self.delay_time = delay_time;
         self.note = note;

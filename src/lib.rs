@@ -97,16 +97,17 @@ pub struct Del2 {
     mute_in_delay_temp_buffer: Box<[bool]>,
 
     // for the smoothers
-    dry_wet: Box<[f32]>,
-    wet_gain: Box<[f32]>,
-    global_drive: Box<[f32]>,
-    delay_tap_amp_envelope: Box<[f32]>,
-    delay_tap_smoothed_offset_l: Box<[f32]>,
-    delay_tap_smoothed_offset_r: Box<[f32]>,
-    delay_tap_eq_gain_l: Box<[f32]>,
-    delay_tap_eq_gain_r: Box<[f32]>,
-    delay_tap_pan_gain_l: Box<[f32]>,
-    delay_tap_pan_gain_r: Box<[f32]>,
+    dry_wet_block: Box<[f32]>,
+    pre_filter_gain_block: Box<[f32]>,
+    post_filter_gain_block: Box<[f32]>,
+    delay_tap_amp_envelope_block: Box<[f32]>,
+    delay_tap_smoothed_offset_l_block: Box<[f32]>,
+    delay_tap_smoothed_offset_r_block: Box<[f32]>,
+    delay_tap_eq_gain_l_block: Box<[f32]>,
+    delay_tap_eq_gain_r_block: Box<[f32]>,
+    delay_tap_pan_gain_l_block: Box<[f32]>,
+    delay_tap_pan_gain_r_block: Box<[f32]>,
+    post_filter_gain_smoother: Smoother<f32>,
 
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
@@ -193,10 +194,6 @@ pub struct Del2Params {
 struct GlobalParams {
     #[id = "dry_wet"]
     dry_wet: FloatParam,
-    #[id = "wet_gain"]
-    pub wet_gain: FloatParam,
-    #[id = "global_drive"]
-    pub global_drive: FloatParam,
     #[id = "mute_is_toggle"]
     mute_is_toggle: BoolParam,
     #[id = "attack_ms"]
@@ -221,32 +218,6 @@ impl GlobalParams {
                 .with_smoother(SmoothingStyle::Linear(15.0))
                 .with_value_to_string(formatters::v2s_f32_percentage(0))
                 .with_string_to_value(formatters::s2v_f32_percentage()),
-            wet_gain: FloatParam::new(
-                "out gain",
-                util::db_to_gain(0.0),
-                FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
-                },
-            )
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
-            .with_unit(" dB")
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
-            global_drive: FloatParam::new(
-                "drive",
-                util::db_to_gain(0.0),
-                FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
-                },
-            )
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
-            .with_unit(" dB")
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
             mute_is_toggle: BoolParam::new("mute mode", true)
                 .with_value_to_string(Arc::new(|value| {
                     String::from(if value { "toggle" } else { "direct" })
@@ -420,22 +391,16 @@ impl TapsParams {
             })),
             drive: FloatParam::new(
                 format!("drive"),
-                util::db_to_gain(13.0),
+                13.0,
                 FloatRange::Skewed {
-                    min: util::db_to_gain(0.0),
-                    max: util::db_to_gain(30.0),
+                    min: -30.0,
+                    max: 30.0,
                     // This makes the range appear as if it was linear when displaying the values as
                     // decibels
-                    factor: FloatRange::gain_skew_factor(0.0, 30.0),
+                    factor: FloatRange::skew_factor(0.0),
                 },
             )
-            .with_unit(" dB")
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db())
-            .with_callback(Arc::new({
-                let should_update_filter = should_update_filter.clone();
-                move |_| should_update_filter.store(true, Ordering::Release)
-            })),
+            .with_unit(" dB"),
 
             cutoff_mod: FloatParam::new(
                 format!("cutoff mod"),
@@ -469,20 +434,14 @@ impl TapsParams {
             })),
             drive_mod: FloatParam::new(
                 format!("drive mod"),
-                util::db_to_gain(13.0),
+                13.0,
                 FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
+                    min: -30.0,
+                    max: 30.0,
+                    factor: FloatRange::skew_factor(0.0),
                 },
             )
-            .with_unit(" dB")
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(1))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db())
-            .with_callback(Arc::new({
-                let should_update_filter = should_update_filter.clone();
-                move |_| should_update_filter.store(true, Ordering::Release)
-            })),
+            .with_unit(" dB"),
         }
     }
 }
@@ -517,16 +476,17 @@ impl Default for Del2 {
             mute_in_delay_buffer: BMRingBuf::<bool>::from_len(TOTAL_DELAY_SAMPLES),
             mute_in_delay_temp_buffer: bool::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
-            dry_wet: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            wet_gain: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            global_drive: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            delay_tap_amp_envelope: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            delay_tap_smoothed_offset_l: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            delay_tap_smoothed_offset_r: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            delay_tap_eq_gain_l: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            delay_tap_eq_gain_r: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            delay_tap_pan_gain_l: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            delay_tap_pan_gain_r: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            dry_wet_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            pre_filter_gain_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            post_filter_gain_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_amp_envelope_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_smoothed_offset_l_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_smoothed_offset_r_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_eq_gain_l_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_eq_gain_r_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_pan_gain_l_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_pan_gain_r_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            post_filter_gain_smoother: Smoother::new(SmoothingStyle::Logarithmic(13.0)),
 
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
@@ -863,29 +823,19 @@ impl Plugin for Del2 {
             self.set_mute_for_all_delay_taps();
 
             // Calculate dry mix and update gains
-            let dry_wet = &mut self.dry_wet[..block_len];
-            let wet_gain = &mut self.wet_gain[..block_len];
-            let global_drive = &mut self.global_drive[..block_len];
+            let dry_wet_block = &mut self.dry_wet_block[..block_len];
+            // TODO: why does this need to be mut, but dry_wet_block doesn't?
+            let mut post_filter_gain_block = &mut self.post_filter_gain_block[..block_len];
 
             self.params
                 .global
                 .dry_wet
                 .smoothed
-                .next_block(dry_wet, block_len);
-            self.params
-                .global
-                .wet_gain
-                .smoothed
-                .next_block(wet_gain, block_len);
-            self.params
-                .global
-                .global_drive
-                .smoothed
-                .next_block(global_drive, block_len);
+                .next_block(dry_wet_block, block_len);
 
             let output = buffer.as_slice();
             for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                let dry = 1.0 - dry_wet[value_idx];
+                let dry = 1.0 - dry_wet_block[value_idx];
                 output[0][sample_idx] *= dry;
                 output[1][sample_idx] *= dry;
             }
@@ -899,14 +849,37 @@ impl Plugin for Del2 {
 
                     delay_tap
                         .amp_envelope
-                        .next_block(&mut self.delay_tap_amp_envelope, block_len);
+                        .next_block(&mut self.delay_tap_amp_envelope_block, block_len);
 
                     let delay_time = delay_tap.delay_time as isize;
                     let write_index = self.delay_write_index;
 
                     let read_index = (write_index - (delay_time - 1)) as f32;
 
-                    let drive = delay_tap.filter_params.drive;
+                    let velocity = delay_tap.velocity;
+                    let velocity_factor = (velocity - 0.5) * 2.0; // Scale 0.0 to 1.0 range to -1.0 to 1.0.
+                    let taps_params = &self.params.taps;
+                    let drive_main = taps_params.drive.value();
+                    let drive_mod = taps_params.drive_mod.value();
+                    let pre_filter_gain_target =
+                        util::db_to_gain_fast(drive_main + drive_mod * velocity_factor);
+                    // let pre_filter_gain_target_db =
+                    // (drive_main + drive_mod * velocity_factor);
+                    // nih_log!("pre_filter_gain_target_db: {pre_filter_gain_target_db}, drive_main {drive_main}  drive_mod: {drive_mod}  velocity: {velocity}");
+                    delay_tap
+                        .pre_filter_gain
+                        .set_target(sample_rate, pre_filter_gain_target);
+                    delay_tap
+                        .pre_filter_gain
+                        .next_block(&mut self.pre_filter_gain_block, block_len);
+
+                    let post_filter_gain_target = util::db_to_gain_fast(0.0 - drive_main);
+                    // nih_log!("post_filter_gain_target: {post_filter_gain_target}, drive_main {drive_main}  drive_mod: {drive_mod}  velocity: {velocity}");
+                    self.post_filter_gain_smoother
+                        .set_target(sample_rate, post_filter_gain_target);
+                    self.post_filter_gain_smoother
+                        .next_block(&mut post_filter_gain_block, block_len);
+
                     self.mute_in_delay_buffer.read_into(
                         &mut delay_tap.mute_in_delayed,
                         write_index - (delay_time - 1),
@@ -936,35 +909,35 @@ impl Plugin for Del2 {
                         calculate_and_set_gain(&mut delay_tap.pan_gain_r, MIN_PAN_GAIN, -1.0);
                         delay_tap
                             .smoothed_offset_l
-                            .next_block(&mut self.delay_tap_smoothed_offset_l, block_len);
+                            .next_block(&mut self.delay_tap_smoothed_offset_l_block, block_len);
                         delay_tap
                             .smoothed_offset_r
-                            .next_block(&mut self.delay_tap_smoothed_offset_r, block_len);
+                            .next_block(&mut self.delay_tap_smoothed_offset_r_block, block_len);
                         delay_tap
                             .eq_gain_l
-                            .next_block(&mut self.delay_tap_eq_gain_l, block_len);
+                            .next_block(&mut self.delay_tap_eq_gain_l_block, block_len);
                         delay_tap
                             .eq_gain_r
-                            .next_block(&mut self.delay_tap_eq_gain_r, block_len);
+                            .next_block(&mut self.delay_tap_eq_gain_r_block, block_len);
                         delay_tap
                             .pan_gain_l
-                            .next_block(&mut self.delay_tap_pan_gain_l, block_len);
+                            .next_block(&mut self.delay_tap_pan_gain_l_block, block_len);
                         delay_tap
                             .pan_gain_r
-                            .next_block(&mut self.delay_tap_pan_gain_r, block_len);
+                            .next_block(&mut self.delay_tap_pan_gain_r_block, block_len);
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                            let pre_filter_gain = global_drive[value_idx];
-                            // if self.delay_tap_amp_envelope[value_idx] != 1.0 && self.delay_tap_amp_envelope[value_idx] != 0.0 {
-                            // nih_log!("self.delay_tap_amp_envelope[value_idx]: {}", self.delay_tap_amp_envelope[value_idx]);
+                            let pre_filter_gain = self.pre_filter_gain_block[value_idx];
+                            // if self.delay_tap_amp_envelope_block[value_idx] != 1.0 && self.delay_tap_amp_envelope[value_idx] != 0.0 {
+                            // nih_log!("self.delay_tap_amp_envelope_block[value_idx]: {}", self.delay_tap_amp_envelope[value_idx]);
                             // }
                             delay_tap.delayed_audio_l[sample_idx] =
                                 self.delay_buffer[0].lin_interp_f32(
-                                    read_index - self.delay_tap_smoothed_offset_l[value_idx]
+                                    read_index - self.delay_tap_smoothed_offset_l_block[value_idx]
                                         + value_idx as f32,
                                 ) * pre_filter_gain;
                             delay_tap.delayed_audio_r[sample_idx] =
                                 self.delay_buffer[1].lin_interp_f32(
-                                    read_index - self.delay_tap_smoothed_offset_r[value_idx]
+                                    read_index - self.delay_tap_smoothed_offset_r_block[value_idx]
                                         + value_idx as f32,
                                 ) * pre_filter_gain;
                         }
@@ -978,10 +951,16 @@ impl Plugin for Del2 {
                             ]);
 
                             let gain_values = f32x4::from_array([
-                                self.delay_tap_eq_gain_l[i],
-                                self.delay_tap_eq_gain_r[i],
-                                self.delay_tap_eq_gain_l.get(i + 1).copied().unwrap_or(1.0),
-                                self.delay_tap_eq_gain_r.get(i + 1).copied().unwrap_or(1.0),
+                                self.delay_tap_eq_gain_l_block[i],
+                                self.delay_tap_eq_gain_r_block[i],
+                                self.delay_tap_eq_gain_l_block
+                                    .get(i + 1)
+                                    .copied()
+                                    .unwrap_or(1.0),
+                                self.delay_tap_eq_gain_r_block
+                                    .get(i + 1)
+                                    .copied()
+                                    .unwrap_or(1.0),
                             ]);
 
                             let frame_filtered = *delay_tap.ladders.tick_pivotal(frame).as_array();
@@ -1002,16 +981,15 @@ impl Plugin for Del2 {
                     // Process the output and meter updates
                     let mut amplitude = 0.0;
                     for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                        let post_filter_gain = dry_wet[value_idx]
-                            * wet_gain[value_idx]
-                            * self.delay_tap_amp_envelope[value_idx]
-                            / (drive * global_drive[value_idx]);
+                        let post_filter_gain = dry_wet_block[value_idx]
+                            * self.delay_tap_amp_envelope_block[value_idx]
+                            * post_filter_gain_block[value_idx];
                         let left = delay_tap.delayed_audio_l[sample_idx]
                             * post_filter_gain
-                            * self.delay_tap_pan_gain_l[value_idx];
+                            * self.delay_tap_pan_gain_l_block[value_idx];
                         let right = delay_tap.delayed_audio_r[sample_idx]
                             * post_filter_gain
-                            * self.delay_tap_pan_gain_r[value_idx];
+                            * self.delay_tap_pan_gain_r_block[value_idx];
                         output[0][sample_idx] += left;
                         output[1][sample_idx] += right;
                         amplitude += (left.abs() + right.abs()) * 0.5;
@@ -1035,7 +1013,7 @@ impl Plugin for Del2 {
 
                         self.tap_meters[meter_index].store(new_peak_meter, Ordering::Relaxed);
                     }
-                    if self.delay_tap_amp_envelope[0] == 0.0 {
+                    if self.delay_tap_amp_envelope_block[0] == 0.0 {
                         if delay_tap.releasing {
                             delay_tap.is_alive = false;
                             // nih_log!("killed");
@@ -1350,8 +1328,6 @@ impl Del2 {
         let cutoff_mod = taps_params.cutoff_mod.value();
         let res_main = taps_params.res.value();
         let res_mod = taps_params.res_mod.value();
-        let drive_main = taps_params.drive.value();
-        let drive_mod = taps_params.drive_mod.value();
         let filter_type = &self.params.taps.filter_type.value();
 
         // Use par_iter_mut() if the collection is large enough to benefit from parallelization
@@ -1379,12 +1355,10 @@ impl Del2 {
                 }
                 .clamp(10.0, 18_000.0);
 
-                let drive = util::db_to_gain(drive_main + drive_mod * velocity_factor);
-
                 // Batch update filter parameters
                 filter_params.set_resonance(res);
                 filter_params.set_frequency(cutoff);
-                filter_params.drive = drive;
+                filter_params.drive = 1.0;
                 filter_params.ladder_mode = filter_type.0;
 
                 // Update filter mix mode
@@ -1639,9 +1613,11 @@ impl Del2 {
         }
 
         let amp_envelope = Smoother::new(SmoothingStyle::Linear(global_params.attack_ms.value()));
+        // TODO: is this needed?
         if global_params.mute_is_toggle.value() {
             amp_envelope.set_target(sample_rate, 1.0);
         }
+        let post_filter_gain = Smoother::new(SmoothingStyle::Linear(13.0));
 
         let mut found_inactive = None;
         let mut found_oldest = None;
@@ -1683,6 +1659,7 @@ impl Del2 {
             // nih_log!("start_tap: inactive tap: {}", found_inactive_index.unwrap());
             delay_tap.init(
                 amp_envelope,
+                post_filter_gain,
                 self.next_internal_id,
                 delay_samples,
                 note,
@@ -1695,6 +1672,7 @@ impl Del2 {
             // Replace the oldest tap if needed
             oldest_delay_tap.init(
                 amp_envelope,
+                post_filter_gain,
                 self.next_internal_id,
                 delay_samples,
                 note,
