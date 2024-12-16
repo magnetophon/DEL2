@@ -29,6 +29,7 @@ when you choose "note", you get an octave (and a transpose) knob instead of the 
 * dezip drive
 * make drive_main gain compensated, but drive_mod not
 * check clap of skia
+* don't create a new smoother on every new tap
 
 
 * layout

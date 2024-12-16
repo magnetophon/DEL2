@@ -98,8 +98,8 @@ pub struct Del2 {
 
     // for the smoothers
     dry_wet_block: Box<[f32]>,
-    pre_filter_gain_block: Box<[f32]>,
-    post_filter_gain_block: Box<[f32]>,
+    drive_main_block: Box<[f32]>,
+    drive_mod_block: Box<[f32]>,
     delay_tap_amp_envelope_block: Box<[f32]>,
     delay_tap_smoothed_offset_l_block: Box<[f32]>,
     delay_tap_smoothed_offset_r_block: Box<[f32]>,
@@ -107,7 +107,8 @@ pub struct Del2 {
     delay_tap_eq_gain_r_block: Box<[f32]>,
     delay_tap_pan_gain_l_block: Box<[f32]>,
     delay_tap_pan_gain_r_block: Box<[f32]>,
-    post_filter_gain_smoother: Smoother<f32>,
+    drive_main_smoother: Smoother<f32>,
+    drive_mod_smoother: Smoother<f32>,
 
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
@@ -477,8 +478,8 @@ impl Default for Del2 {
             mute_in_delay_temp_buffer: bool::default_boxed_array::<MAX_BLOCK_SIZE>(),
 
             dry_wet_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            pre_filter_gain_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            post_filter_gain_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            drive_main_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            drive_mod_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_amp_envelope_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_smoothed_offset_l_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_smoothed_offset_r_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
@@ -486,7 +487,8 @@ impl Default for Del2 {
             delay_tap_eq_gain_r_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_pan_gain_l_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_pan_gain_r_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            post_filter_gain_smoother: Smoother::new(SmoothingStyle::Logarithmic(13.0)),
+            drive_main_smoother: Smoother::new(SmoothingStyle::Linear(13.0)),
+            drive_mod_smoother: Smoother::new(SmoothingStyle::Linear(13.0)),
 
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
@@ -649,13 +651,13 @@ impl Plugin for Del2 {
         self.delay_taps.iter_mut().for_each(|delay_tap| {
             delay_tap.is_alive = false;
             delay_tap.amp_envelope.reset(0.0);
-            delay_tap.pre_filter_gain.reset(0.0);
             delay_tap.smoothed_offset_l.reset(0.0);
             delay_tap.smoothed_offset_r.reset(0.0);
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
         });
 
-        self.post_filter_gain_smoother.reset(0.0);
+        self.drive_main_smoother.reset(0.0);
+        self.drive_mod_smoother.reset(0.0);
         // then fill the array
         for tap_index in 0..tap_counter {
             // nih_log!("reset tap_counter: {tap_counter}");
@@ -826,8 +828,6 @@ impl Plugin for Del2 {
 
             // Calculate dry mix and update gains
             let dry_wet_block = &mut self.dry_wet_block[..block_len];
-            // TODO: why does this need to be mut, but dry_wet_block doesn't?
-            let mut post_filter_gain_block = &mut self.post_filter_gain_block[..block_len];
 
             self.params
                 .global
@@ -863,24 +863,27 @@ impl Plugin for Del2 {
                     let taps_params = &self.params.taps;
                     let drive_main = taps_params.drive.value();
                     let drive_mod = taps_params.drive_mod.value();
-                    let pre_filter_gain_target_db = drive_main + drive_mod * velocity_factor;
-                    let pre_filter_gain_target = util::db_to_gain_fast(pre_filter_gain_target_db);
-                    // nih_log!("pre_filter_gain_target_db: {pre_filter_gain_target_db}, drive_main {drive_main}  drive_mod: {drive_mod}  velocity: {velocity}");
-                    delay_tap
-                        .pre_filter_gain
-                        .set_target(sample_rate, pre_filter_gain_target);
-                    delay_tap
-                        .pre_filter_gain
-                        .next_block(&mut self.pre_filter_gain_block, block_len);
+                    let drive_main_target_db = drive_main + drive_mod * velocity_factor;
+                    let drive_main_target = util::db_to_gain_fast(drive_main_target_db);
+                    // nih_log!("drive_main_target_db: {drive_main_target_db}, drive_main {drive_main}  drive_mod: {drive_mod}  velocity: {velocity}");
+                    self.drive_main_smoother
+                        .set_target(sample_rate, util::db_to_gain_fast(drive_main));
+                    // .set_target(sample_rate, 1.0);
+                    self.drive_main_smoother
+                        .next_block(&mut self.drive_main_block, block_len);
 
-                    let post_filter_gain_target_db = (0.0 - drive_main);
-                    let post_filter_gain_target = util::db_to_gain_fast(post_filter_gain_target_db);
+                    let drive_mod_target_db = (0.0 - drive_main);
+                    let drive_mod_target = util::db_to_gain_fast(drive_mod_target_db);
 
-                    // nih_log!("post_filter_gain_target_db: {post_filter_gain_target_db}, drive_main {drive_main}  pre_filter_gain_target_db: {pre_filter_gain_target_db}");
-                    self.post_filter_gain_smoother
-                        .set_target(sample_rate, post_filter_gain_target);
-                    self.post_filter_gain_smoother
-                        .next_block(&mut post_filter_gain_block, block_len);
+                    // TODO: why does this need to be mut, but dry_wet_block doesn't?
+                    let mut drive_mod_block = &mut self.drive_mod_block[..block_len];
+                    // nih_log!("drive_mod_target_db: {drive_mod_target_db}, drive_main {drive_main}  drive_main_target_db: {drive_main_target_db}");
+                    self.drive_mod_smoother.set_target(
+                        sample_rate,
+                        util::db_to_gain_fast(drive_mod * velocity_factor),
+                    );
+                    self.drive_mod_smoother
+                        .next_block(&mut drive_mod_block, block_len);
 
                     self.mute_in_delay_buffer.read_into(
                         &mut delay_tap.mute_in_delayed,
@@ -928,7 +931,11 @@ impl Plugin for Del2 {
                             .pan_gain_r
                             .next_block(&mut self.delay_tap_pan_gain_r_block, block_len);
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                            let pre_filter_gain = self.pre_filter_gain_block[value_idx];
+                            let pre_filter_gain =
+                            // 1.0;
+                                self.drive_main_block[value_idx] *
+                                self.drive_mod_block[value_idx];
+
                             // if self.delay_tap_amp_envelope_block[value_idx] != 1.0 && self.delay_tap_amp_envelope[value_idx] != 0.0 {
                             // nih_log!("self.delay_tap_amp_envelope_block[value_idx]: {}", self.delay_tap_amp_envelope[value_idx]);
                             // }
@@ -985,7 +992,7 @@ impl Plugin for Del2 {
                     for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                         let post_filter_gain = dry_wet_block[value_idx]
                             * self.delay_tap_amp_envelope_block[value_idx]
-                            * post_filter_gain_block[value_idx];
+                            / self.drive_main_block[value_idx];
                         let left = delay_tap.delayed_audio_l[sample_idx]
                             * post_filter_gain
                             * self.delay_tap_pan_gain_l_block[value_idx];
@@ -1613,12 +1620,12 @@ impl Del2 {
             self.enabled_actions.store(MUTE_OUT, false);
         }
 
-        let amp_envelope = Smoother::new(SmoothingStyle::Linear(global_params.attack_ms.value()));
+        let amp_envelope =
+            Smoother::new(SmoothingStyle::Exponential(global_params.attack_ms.value()));
         // TODO: is this needed?
         if global_params.mute_is_toggle.value() {
             amp_envelope.set_target(sample_rate, 1.0);
         }
-        let post_filter_gain = Smoother::new(SmoothingStyle::Linear(13.0));
 
         let mut found_inactive = None;
         let mut found_oldest = None;
@@ -1634,7 +1641,7 @@ impl Del2 {
                     delay_tap.velocity = velocity;
                     delay_tap.releasing = false;
                     delay_tap.amp_envelope.style =
-                        SmoothingStyle::Linear(self.params.global.attack_ms.value());
+                        SmoothingStyle::Exponential(self.params.global.attack_ms.value());
                     delay_tap.amp_envelope.set_target(sample_rate, 1.0);
                     self.meter_indexes[new_index].store(index, Ordering::Relaxed);
                     // delay_tap.meter_index = new_index;
@@ -1660,7 +1667,6 @@ impl Del2 {
             // nih_log!("start_tap: inactive tap: {}", found_inactive_index.unwrap());
             delay_tap.init(
                 amp_envelope,
-                post_filter_gain,
                 self.next_internal_id,
                 delay_samples,
                 note,
@@ -1673,7 +1679,6 @@ impl Del2 {
             // Replace the oldest tap if needed
             oldest_delay_tap.init(
                 amp_envelope,
-                post_filter_gain,
                 self.next_internal_id,
                 delay_samples,
                 note,
@@ -1689,7 +1694,7 @@ impl Del2 {
         for delay_tap in &mut self.delay_taps {
             delay_tap.releasing = true;
             delay_tap.amp_envelope.style =
-                SmoothingStyle::Linear(self.params.global.release_ms.value());
+                SmoothingStyle::Exponential(self.params.global.release_ms.value());
             delay_tap
                 .amp_envelope
                 .set_target(self.params.sample_rate.load(Ordering::SeqCst), 0.0);
@@ -1722,7 +1727,7 @@ impl Del2 {
             if needs_toggle {
                 if muted {
                     delay_tap.amp_envelope.style =
-                        SmoothingStyle::Linear(self.params.global.release_ms.value());
+                        SmoothingStyle::Exponential(self.params.global.release_ms.value());
                     delay_tap
                         .amp_envelope
                         .set_target(self.params.sample_rate.load(Ordering::SeqCst), 0.0);
@@ -1731,7 +1736,7 @@ impl Del2 {
                     // delay_tap.releasing = true;
                 } else {
                     delay_tap.amp_envelope.style =
-                        SmoothingStyle::Linear(self.params.global.attack_ms.value());
+                        SmoothingStyle::Exponential(self.params.global.attack_ms.value());
                     delay_tap
                         .amp_envelope
                         .set_target(self.params.sample_rate.load(Ordering::SeqCst), 1.0);
