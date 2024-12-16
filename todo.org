@@ -28,6 +28,7 @@ when you choose "note", you get an octave (and a transpose) knob instead of the 
 * make bpm sync the default (maybe check (at init?if tempo available)
 * dezip drive
 * make drive_main gain compensated, but drive_mod not
+* check clap of skia
 
 
 * layout
@@ -42,3 +43,24 @@ dry/wet direct/toggle       || type (lp/bp/hp) / cutoff mod (velocity/note)
 triggers                    ||         "low vel / high vel" -> "main /  modulation"
 
 global drive is not needed with main/modulation
+
+
+* gain compensation:
+
+| main | mod | pre | post |
+|  -30 | -12 | -42 |   30 |
+|  -30 |   0 | -30 |   30 |
+|  -30 |  12 | -18 |   30 |
+|   -9 | -12 | -21 |    9 |
+|   -9 |   0 | -90 |    9 |
+|   -9 |  12 |   3 |    9 |
+|    0 | -12 | -12 |    0 |
+|    0 |   0 |   0 |    0 |
+|    0 |  12 |  12 |    0 |
+|    9 | -12 |  -3 |   -9 |
+|    9 |   0 |   9 |   -9 |
+|    9 |  12 |  21 |   -9 |
+|   30 | -12 |  18 |  -30 |
+|   30 |   0 |  30 |  -30 |
+|   30 |  12 |  42 |  -18 |
+

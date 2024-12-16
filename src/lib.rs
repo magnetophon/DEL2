@@ -649,11 +649,13 @@ impl Plugin for Del2 {
         self.delay_taps.iter_mut().for_each(|delay_tap| {
             delay_tap.is_alive = false;
             delay_tap.amp_envelope.reset(0.0);
+            delay_tap.pre_filter_gain.reset(0.0);
             delay_tap.smoothed_offset_l.reset(0.0);
             delay_tap.smoothed_offset_r.reset(0.0);
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
         });
 
+        self.post_filter_gain_smoother.reset(0.0);
         // then fill the array
         for tap_index in 0..tap_counter {
             // nih_log!("reset tap_counter: {tap_counter}");
@@ -861,10 +863,8 @@ impl Plugin for Del2 {
                     let taps_params = &self.params.taps;
                     let drive_main = taps_params.drive.value();
                     let drive_mod = taps_params.drive_mod.value();
-                    let pre_filter_gain_target =
-                        util::db_to_gain_fast(drive_main + drive_mod * velocity_factor);
-                    // let pre_filter_gain_target_db =
-                    // (drive_main + drive_mod * velocity_factor);
+                    let pre_filter_gain_target_db = drive_main + drive_mod * velocity_factor;
+                    let pre_filter_gain_target = util::db_to_gain_fast(pre_filter_gain_target_db);
                     // nih_log!("pre_filter_gain_target_db: {pre_filter_gain_target_db}, drive_main {drive_main}  drive_mod: {drive_mod}  velocity: {velocity}");
                     delay_tap
                         .pre_filter_gain
@@ -873,8 +873,10 @@ impl Plugin for Del2 {
                         .pre_filter_gain
                         .next_block(&mut self.pre_filter_gain_block, block_len);
 
-                    let post_filter_gain_target = util::db_to_gain_fast(0.0 - drive_main);
-                    // nih_log!("post_filter_gain_target: {post_filter_gain_target}, drive_main {drive_main}  drive_mod: {drive_mod}  velocity: {velocity}");
+                    let post_filter_gain_target_db = (0.0 - drive_main);
+                    let post_filter_gain_target = util::db_to_gain_fast(post_filter_gain_target_db);
+
+                    // nih_log!("post_filter_gain_target_db: {post_filter_gain_target_db}, drive_main {drive_main}  pre_filter_gain_target_db: {pre_filter_gain_target_db}");
                     self.post_filter_gain_smoother
                         .set_target(sample_rate, post_filter_gain_target);
                     self.post_filter_gain_smoother
@@ -1433,8 +1435,7 @@ impl Del2 {
             let mut amplitude = 0.0;
 
             for sample in channel_samples {
-                // Process each sample (e.g., apply gain if necessary)
-                amplitude += sample.abs();
+                amplitude += sample.abs() * 0.5;
             }
 
             if self.params.editor_state.is_open() {
