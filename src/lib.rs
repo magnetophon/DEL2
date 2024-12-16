@@ -333,8 +333,6 @@ pub struct TapsParams {
     #[id = "cutoff_modulation_type"]
     cutoff_modulation_type: EnumParam<CutoffModulation>,
 
-    // #[nested(id_prefix = "filter", group = "filter")]
-    // pub filter: Arc<FilterGuiParams>,
     #[id = "cutoff"]
     pub cutoff: FloatParam,
     #[id = "res"]
@@ -348,8 +346,6 @@ pub struct TapsParams {
     pub res_mod: FloatParam,
     #[id = "drive mod"]
     pub drive_mod: FloatParam,
-    // #[nested(id_prefix = "velocity_high", group = "velocity_high")]
-    // pub velocity_high: Arc<FilterGuiParams>,
 }
 
 impl TapsParams {
@@ -424,7 +420,7 @@ impl TapsParams {
             })),
             drive: FloatParam::new(
                 format!("drive"),
-                13.0, // Use the passed default value
+                util::db_to_gain(13.0),
                 FloatRange::Skewed {
                     min: util::db_to_gain(0.0),
                     max: util::db_to_gain(30.0),
@@ -458,7 +454,7 @@ impl TapsParams {
             })),
             res_mod: FloatParam::new(
                 format!("resonance mod"),
-                0.42,
+                0.13,
                 FloatRange::Linear {
                     min: -1.0,
                     max: 1.0,
@@ -473,78 +469,11 @@ impl TapsParams {
             })),
             drive_mod: FloatParam::new(
                 format!("drive mod"),
-                0.13, // Use the passed default value
-                FloatRange::Linear {
-                    min: -1.0,
-                    max: 1.0,
-                },
-            )
-            .with_unit("%")
-            .with_value_to_string(formatters::v2s_f32_percentage(0))
-            .with_string_to_value(formatters::s2v_f32_percentage())
-            .with_callback(Arc::new({
-                let should_update_filter = should_update_filter.clone();
-                move |_| should_update_filter.store(true, Ordering::Release)
-            })),
-        }
-    }
-}
-
-/// This struct contains the parameters for either the high or low tap.
-/// Both versions will have a parameter ID and a parameter name prefix to distinguish them.
-#[derive(Params)]
-pub struct FilterGuiParams {
-    #[id = "cutoff"]
-    pub cutoff: FloatParam,
-    #[id = "res"]
-    pub res: FloatParam,
-    #[id = "drive"]
-    pub drive: FloatParam,
-}
-// TODO: do we still need this type?
-impl FilterGuiParams {
-    pub fn new(
-        should_update_filter: Arc<AtomicBool>,
-        default_cutoff: f32,
-        default_res: f32,
-        default_drive: f32,
-        // default_mode: MyLadderMode,
-    ) -> Self {
-        Self {
-            cutoff: FloatParam::new(
-                format!("cutoff"),
-                default_cutoff, // Use the passed default value
+                util::db_to_gain(13.0),
                 FloatRange::Skewed {
-                    min: 10.0,
-                    max: 18_000.0,
-                    factor: FloatRange::skew_factor(-1.6),
-                },
-            )
-            .with_value_to_string(Del2::v2s_f32_hz_then_khz_three_digits())
-            .with_string_to_value(formatters::s2v_f32_hz_then_khz())
-            .with_callback(Arc::new({
-                let should_update_filter = should_update_filter.clone();
-                move |_| should_update_filter.store(true, Ordering::Release)
-            })),
-            res: FloatParam::new(
-                format!("resonance"),
-                default_res, // Use the passed default value
-                FloatRange::Linear { min: 0., max: 1. },
-            )
-            .with_value_to_string(formatters::v2s_f32_rounded(2))
-            .with_callback(Arc::new({
-                let should_update_filter = should_update_filter.clone();
-                move |_| should_update_filter.store(true, Ordering::Release)
-            })),
-            drive: FloatParam::new(
-                format!("drive"),
-                default_drive, // Use the passed default value
-                FloatRange::Skewed {
-                    min: util::db_to_gain(0.0),
+                    min: util::db_to_gain(-30.0),
                     max: util::db_to_gain(30.0),
-                    // This makes the range appear as if it was linear when displaying the values as
-                    // decibels
-                    factor: FloatRange::gain_skew_factor(0.0, 30.0),
+                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
                 },
             )
             .with_unit(" dB")
@@ -1417,11 +1346,11 @@ impl Del2 {
         // let taps_params = &taps_params.velocity_high;
 
         // Pre-compute static values for the iteration
-        let low_cutoff = taps_params.cutoff.value();
-        let high_cutoff = taps_params.cutoff_mod.value();
-        let low_res = taps_params.res.value();
-        let high_res = taps_params.res_mod.value();
-        let drive_db = util::gain_to_db(taps_params.drive.value());
+        let cutoff_main = taps_params.cutoff.value();
+        let cutoff_mod = taps_params.cutoff_mod.value();
+        let res_main = taps_params.res.value();
+        let res_mod = taps_params.res_mod.value();
+        let drive_main = taps_params.drive.value();
         let drive_mod = taps_params.drive_mod.value();
         let filter_type = &self.params.taps.filter_type.value();
 
@@ -1431,13 +1360,16 @@ impl Del2 {
             .filter(|tap| tap.is_alive)
             .for_each(|delay_tap| {
                 let velocity = delay_tap.velocity;
+                let velocity_factor = (velocity - 0.5) * 2.0; // Scale 0.0 to 1.0 range to -1.0 to 1.0.
 
                 // Safety: We know this is unique as we have &mut access to delay_tap
                 let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
 
                 // Compute filter parameters
-                let res = Self::lerp(low_res, high_res, velocity);
-                let velocity_cutoff = Self::log_interpolate(low_cutoff, high_cutoff, velocity);
+                let res = (res_main + res_mod * velocity_factor).clamp(0.0, 1.0);
+                // cutoff_mod is in octaves, 8.0 octaves gives most of the range.
+                let velocity_cutoff =
+                    Self::modulate_log(cutoff_main, cutoff_mod * 8.0 * velocity_factor);
                 let note_cutoff = util::midi_note_to_freq(delay_tap.note);
 
                 // Fused multiply-add operation
@@ -1447,7 +1379,7 @@ impl Del2 {
                 }
                 .clamp(10.0, 18_000.0);
 
-                let drive = util::db_to_gain(drive_db * (drive_mod + 1.0) * velocity);
+                let drive = util::db_to_gain(drive_main + drive_mod * velocity_factor);
 
                 // Batch update filter parameters
                 filter_params.set_resonance(res);
@@ -1461,14 +1393,18 @@ impl Del2 {
     }
 
     #[inline]
-    fn lerp(a: f32, b: f32, x: f32) -> f32 {
+    fn _lerp(a: f32, b: f32, x: f32) -> f32 {
         (b - a).mul_add(x, a)
     }
     #[inline]
-    fn log_interpolate(a: f32, b: f32, x: f32) -> f32 {
+    fn _log_interpolate(a: f32, b: f32, x: f32) -> f32 {
         a * (b / a).powf(x)
     }
 
+    #[inline]
+    fn modulate_log(main: f32, modulation: f32) -> f32 {
+        main * 2f32.powf(modulation)
+    }
     // Takes a pan value and gives a delay offset, in samples
     // instead of adding delay, it subtracts delay from the other channel,
     // so we stay under the maximum delay value

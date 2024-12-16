@@ -24,9 +24,13 @@ when you choose "note", you get an octave (and a transpose) knob instead of the 
 * friendly welcome text on first open
 * make easy/expert a normal slider
 * note> pan:  make it a range and adjust zoom range to it?
+* make loop trigger
+* make bpm sync the default (maybe check (at init?if tempo available)
+* dezip drive
+* make drive_main gain compensated, but drive_mod not
 
 
-
+* layout
 easy mode:
 | easy/expert   |           |   | FILTERS       | MODULATION                      |
 | direct/toggle | dry/wet   |   | filter type   | cutoff mod type (velocity/note) |
