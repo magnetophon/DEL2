@@ -652,7 +652,6 @@ impl Plugin for Del2 {
             delay_tap.smoothed_offset_l.reset(0.0);
             delay_tap.smoothed_offset_r.reset(0.0);
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
-            delay_tap.drive_mod_smoother.reset(0.0);
         });
 
         self.drive_main_smoother.reset(0.0);
@@ -1249,7 +1248,6 @@ impl Del2 {
         for i in 0..NUM_TAPS {
             self.params.previous_pan_background_lengths[i]
                 .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
-            self.delay_taps[i].drive_mod_smoother.reset(0.0);
         }
 
         self.start_release_for_all_delay_taps();
@@ -1606,6 +1604,12 @@ impl Del2 {
             * conversion_factor) as u32;
         let note = self.params.notes[new_index].load(Ordering::SeqCst);
         let velocity = self.params.velocities[new_index].load(Ordering::SeqCst);
+        let velocity_factor = (velocity - 0.5) * 2.0; // Scale 0.0 to 1.0 range to -1.0 to 1.0.
+        let drive_mod = self.params.taps.drive_mod.value();
+        // don't smooth the drive when we start a new tap
+        self.delay_taps[new_index]
+            .drive_mod_smoother
+            .reset(util::db_to_gain_fast(drive_mod * velocity_factor));
 
         self.should_update_filter.store(true, Ordering::Release);
         if global_params.mute_is_toggle.value() {
