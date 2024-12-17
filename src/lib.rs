@@ -300,8 +300,8 @@ pub struct TapsParams {
     pub panning_amount: FloatParam,
     #[id = "filter_type"]
     pub filter_type: EnumParam<MyLadderMode>,
-    #[id = "cutoff_modulation_type"]
-    cutoff_modulation_type: EnumParam<CutoffModulation>,
+    #[id = "use_note_frequency"]
+    use_note_frequency: BoolParam,
 
     #[id = "cutoff"]
     pub cutoff_main: FloatParam,
@@ -316,6 +316,12 @@ pub struct TapsParams {
     pub res_mod: FloatParam,
     #[id = "drive mod"]
     pub drive_mod: FloatParam,
+
+    // for note modulation
+    #[id = "cutoff_octave"]
+    pub cutoff_octave: IntParam,
+    #[id = "cutoff_transpose"]
+    pub cutoff_transpose: IntParam,
 }
 
 impl TapsParams {
@@ -348,20 +354,25 @@ impl TapsParams {
             .with_unit(" %")
             .with_value_to_string(formatters::v2s_f32_percentage(0))
             .with_string_to_value(formatters::s2v_f32_percentage()),
-            filter_type: EnumParam::new(format!("filter type"), MyLadderMode::lp6()) // Use the passed default value
+            filter_type: EnumParam::new(format!("filter type"), MyLadderMode::lp6()).with_callback(
+                Arc::new({
+                    let should_update_filter = should_update_filter.clone();
+                    move |_| should_update_filter.store(true, Ordering::Release)
+                }),
+            ),
+
+            use_note_frequency: BoolParam::new(format!("cutoff mode"), false)
+                .with_callback(Arc::new({
+                    let should_update_filter = should_update_filter.clone();
+                    move |_| should_update_filter.store(true, Ordering::Release)
+                }))
+                .with_value_to_string(Arc::new(|value| {
+                    String::from(if value { "note" } else { "velocity" })
+                }))
                 .with_callback(Arc::new({
                     let should_update_filter = should_update_filter.clone();
                     move |_| should_update_filter.store(true, Ordering::Release)
                 })),
-
-            cutoff_modulation_type: EnumParam::new(
-                format!("cutoff mode"),
-                CutoffModulation::velocity,
-            ) // Use the passed default value
-            .with_callback(Arc::new({
-                let should_update_filter = should_update_filter.clone();
-                move |_| should_update_filter.store(true, Ordering::Release)
-            })),
 
             cutoff_main: FloatParam::new(
                 format!("cutoff"),
@@ -442,6 +453,22 @@ impl TapsParams {
                 },
             )
             .with_unit(" dB"),
+
+            cutoff_octave: IntParam::new("cutoff octave", 0, IntRange::Linear { min: -4, max: 4 })
+                .with_callback(Arc::new({
+                    let should_update_filter = should_update_filter.clone();
+                    move |_| should_update_filter.store(true, Ordering::Release)
+                })),
+
+            cutoff_transpose: IntParam::new(
+                "cutoff transpose",
+                0,
+                IntRange::Linear { min: -12, max: 12 },
+            )
+            .with_callback(Arc::new({
+                let should_update_filter = should_update_filter.clone();
+                move |_| should_update_filter.store(true, Ordering::Release)
+            })),
         }
     }
 }
@@ -1319,12 +1346,14 @@ impl Del2 {
     fn update_filters(&mut self) {
         // Extract params once to avoid repeated access
         let taps_params = &self.params.taps;
-        let cutoff_modulation_type = &taps_params.cutoff_modulation_type.value();
+        let use_note_frequency = &taps_params.use_note_frequency.value();
         // let taps_params = &taps_params.velocity_high;
 
         // Pre-compute static values for the iteration
         let cutoff_main = taps_params.cutoff_main.value();
         let cutoff_mod = taps_params.cutoff_mod.value();
+        let cutoff_octave = taps_params.cutoff_octave.value();
+        let cutoff_transpose = taps_params.cutoff_transpose.value();
         let res_main = taps_params.res_main.value();
         let res_mod = taps_params.res_mod.value();
         let filter_type = &self.params.taps.filter_type.value();
@@ -1345,12 +1374,14 @@ impl Del2 {
                 // cutoff_mod is in octaves, 8.0 octaves gives most of the range.
                 let velocity_cutoff =
                     Self::modulate_log(cutoff_main, cutoff_mod * 8.0 * velocity_factor);
-                let note_cutoff = util::midi_note_to_freq(delay_tap.note);
+                let note_cutoff = util::f32_midi_note_to_freq(
+                    delay_tap.note as f32 + (cutoff_octave * 12) as f32 + cutoff_transpose as f32,
+                );
 
-                // Fused multiply-add operation
-                let cutoff = match cutoff_modulation_type {
-                    CutoffModulation::velocity => velocity_cutoff,
-                    CutoffModulation::note => note_cutoff,
+                let cutoff = if *use_note_frequency {
+                    note_cutoff
+                } else {
+                    velocity_cutoff
                 }
                 .clamp(10.0, 18_000.0);
 
@@ -1782,15 +1813,6 @@ impl Vst3Plugin for Del2 {
         Vst3SubCategory::Spatial,
         Vst3SubCategory::Stereo,
     ];
-}
-
-// the name is used as a parmater value,
-// and the others are all lowercase
-#[allow(non_camel_case_types)]
-#[derive(PartialEq, Enum)]
-enum CutoffModulation {
-    velocity,
-    note,
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]

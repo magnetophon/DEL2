@@ -293,11 +293,9 @@ fn full_parameters(cx: &mut Context) {
                 .class("row");
                 HStack::new(cx, |cx| {
                     Label::new(cx, "cutoff mode").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| {
-                        &params.taps.cutoff_modulation_type
-                    })
-                    .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
-                    .class("widget");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.use_note_frequency)
+                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
+                        .class("widget");
                 })
                 .class("row");
             })
@@ -316,16 +314,40 @@ fn filter_parameters(cx: &mut Context) {
     })
     .class("column-title-group");
     HStack::new(cx, |cx| {
-        HStack::new(cx, |cx| {
-            Label::new(cx, "cutoff").class("slider-label");
-            ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_main).class("widget");
-        })
-        .class("row");
-        HStack::new(cx, |cx| {
-            Label::new(cx, "velocity").class("slider-label");
-            ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_mod).class("widget");
-        })
-        .class("row");
+        Binding::new(
+            cx,
+            Data::params.map(|params| params.taps.use_note_frequency.value()), // Map to get the bool value
+            |cx, _modulation_type| {
+                let params = Data::params.get(cx);
+                if params.taps.use_note_frequency.value() {
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "octave").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_octave)
+                            .class("widget");
+                    })
+                    .class("row");
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "transpose").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_transpose)
+                            .class("widget");
+                    })
+                    .class("row");
+                } else {
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "cutoff").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_main)
+                            .class("widget");
+                    })
+                    .class("row");
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "velocity").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_mod)
+                            .class("widget");
+                    })
+                    .class("row");
+                }
+            },
+        );
     })
     .class("param-group");
 
@@ -471,11 +493,9 @@ fn minimal_parameters(cx: &mut Context) {
 
                 HStack::new(cx, |cx| {
                     Label::new(cx, "cutoff mode").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| {
-                        &params.taps.cutoff_modulation_type
-                    })
-                    .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
-                    .class("widget");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.use_note_frequency)
+                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
+                        .class("widget");
                 })
                 .class("row");
             })
