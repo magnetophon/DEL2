@@ -26,6 +26,7 @@ pub struct DelayTap {
     /// A new tap will be created if the `delay_time` and note are not the same as one that is currently playing.
     pub delay_time: u32,
     // for modulated delay times from panning
+    pub drive_mod_smoother: Smoother<f32>,
     pub smoothed_offset_l: Smoother<f32>,
     pub smoothed_offset_r: Smoother<f32>,
     pub eq_gain_l: Smoother<f32>,
@@ -62,6 +63,7 @@ impl DelayTap {
             amp_envelope: Smoother::new(SmoothingStyle::Logarithmic(13.0)),
             internal_id: 0,
             delay_time: 0,
+            drive_mod_smoother: Smoother::new(SmoothingStyle::Linear(13.0)),
             smoothed_offset_l: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
             smoothed_offset_r: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
             eq_gain_l: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),

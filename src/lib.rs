@@ -108,8 +108,6 @@ pub struct Del2 {
     delay_tap_pan_gain_l_block: Box<[f32]>,
     delay_tap_pan_gain_r_block: Box<[f32]>,
     drive_main_smoother: Smoother<f32>,
-    drive_mod_smoother: Smoother<f32>,
-
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
     output_meter: Arc<AtomicF32>,
@@ -489,7 +487,6 @@ impl Default for Del2 {
             delay_tap_pan_gain_l_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_pan_gain_r_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             drive_main_smoother: Smoother::new(SmoothingStyle::Linear(13.0)),
-            drive_mod_smoother: Smoother::new(SmoothingStyle::Linear(13.0)),
 
             peak_meter_decay_weight: 1.0,
             input_meter: Arc::new(AtomicF32::new(util::MINUS_INFINITY_DB)),
@@ -655,10 +652,10 @@ impl Plugin for Del2 {
             delay_tap.smoothed_offset_l.reset(0.0);
             delay_tap.smoothed_offset_r.reset(0.0);
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
+            delay_tap.drive_mod_smoother.reset(0.0);
         });
 
         self.drive_main_smoother.reset(0.0);
-        self.drive_mod_smoother.reset(0.0);
         // then fill the array
         for tap_index in 0..tap_counter {
             // nih_log!("reset tap_counter: {tap_counter}");
@@ -871,12 +868,12 @@ impl Plugin for Del2 {
                         .next_block(drive_main_block, block_len);
 
                     let drive_mod_block = &mut self.drive_mod_block[..block_len];
-                    self.drive_mod_smoother.set_target(
+                    let drive_mod_smoother = &delay_tap.drive_mod_smoother;
+                    drive_mod_smoother.set_target(
                         sample_rate,
                         util::db_to_gain_fast(drive_mod * velocity_factor),
                     );
-                    self.drive_mod_smoother
-                        .next_block(drive_mod_block, block_len);
+                    drive_mod_smoother.next_block(drive_mod_block, block_len);
 
                     self.mute_in_delay_buffer.read_into(
                         &mut delay_tap.mute_in_delayed,
@@ -1252,8 +1249,8 @@ impl Del2 {
         for i in 0..NUM_TAPS {
             self.params.previous_pan_background_lengths[i]
                 .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
+            self.delay_taps[i].drive_mod_smoother.reset(0.0);
         }
-        self.drive_mod_smoother.reset(0.0);
 
         self.start_release_for_all_delay_taps();
         if restart {
