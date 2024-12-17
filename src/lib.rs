@@ -355,7 +355,7 @@ impl TapsParams {
                 })),
 
             cutoff_modulation_type: EnumParam::new(
-                format!("cutoff modultation"),
+                format!("cutoff mode"),
                 CutoffModulation::velocity,
             ) // Use the passed default value
             .with_callback(Arc::new({

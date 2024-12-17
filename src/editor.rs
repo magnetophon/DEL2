@@ -292,7 +292,7 @@ fn full_parameters(cx: &mut Context) {
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff mod").class("slider-label");
+                    Label::new(cx, "cutoff mode").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| {
                         &params.taps.cutoff_modulation_type
                     })
@@ -302,63 +302,60 @@ fn full_parameters(cx: &mut Context) {
                 .class("row");
             })
             .class("param-group");
-
-            HStack::new(cx, |cx| {
-                Label::new(cx, "low velocity").class("column-title");
-                Label::new(cx, "high velocity").class("column-title");
-            })
-            .class("column-title-group");
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_main)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff mod").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_mod)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
-
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "res").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.res_main)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "res mod").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.res_mod)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
-
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.drive_main)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "drive mod").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.drive_mod)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
+            filter_parameters(cx);
         })
         .class("parameters-right");
     })
     .class("parameters-all");
+}
+
+fn filter_parameters(cx: &mut Context) {
+    HStack::new(cx, |cx| {
+        Label::new(cx, "main").class("column-title").class("left");
+        Label::new(cx, "modulation").class("column-title");
+    })
+    .class("column-title-group");
+    HStack::new(cx, |cx| {
+        HStack::new(cx, |cx| {
+            Label::new(cx, "cutoff").class("slider-label");
+            ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_main).class("widget");
+        })
+        .class("row");
+        HStack::new(cx, |cx| {
+            Label::new(cx, "velocity").class("slider-label");
+            ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_mod).class("widget");
+        })
+        .class("row");
+    })
+    .class("param-group");
+
+    HStack::new(cx, |cx| {
+        HStack::new(cx, |cx| {
+            Label::new(cx, "res").class("slider-label");
+            ParamSlider::new(cx, Data::params, |params| &params.taps.res_main).class("widget");
+        })
+        .class("row");
+        HStack::new(cx, |cx| {
+            Label::new(cx, "velocity").class("slider-label");
+            ParamSlider::new(cx, Data::params, |params| &params.taps.res_mod).class("widget");
+        })
+        .class("row");
+    })
+    .class("param-group");
+
+    HStack::new(cx, |cx| {
+        HStack::new(cx, |cx| {
+            Label::new(cx, "drive").class("slider-label");
+            ParamSlider::new(cx, Data::params, |params| &params.taps.drive_main).class("widget");
+        })
+        .class("row");
+        HStack::new(cx, |cx| {
+            Label::new(cx, "velocity").class("slider-label");
+            ParamSlider::new(cx, Data::params, |params| &params.taps.drive_mod).class("widget");
+        })
+        .class("row");
+    })
+    .class("param-group");
 }
 
 fn minimal_parameters(cx: &mut Context) {
@@ -473,7 +470,7 @@ fn minimal_parameters(cx: &mut Context) {
                 .class("row");
 
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff mod").class("slider-label");
+                    Label::new(cx, "cutoff mode").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| {
                         &params.taps.cutoff_modulation_type
                     })
@@ -484,58 +481,7 @@ fn minimal_parameters(cx: &mut Context) {
             })
             .class("param-group");
 
-            HStack::new(cx, |_cx| {}); // spacer
-            HStack::new(cx, |cx| {
-                Label::new(cx, "low velocity").class("column-title");
-                Label::new(cx, "high velocity").class("column-title");
-            })
-            .class("column-title-group");
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_main)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_mod)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
-
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "res").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.res_main)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "res").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.res_mod)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.drive_main)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.drive_mod)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
+            filter_parameters(cx);
         })
         .class("parameters-right");
     })

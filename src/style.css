@@ -136,10 +136,13 @@ param-slider .value-entry .selection {
 
 .column-title {
     font-size: 23;
-    left: 1s;
     right: 0px;
     shadow: 0px 0px 13px #e0ce9109;
     background-color: #e0ce9106;
+}
+/* TODO: this should not be needed: */
+.left {
+    left: 258px;
 }
 .column-title-group-minimal {
     /* height: auto; */
