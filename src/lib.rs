@@ -397,6 +397,7 @@ impl TapsParams {
                     factor: FloatRange::skew_factor(-1.0),
                 },
             )
+            .with_step_size(0.1)
             .with_unit(" dB"),
 
             cutoff_mod: FloatParam::new(
@@ -439,6 +440,7 @@ impl TapsParams {
                     factor: FloatRange::skew_factor(-1.0),
                 },
             )
+            .with_step_size(0.1)
             .with_unit(" dB"),
 
             cutoff_octave: IntParam::new("cutoff octave", 0, IntRange::Linear { min: -4, max: 4 })
