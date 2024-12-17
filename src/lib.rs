@@ -306,11 +306,11 @@ pub struct TapsParams {
     cutoff_modulation_type: EnumParam<CutoffModulation>,
 
     #[id = "cutoff"]
-    pub cutoff: FloatParam,
+    pub cutoff_main: FloatParam,
     #[id = "res"]
-    pub res: FloatParam,
+    pub res_main: FloatParam,
     #[id = "drive"]
-    pub drive: FloatParam,
+    pub drive_main: FloatParam,
 
     #[id = "cutoff mod"]
     pub cutoff_mod: FloatParam,
@@ -365,7 +365,7 @@ impl TapsParams {
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
 
-            cutoff: FloatParam::new(
+            cutoff_main: FloatParam::new(
                 format!("cutoff"),
                 3_003.0,
                 FloatRange::Skewed {
@@ -380,7 +380,7 @@ impl TapsParams {
                 let should_update_filter = should_update_filter.clone();
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
-            res: FloatParam::new(
+            res_main: FloatParam::new(
                 format!("resonance"),
                 0.42,
                 FloatRange::Linear { min: 0., max: 1. },
@@ -390,15 +390,15 @@ impl TapsParams {
                 let should_update_filter = should_update_filter.clone();
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
-            drive: FloatParam::new(
+            drive_main: FloatParam::new(
                 format!("drive"),
                 13.0,
                 FloatRange::Skewed {
-                    min: -30.0,
-                    max: 30.0,
+                    min: 0.0,
+                    max: 42.0,
                     // This makes the range appear as if it was linear when displaying the values as
                     // decibels
-                    factor: FloatRange::skew_factor(0.0),
+                    factor: FloatRange::skew_factor(-1.0),
                 },
             )
             .with_unit(" dB"),
@@ -433,13 +433,14 @@ impl TapsParams {
                 let should_update_filter = should_update_filter.clone();
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
+
             drive_mod: FloatParam::new(
                 format!("drive mod"),
                 13.0,
                 FloatRange::Skewed {
-                    min: -30.0,
-                    max: 30.0,
-                    factor: FloatRange::skew_factor(0.0),
+                    min: 0.0,
+                    max: 42.0,
+                    factor: FloatRange::skew_factor(-1.0),
                 },
             )
             .with_unit(" dB"),
@@ -842,6 +843,7 @@ impl Plugin for Del2 {
                 output[1][sample_idx] *= dry;
             }
 
+            let drive_main_block = &mut self.drive_main_block[..block_len];
             self.delay_taps
                 .iter_mut()
                 .filter(|tap| tap.is_alive)
@@ -861,29 +863,20 @@ impl Plugin for Del2 {
                     let velocity = delay_tap.velocity;
                     let velocity_factor = (velocity - 0.5) * 2.0; // Scale 0.0 to 1.0 range to -1.0 to 1.0.
                     let taps_params = &self.params.taps;
-                    let drive_main = taps_params.drive.value();
+                    let drive_main = taps_params.drive_main.value();
                     let drive_mod = taps_params.drive_mod.value();
-                    let drive_main_target_db = drive_main + drive_mod * velocity_factor;
-                    let drive_main_target = util::db_to_gain_fast(drive_main_target_db);
-                    // nih_log!("drive_main_target_db: {drive_main_target_db}, drive_main {drive_main}  drive_mod: {drive_mod}  velocity: {velocity}");
                     self.drive_main_smoother
                         .set_target(sample_rate, util::db_to_gain_fast(drive_main));
-                    // .set_target(sample_rate, 1.0);
                     self.drive_main_smoother
-                        .next_block(&mut self.drive_main_block, block_len);
+                        .next_block(drive_main_block, block_len);
 
-                    let drive_mod_target_db = (0.0 - drive_main);
-                    let drive_mod_target = util::db_to_gain_fast(drive_mod_target_db);
-
-                    // TODO: why does this need to be mut, but dry_wet_block doesn't?
-                    let mut drive_mod_block = &mut self.drive_mod_block[..block_len];
-                    // nih_log!("drive_mod_target_db: {drive_mod_target_db}, drive_main {drive_main}  drive_main_target_db: {drive_main_target_db}");
+                    let drive_mod_block = &mut self.drive_mod_block[..block_len];
                     self.drive_mod_smoother.set_target(
                         sample_rate,
                         util::db_to_gain_fast(drive_mod * velocity_factor),
                     );
                     self.drive_mod_smoother
-                        .next_block(&mut drive_mod_block, block_len);
+                        .next_block(drive_mod_block, block_len);
 
                     self.mute_in_delay_buffer.read_into(
                         &mut delay_tap.mute_in_delayed,
@@ -933,8 +926,9 @@ impl Plugin for Del2 {
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                             let pre_filter_gain =
                             // 1.0;
-                                self.drive_main_block[value_idx] *
-                                self.drive_mod_block[value_idx];
+                                drive_main_block[value_idx]
+                            // ;
+                                * drive_mod_block[value_idx];
 
                             // if self.delay_tap_amp_envelope_block[value_idx] != 1.0 && self.delay_tap_amp_envelope[value_idx] != 0.0 {
                             // nih_log!("self.delay_tap_amp_envelope_block[value_idx]: {}", self.delay_tap_amp_envelope[value_idx]);
@@ -992,7 +986,7 @@ impl Plugin for Del2 {
                     for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                         let post_filter_gain = dry_wet_block[value_idx]
                             * self.delay_tap_amp_envelope_block[value_idx]
-                            / self.drive_main_block[value_idx];
+                            / drive_main_block[value_idx];
                         let left = delay_tap.delayed_audio_l[sample_idx]
                             * post_filter_gain
                             * self.delay_tap_pan_gain_l_block[value_idx];
@@ -1259,6 +1253,7 @@ impl Del2 {
             self.params.previous_pan_background_lengths[i]
                 .store(NO_GUI_SMOOTHING, Ordering::SeqCst);
         }
+        self.drive_mod_smoother.reset(0.0);
 
         self.start_release_for_all_delay_taps();
         if restart {
@@ -1333,9 +1328,9 @@ impl Del2 {
         // let taps_params = &taps_params.velocity_high;
 
         // Pre-compute static values for the iteration
-        let cutoff_main = taps_params.cutoff.value();
+        let cutoff_main = taps_params.cutoff_main.value();
         let cutoff_mod = taps_params.cutoff_mod.value();
-        let res_main = taps_params.res.value();
+        let res_main = taps_params.res_main.value();
         let res_mod = taps_params.res_mod.value();
         let filter_type = &self.params.taps.filter_type.value();
 

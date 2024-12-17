@@ -30,6 +30,7 @@ when you choose "note", you get an octave (and a transpose) knob instead of the 
 * make drive_main gain compensated, but drive_mod not
 * check clap of skia
 * don't create a new smoother on every new tap
+* smarter s2v seconds: if s < max seconds: interpret as seconds else as ms     or just always as sec?
 
 
 * layout

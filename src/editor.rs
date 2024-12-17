@@ -311,7 +311,7 @@ fn full_parameters(cx: &mut Context) {
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff)
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_main)
                         .class("widget");
                 })
                 .class("row");
@@ -327,7 +327,8 @@ fn full_parameters(cx: &mut Context) {
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "res").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.res).class("widget");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.res_main)
+                        .class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
@@ -342,7 +343,8 @@ fn full_parameters(cx: &mut Context) {
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.drive).class("widget");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.drive_main)
+                        .class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
@@ -491,7 +493,7 @@ fn minimal_parameters(cx: &mut Context) {
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff)
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_main)
                         .class("widget");
                 })
                 .class("row");
@@ -507,7 +509,8 @@ fn minimal_parameters(cx: &mut Context) {
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "res").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.res).class("widget");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.res_main)
+                        .class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
@@ -521,7 +524,8 @@ fn minimal_parameters(cx: &mut Context) {
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.drive).class("widget");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.drive_main)
+                        .class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
