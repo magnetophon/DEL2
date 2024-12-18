@@ -113,11 +113,12 @@ fn full_parameters(cx: &mut Context) {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "dry/wet").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.global.dry_wet)
+                        .set_style(ParamSliderStyle::FromLeft)
                         .class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "mutes").class("slider-label");
+                    Label::new(cx, "mute mode").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
                         .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");
@@ -319,6 +320,7 @@ fn filter_parameters(cx: &mut Context) {
                     HStack::new(cx, |cx| {
                         Label::new(cx, "cutoff").class("slider-label");
                         ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_main)
+                            .set_style(ParamSliderStyle::FromLeft)
                             .class("widget");
                     })
                     .class("row");
@@ -379,11 +381,12 @@ fn minimal_parameters(cx: &mut Context) {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "dry/wet").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.global.dry_wet)
+                        .set_style(ParamSliderStyle::FromLeft)
                         .class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "mutes").class("slider-label");
+                    Label::new(cx, "mute mode").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
                         .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");
