@@ -31,6 +31,24 @@ when you choose "note", you get an octave (and a transpose) knob instead of the 
 * check clap of skia
 * don't create a new smoother on every new tap
 * smarter s2v seconds: if s < max seconds: interpret as seconds else as ms     or just always as sec?
+* make attack and release Exponential?
+* see which param needs an Arc and why
+* why don't the notes smooth when switching presets?
+* put back gui smoother per note?
+** when there is a new tap while the previous one isn't done smoothing, we get glitches
+** when we load new presets too
+* default preset:
+** should be the state of parameters struct contained in the Default instance of your plugin
+https://discord.com/channels/590254806208217089/948004564005703740/1185546968206954547
+*** but doesn't work in bitwig
+* factory presets:
+** https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Locations+Format/Preset+Locations.html
+** https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Presets+Program+Lists/Index.html
+* position action labels
+* slider psitions: offset & note>pan down a bit, type & cutoff up a bit
+* keep glow on hover action?
+** maybe put it everywhere?
+** otoh: this differentiates the triggers from the knobs
 
 
 * layout
