@@ -112,11 +112,12 @@ fn full_parameters(cx: &mut Context) {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "dry/wet").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.global.dry_wet)
+                        .set_style(ParamSliderStyle::FromLeft)
                         .class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "mutes").class("slider-label");
+                    Label::new(cx, "mute mode").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
                         .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");
@@ -124,24 +125,6 @@ fn full_parameters(cx: &mut Context) {
                 .class("row");
             })
             .class("param-group");
-
-            // TODO: fully remove, also the backend
-
-            // HStack::new(cx, |cx| {
-            // HStack::new(cx, |cx| {
-            // Label::new(cx, "wet gain").class("slider-label");
-            // ParamSlider::new(cx, Data::params, |params| &params.global.wet_gain)
-            // .class("widget");
-            // })
-            // .class("row");
-            // HStack::new(cx, |cx| {
-            // Label::new(cx, "drive").class("slider-label");
-            // ParamSlider::new(cx, Data::params, |params| &params.global.global_drive)
-            // .class("widget");
-            // })
-            // .class("row");
-            // })
-            // .class("param-group");
 
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
@@ -336,6 +319,7 @@ fn filter_parameters(cx: &mut Context) {
                     HStack::new(cx, |cx| {
                         Label::new(cx, "cutoff").class("slider-label");
                         ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_main)
+                            .set_style(ParamSliderStyle::FromLeft)
                             .class("widget");
                     })
                     .class("row");
@@ -396,11 +380,12 @@ fn minimal_parameters(cx: &mut Context) {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "dry/wet").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.global.dry_wet)
+                        .set_style(ParamSliderStyle::FromLeft)
                         .class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "mutes").class("slider-label");
+                    Label::new(cx, "mute mode").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
                         .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");

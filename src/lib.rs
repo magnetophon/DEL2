@@ -212,7 +212,7 @@ struct GlobalParams {
 impl GlobalParams {
     pub fn new(enabled_actions: Arc<AtomicBoolArray>, learned_notes: Arc<AtomicByteArray>) -> Self {
         Self {
-            dry_wet: FloatParam::new("mix", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+            dry_wet: FloatParam::new("mix", 0.5, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_unit("%")
                 .with_smoother(SmoothingStyle::Linear(15.0))
                 .with_value_to_string(formatters::v2s_f32_percentage(0))
