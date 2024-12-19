@@ -1,0 +1,45 @@
+#+title: Todo
+
+
+* make offset smaller
+* make modulation a curve param, with view like vital?
+* make modulation a curve editor?
+* increase meter range, add pre-delay low cut
+* maybe add dry/wet for filters
+* make attack and release continuously update
+* increase minimal attack and release
+* offset/amount  -> amount/offset
+* simd smoother, for up to 8 smoothers at once!
+* README: add chorus trick and gated delay example
+* make everything smaller, just scale down
+* reset button (for expert mode separately?)
+* downgrade macos (& ubuntu?)
+* friendly welcome text on first open
+* make easy/expert a normal slider
+* resize window on easy/expert change, so that button stays in the same place
+* note> pan:  make it a range and adjust zoom range to it?
+* make loop trigger
+* make bpm sync the default (maybe check (at init?if tempo available)
+* don't create a new smoother on every new tap?
+# TODO: test!
+* smarter s2v seconds: if s < max seconds: interpret as seconds else as ms     or just always as sec?
+* make attack and release Exponential?
+* see which param needs an Arc and why
+* why don't the notes smooth when switching presets?
+* put back gui smoother per note?
+** when there is a new tap while the previous one isn't done smoothing, we get glitches
+** when we load new presets too
+* default preset:
+** should be the state of parameters struct contained in the Default instance of your plugin
+https://discord.com/channels/590254806208217089/948004564005703740/1185546968206954547
+*** but doesn't work in bitwig
+* factory presets:
+** https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Locations+Format/Preset+Locations.html
+** https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Presets+Program+Lists/Index.html
+* position action labels
+* slider positions: offset & note>pan down a bit, type & cutoff up a bit
+* keep glow on hover action?
+** maybe put it everywhere?
+** otoh: this differentiates the triggers from the knobs
+* on hover: more is more / less is more
+* zoom notes only after time-out?
