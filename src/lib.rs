@@ -1554,20 +1554,13 @@ impl Del2 {
                 .or_else(|| string.strip_suffix(" s"))
             {
                 // Explicitly specified as seconds
-                return s_value_str.trim().parse::<f32>().ok().map(|s| {
-                    let ms_value = s * 1000.0;
-                    if ms_value > max_val {
-                        ms_value // Treat it as milliseconds
-                    } else {
-                        s // Keep as seconds if the milliseconds value isn't greater than max_val
-                    }
-                });
+                return s_value_str.trim().parse::<f32>().ok().map(|s| s * 1000.0);
             }
 
             // If no specification, interpret as seconds and check
             string.parse::<f32>().ok().map(|val| {
                 let ms_value = val * 1000.0;
-                if ms_value > max_val {
+                if ms_value < max_val {
                     ms_value // Treat it as milliseconds
                 } else {
                     val // Keep as seconds
