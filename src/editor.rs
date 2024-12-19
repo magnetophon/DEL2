@@ -64,10 +64,9 @@ impl Model for Data {
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
         event.map(|app_event, _| match app_event {
             AppEvent::ToggleShowView => {
-                let current_value = self.params.show_full_parameters.load(Ordering::SeqCst);
                 self.params
                     .show_full_parameters
-                    .swap(!current_value, Ordering::SeqCst);
+                    .fetch_xor(true, Ordering::SeqCst);
 
                 cx.emit(GuiContextEvent::Resize);
             }
