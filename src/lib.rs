@@ -173,6 +173,8 @@ pub struct Del2Params {
     learning_start_time: AtomicU64,
     #[persist = "preset_tempo"]
     preset_tempo: AtomicF32,
+
+    show_full_parameters: Arc<AtomicBool>,
 }
 
 /// Contains the global parameters.
@@ -540,8 +542,9 @@ impl Del2Params {
         enabled_actions: Arc<AtomicBoolArray>,
         learned_notes: Arc<AtomicByteArray>,
     ) -> Self {
+        let show_full_parameters = Arc::new(AtomicBool::new(false));
         Self {
-            editor_state: editor::default_state(),
+            editor_state: editor::default_state(show_full_parameters.clone()),
             taps: TapsParams::new(should_update_filter),
             global: GlobalParams::new(enabled_actions.clone(), learned_notes.clone()),
             learned_notes: ArcAtomicByteArray(learned_notes),
@@ -571,6 +574,7 @@ impl Del2Params {
             time_sig_numerator: (-1).into(),
             learning_start_time: AtomicU64::new(0),
             preset_tempo: (DEFAULT_TEMPO).into(),
+            show_full_parameters,
         }
     }
 }
@@ -630,7 +634,6 @@ impl Plugin for Del2 {
                 last_learned_notes: self.last_learned_notes.clone(),
                 last_played_notes: self.last_played_notes.clone(),
                 enabled_actions: self.enabled_actions.clone(),
-                show_full_parameters: false, // default to the easy editor
             },
             self.params.editor_state.clone(),
         )

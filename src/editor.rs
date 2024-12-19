@@ -4,18 +4,18 @@ use std::sync::{
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::{
+    format_time, util, AtomicBoolArray, AtomicByteArray, AtomicF32, AtomicF32Array,
+    AtomicUsizeArray, Del2Params, LastPlayedNotes, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN,
+    MUTE_OUT, NO_GUI_SMOOTHING, NO_LEARNED_NOTE, NUM_TAPS,
+};
 use nih_plug::prelude::Editor;
+use nih_plug_vizia::widgets::GuiContextEvent;
 use nih_plug_vizia::{
     assets, create_vizia_editor,
     vizia::{prelude::*, vg},
     widgets::{ParamSlider, ParamSliderExt, ParamSliderStyle, ResizeHandle},
     ViziaState, ViziaTheming,
-};
-
-use crate::{
-    format_time, util, AtomicBoolArray, AtomicByteArray, AtomicF32, AtomicF32Array,
-    AtomicUsizeArray, Del2Params, LastPlayedNotes, CLEAR_TAPS, LEARNING, LOCK_TAPS, MUTE_IN,
-    MUTE_OUT, NO_GUI_SMOOTHING, NO_LEARNED_NOTE, NUM_TAPS,
 };
 
 #[allow(unused_imports)]
@@ -49,7 +49,6 @@ pub struct Data {
     pub last_learned_notes: Arc<AtomicByteArray>,
     pub last_played_notes: Arc<LastPlayedNotes>,
     pub enabled_actions: Arc<AtomicBoolArray>,
-    pub show_full_parameters: bool,
 }
 
 enum AppEvent {
@@ -57,16 +56,29 @@ enum AppEvent {
 }
 
 impl Model for Data {
-    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
         event.map(|app_event, _| match app_event {
-            AppEvent::ToggleShowView => self.show_full_parameters ^= true,
+            AppEvent::ToggleShowView => {
+                let current_value = self.params.show_full_parameters.load(Ordering::SeqCst);
+                self.params
+                    .show_full_parameters
+                    .swap(!current_value, Ordering::SeqCst);
+
+                cx.emit(GuiContextEvent::Resize);
+            }
         });
     }
 }
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
-pub fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1301, 804))
+pub fn default_state(show_full_parameters: Arc<AtomicBool>) -> Arc<ViziaState> {
+    ViziaState::new(move || {
+        if show_full_parameters.load(Ordering::SeqCst) {
+            (1301, 804)
+        } else {
+            (1301, 694)
+        }
+    })
 }
 
 pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -87,14 +99,18 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
                     ;
                 Label::new(cx, "DEL2").class("plugin-name");
             });
-            Binding::new(cx, Data::show_full_parameters, |cx, show| {
-                if show.get(cx) {
-                    full_parameters(cx);
-                } else {
-                    minimal_parameters(cx);
-                }
-            });
 
+            Binding::new(
+                cx,
+                Data::params.map(|params| params.show_full_parameters.load(Ordering::SeqCst)), // Map to get the bool value
+                |cx, show| {
+                    if show.get(cx) {
+                        full_parameters(cx);
+                    } else {
+                        minimal_parameters(cx);
+                    }
+                },
+            );
             ResizeHandle::new(cx);
         });
     })
@@ -1686,13 +1702,13 @@ impl CollapseButton {
         Self {}.build(cx, move |cx| {
             Label::new(
                 cx,
-                Data::show_full_parameters.map(|show_full_parameters| {
-                    // ▲ ▼ ◀ ▶
-                    if *show_full_parameters {
-                        String::from("show less")
+                Data::params.map(|params| {
+                    if params.show_full_parameters.load(Ordering::SeqCst) {
+                        "show less"
                     } else {
-                        String::from("show more")
+                        "show more"
                     }
+                    .to_string()
                 }),
             );
         })
