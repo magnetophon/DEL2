@@ -1,20 +1,13 @@
 #+title: Todo
 
 
-* instead of low-high vel, have a main param and a modulation amount
 * make offset smaller
 * make modulation a curve param, with view like vital?
 * make modulation a curve editor?
-* remove "vel>cut" and "note>cut", replace by "cutoff mod" button that chooses between note and velocity
-when you choose "note", you get an octave (and a transpose) knob instead of the normal cutoff controls
 * increase meter range, add pre-delay low cut
-* remove per tap mode switch
 * maybe add dry/wet for filters
 * make attack and release continuously update
 * increase minimal attack and release
-* make caption "easy mode" and "expert mode"
-* max tap -> timeout
-* min tap -> debounce
 * offset/amount  -> amount/offset
 * simd smoother, for up to 8 smoothers at once!
 * README: add chorus trick and gated delay example
@@ -23,13 +16,11 @@ when you choose "note", you get an octave (and a transpose) knob instead of the 
 * downgrade macos (& ubuntu?)
 * friendly welcome text on first open
 * make easy/expert a normal slider
+* resize window on easy/expert change, so that button stays in the same place
 * note> pan:  make it a range and adjust zoom range to it?
 * make loop trigger
 * make bpm sync the default (maybe check (at init?if tempo available)
-* dezip drive
-* make drive_main gain compensated, but drive_mod not
-* check clap of skia
-* don't create a new smoother on every new tap
+* don't create a new smoother on every new tap?
 * smarter s2v seconds: if s < max seconds: interpret as seconds else as ms     or just always as sec?
 * make attack and release Exponential?
 * see which param needs an Arc and why

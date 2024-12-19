@@ -244,7 +244,7 @@ impl GlobalParams {
             .with_string_to_value(Del2::s2v_f32_ms_then_s()),
             release_ms: FloatParam::new(
                 "Release",
-                420.0,
+                13.0,
                 FloatRange::Skewed {
                     min: 5.0,
                     max: 20_000.0,
@@ -376,7 +376,7 @@ impl TapsParams {
 
             cutoff_main: FloatParam::new(
                 format!("cutoff"),
-                3_003.0,
+                1_690.0,
                 FloatRange::Skewed {
                     min: 10.0,
                     max: 18_000.0,
@@ -391,7 +391,7 @@ impl TapsParams {
             })),
             res_main: FloatParam::new(
                 format!("resonance"),
-                0.42,
+                0.13,
                 FloatRange::Linear { min: 0., max: 1. },
             )
             .with_value_to_string(formatters::v2s_f32_rounded(2))
@@ -415,7 +415,7 @@ impl TapsParams {
 
             cutoff_mod: FloatParam::new(
                 format!("cutoff mod"),
-                0.0,
+                0.13,
                 FloatRange::Linear {
                     min: -1.0,
                     max: 1.0,
@@ -430,7 +430,7 @@ impl TapsParams {
             })),
             res_mod: FloatParam::new(
                 format!("resonance mod"),
-                0.13,
+                0.0,
                 FloatRange::Linear {
                     min: -1.0,
                     max: 1.0,
@@ -447,10 +447,11 @@ impl TapsParams {
             drive_mod: FloatParam::new(
                 format!("drive mod"),
                 13.0,
-                FloatRange::Skewed {
-                    min: 0.0,
+                FloatRange::SymmetricalSkewed {
+                    min: -42.0,
                     max: 42.0,
                     factor: FloatRange::skew_factor(-1.0),
+                    center: 0.0,
                 },
             )
             .with_step_size(0.1)
