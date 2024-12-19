@@ -323,6 +323,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "baseview"
+version = "0.1.0"
+source = "git+https://github.com/RustAudio/baseview.git?rev=9a0b42c09d712777b2edb4c5e0cb6baf21e988f0#9a0b42c09d712777b2edb4c5e0cb6baf21e988f0"
+dependencies = [
+ "cocoa",
+ "core-foundation",
+ "keyboard-types",
+ "nix 0.22.3",
+ "objc",
+ "raw-window-handle 0.5.2",
+ "uuid",
+ "winapi",
+ "x11",
+ "x11rb",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -509,9 +526,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.3"
+version = "1.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27f657647bcff5394bf56c7317665bbf790a137a50eaaa5c6bfbb9e27a518f2d"
+checksum = "c31a0499c1dc64f458ad13872de75c0eb7e3fdb0e67964610c914b034fc5956e"
 dependencies = [
  "jobserver",
  "libc",
@@ -869,18 +886,18 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-channel"
-version = "0.5.13"
+version = "0.5.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33480d6946193aa8033910124896ca395333cae7e2d1113d1fef6c3272217df2"
+checksum = "06ba6d68e24814cb8de6bb986db8222d3a027d15872cabc0d18817bc3c0e4471"
 dependencies = [
  "crossbeam-utils",
 ]
 
 [[package]]
 name = "crossbeam-deque"
-version = "0.8.5"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "613f8cc01fe9cf1a3eb3d7f488fd2fa8388403e97039e2f73692932e291a770d"
+checksum = "9dd111b7b7f7d55b72c0a6ae361660ee5853c9af73f70c3c2ef6858b950e2e51"
 dependencies = [
  "crossbeam-epoch",
  "crossbeam-utils",
@@ -897,18 +914,18 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-queue"
-version = "0.3.11"
+version = "0.3.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df0346b5d5e76ac2fe4e327c5fd1118d6be7c51dfb18f9b7922923f287471e35"
+checksum = "0f58bbc28f91df819d0aa2a2c00cd19754769c2fad90579b3592b1c9ba7a3115"
 dependencies = [
  "crossbeam-utils",
 ]
 
 [[package]]
 name = "crossbeam-utils"
-version = "0.8.20"
+version = "0.8.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22ec99545bb0ed0ea7bb9b8e1e9122ea386ff8a48c0922e43f36d45ab09e0e80"
+checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
 name = "crypto-common"
@@ -1621,9 +1638,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.168"
+version = "0.2.169"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aaeb2981e0606ca11d79718f8bb01164f1d6ed75080182d3abf017e6d244b6d"
+checksum = "b5aba8db14291edd000dfcc4d620c7ebfb122c613afb886ca8803fa4e128a20a"
 
 [[package]]
 name = "libloading"
@@ -1750,9 +1767,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.0"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2d80299ef12ff69b16a84bb182e3b9df68b5a91574d3d4fa6e41b65deec4df1"
+checksum = "4ffbe83022cedc1d264172192511ae958937694cd57ce297164951b8b3568394"
 dependencies = [
  "adler2",
 ]
@@ -1850,7 +1867,7 @@ dependencies = [
  "atomic_float",
  "atomic_refcell",
  "backtrace",
- "baseview",
+ "baseview 0.1.0 (git+https://github.com/RustAudio/baseview.git?rev=579130ecb4f9f315ae52190af42f0ea46aeaa4a2)",
  "bitflags 1.3.2",
  "cfg-if",
  "clap",
@@ -2720,9 +2737,9 @@ checksum = "c2fdfc24bc566f839a2da4c4295b82db7d25a24253867d5c64355abb5799bdbe"
 
 [[package]]
 name = "semver"
-version = "1.0.23"
+version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61697e0a1c7e512e84a621326239844a24d8207b4669b41bc18b32ea5cbf988b"
+checksum = "3cb6eb87a131f756572d7fb904f6e7b68633f09cca868c5df1c4b8d1a694bbba"
 dependencies = [
  "serde",
 ]
@@ -3287,7 +3304,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vizia"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#9978a4b084a26ca07ee53de9538347d236b48e9e"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
 dependencies = [
  "vizia_baseview",
  "vizia_core",
@@ -3297,9 +3314,9 @@ dependencies = [
 [[package]]
 name = "vizia_baseview"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#9978a4b084a26ca07ee53de9538347d236b48e9e"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
 dependencies = [
- "baseview",
+ "baseview 0.1.0 (git+https://github.com/RustAudio/baseview.git?rev=9a0b42c09d712777b2edb4c5e0cb6baf21e988f0)",
  "gl",
  "raw-window-handle 0.5.2",
  "skia-safe",
@@ -3311,7 +3328,7 @@ dependencies = [
 [[package]]
 name = "vizia_core"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#9978a4b084a26ca07ee53de9538347d236b48e9e"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
 dependencies = [
  "accesskit",
  "bitflags 2.6.0",
@@ -3344,7 +3361,7 @@ dependencies = [
 [[package]]
 name = "vizia_derive"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#9978a4b084a26ca07ee53de9538347d236b48e9e"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3354,12 +3371,12 @@ dependencies = [
 [[package]]
 name = "vizia_id"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#9978a4b084a26ca07ee53de9538347d236b48e9e"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
 
 [[package]]
 name = "vizia_input"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#9978a4b084a26ca07ee53de9538347d236b48e9e"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
 dependencies = [
  "bitflags 2.6.0",
  "keyboard-types",
@@ -3380,7 +3397,7 @@ dependencies = [
 [[package]]
 name = "vizia_storage"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#9978a4b084a26ca07ee53de9538347d236b48e9e"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
 dependencies = [
  "morphorm",
  "vizia_id",
@@ -3389,7 +3406,7 @@ dependencies = [
 [[package]]
 name = "vizia_style"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#9978a4b084a26ca07ee53de9538347d236b48e9e"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
 dependencies = [
  "bitflags 2.6.0",
  "cssparser",
@@ -3404,7 +3421,7 @@ dependencies = [
 [[package]]
 name = "vizia_window"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#9978a4b084a26ca07ee53de9538347d236b48e9e"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
 dependencies = [
  "accesskit",
  "bitflags 2.6.0",
@@ -3416,7 +3433,7 @@ dependencies = [
 [[package]]
 name = "vizia_winit"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#9978a4b084a26ca07ee53de9538347d236b48e9e"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
 dependencies = [
  "accesskit",
  "copypasta",
