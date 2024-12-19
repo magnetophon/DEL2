@@ -21,6 +21,7 @@
 * make loop trigger
 * make bpm sync the default (maybe check (at init?if tempo available)
 * don't create a new smoother on every new tap?
+# TODO: test!
 * smarter s2v seconds: if s < max seconds: interpret as seconds else as ms     or just always as sec?
 * make attack and release Exponential?
 * see which param needs an Arc and why
@@ -36,42 +37,9 @@ https://discord.com/channels/590254806208217089/948004564005703740/1185546968206
 ** https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Locations+Format/Preset+Locations.html
 ** https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Presets+Program+Lists/Index.html
 * position action labels
-* slider psitions: offset & note>pan down a bit, type & cutoff up a bit
+* slider positions: offset & note>pan down a bit, type & cutoff up a bit
 * keep glow on hover action?
 ** maybe put it everywhere?
 ** otoh: this differentiates the triggers from the knobs
 
-
-* layout
-easy mode:
-| easy/expert   |           |   | FILTERS       | MODULATION                      |
-| direct/toggle | dry/wet   |   | filter type   | cutoff mod type (velocity/note) |
-| TRIGGERS      |           |   | cutoff/octave | cutoff mod amount/transpose     |
-| mute in       | mute out  |   | resonance     | res mod amount                  |
-| clear taps    | lock taps |   | drive         | drive mod amount                |
-
-dry/wet direct/toggle       || type (lp/bp/hp) / cutoff mod (velocity/note)
-triggers                    ||         "low vel / high vel" -> "main /  modulation"
-
-global drive is not needed with main/modulation
-
-
-* gain compensation:
-
-| main | mod | pre | post |
-|  -30 | -12 | -42 |   30 |
-|  -30 |   0 | -30 |   30 |
-|  -30 |  12 | -18 |   30 |
-|   -9 | -12 | -21 |    9 |
-|   -9 |   0 | -90 |    9 |
-|   -9 |  12 |   3 |    9 |
-|    0 | -12 | -12 |    0 |
-|    0 |   0 |   0 |    0 |
-|    0 |  12 |  12 |    0 |
-|    9 | -12 |  -3 |   -9 |
-|    9 |   0 |   9 |   -9 |
-|    9 |  12 |  21 |   -9 |
-|   30 | -12 |  18 |  -30 |
-|   30 |   0 |  30 |  -30 |
-|   30 |  12 |  42 |  -18 |
 
