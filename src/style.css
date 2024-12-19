@@ -228,7 +228,7 @@ action-trigger {
 
 .action-label {
     right: 1s;
-    bottom: 3px;
+    bottom: 0px;
     transition: background-color 120ms;
     transition: shadow 120ms;
 }
