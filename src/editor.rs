@@ -66,8 +66,7 @@ impl Model for Data {
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub fn default_state() -> Arc<ViziaState> {
-    // ViziaState::new(|| (1204, 903))
-    ViziaState::new(|| (1204, 744))
+    ViziaState::new(|| (1301, 804))
 }
 
 pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dyn Editor>> {
@@ -103,7 +102,13 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
 fn full_parameters(cx: &mut Context) {
     HStack::new(cx, |cx| {
         VStack::new(cx, |cx| {
-            Label::new(cx, "global").class("group-title");
+            ZStack::new(cx, |cx| {
+                HStack::new(cx, |cx| {
+                    CollapseButton::new(cx).class("show-full-parameters");
+                })
+                .class("row");
+                Label::new(cx, "global").class("group-title");
+            });
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "dry/wet").class("slider-label");
@@ -112,23 +117,9 @@ fn full_parameters(cx: &mut Context) {
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "listen to").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.global.channel)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "wet gain").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.global.wet_gain)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.global.global_drive)
+                    Label::new(cx, "mutes").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
+                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");
                 })
                 .class("row");
@@ -170,25 +161,21 @@ fn full_parameters(cx: &mut Context) {
             .class("param-group");
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "mutes").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
-                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
                     Label::new(cx, "sync").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.global.sync)
                         .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");
                 })
                 .class("row");
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "listen to").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.global.channel)
+                        .class("widget");
+                })
+                .class("row");
             })
             .class("param-group");
-            ZStack::new(cx, |cx| {
-                CollapseButton::new(cx).class("show-full-parameters");
-                Label::new(cx, "triggers").class("mid-group-title");
-            });
+            Label::new(cx, "triggers").class("mid-group-title");
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "mute in").class("action-name");
@@ -264,8 +251,8 @@ fn full_parameters(cx: &mut Context) {
 
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "center").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.panning_center)
+                    Label::new(cx, "offset").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.panning_offset)
                         .class("widget");
                 })
                 .class("row");
@@ -282,230 +269,230 @@ fn full_parameters(cx: &mut Context) {
 
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "vel>cut").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| {
-                        &params.taps.velocity_to_cutoff_amount
-                    })
-                    .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "note>cut").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| {
-                        &params.taps.note_to_cutoff_amount
-                    })
-                    .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
-
-            HStack::new(cx, |cx| {
-                Label::new(cx, "low velocity").class("column-title");
-                Label::new(cx, "high velocity").class("column-title");
-            })
-            .class("column-title-group");
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_low.cutoff)
+                    Label::new(cx, "type").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.filter_type)
                         .class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.cutoff)
+                    Label::new(cx, "cutoff mode").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.use_note_frequency)
+                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");
                 })
                 .class("row");
             })
             .class("param-group");
-
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "res").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_low.res)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "res").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.res)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
-
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_low.drive)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "drive").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.drive)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
-
-            HStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "mode").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_low.mode)
-                        .class("widget");
-                })
-                .class("row");
-                HStack::new(cx, |cx| {
-                    Label::new(cx, "mode").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.velocity_high.mode)
-                        .class("widget");
-                })
-                .class("row");
-            })
-            .class("param-group");
+            filter_parameters(cx);
         })
         .class("parameters-right");
     })
     .class("parameters-all");
 }
 
-fn minimal_parameters(cx: &mut Context) {
-    VStack::new(cx, |cx| {
-        ZStack::new(cx, |cx| {
-            HStack::new(cx, |cx| {
-                Label::new(cx, "triggers").class("mid-group-title");
-                Label::new(cx, "low velocity").class("low-velocity-minimal-title");
-                Label::new(cx, "high velocity").class("column-title");
-            })
-            .class("column-title-group-minimal");
-            CollapseButton::new(cx).class("show-full-parameters");
-        });
-        HStack::new(cx, |cx| {
-            VStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    HStack::new(cx, |cx| {
-                        Label::new(cx, "mute in").class("action-name");
-                        ActionTrigger::new(
-                            cx,
-                            Data::params,
-                            Data::is_learning,
-                            Data::learning_index,
-                            Data::learned_notes,
-                            Data::last_learned_notes,
-                            Data::last_played_notes,
-                            Data::enabled_actions,
-                            MUTE_IN,
-                        );
-                    })
-                    .class("row");
-                    HStack::new(cx, |cx| {
-                        Label::new(cx, "clear taps").class("action-name");
-                        ActionTrigger::new(
-                            cx,
-                            Data::params,
-                            Data::is_learning,
-                            Data::learning_index,
-                            Data::learned_notes,
-                            Data::last_learned_notes,
-                            Data::last_played_notes,
-                            Data::enabled_actions,
-                            CLEAR_TAPS,
-                        );
-                    })
-                    .class("row");
-                })
-                .class("param-group");
-
-                HStack::new(cx, |cx| {
-                    HStack::new(cx, |cx| {
-                        Label::new(cx, "mute out").class("action-name");
-                        ActionTrigger::new(
-                            cx,
-                            Data::params,
-                            Data::is_learning,
-                            Data::learning_index,
-                            Data::learned_notes,
-                            Data::last_learned_notes,
-                            Data::last_played_notes,
-                            Data::enabled_actions,
-                            MUTE_OUT,
-                        );
-                    })
-                    .class("row");
-                    HStack::new(cx, |cx| {
-                        Label::new(cx, "lock taps").class("action-name");
-                        ActionTrigger::new(
-                            cx,
-                            Data::params,
-                            Data::is_learning,
-                            Data::learning_index,
-                            Data::learned_notes,
-                            Data::last_learned_notes,
-                            Data::last_played_notes,
-                            Data::enabled_actions,
-                            LOCK_TAPS,
-                        );
-                    })
-                    .class("row");
-                })
-                .class("param-group");
-            })
-            .class("parameters-left");
-
-            VStack::new(cx, |cx| {
-                // Label::new(cx, "filters").class("mid-group-title");
-
-                HStack::new(cx, |cx| {
-                    HStack::new(cx, |cx| {
-                        Label::new(cx, "cutoff").class("slider-label");
-                        ParamSlider::new(cx, Data::params, |params| {
-                            &params.taps.velocity_low.cutoff
-                        })
-                        .class("widget");
-                    })
-                    .class("row");
-                    HStack::new(cx, |cx| {
-                        Label::new(cx, "cutoff").class("slider-label");
-                        ParamSlider::new(cx, Data::params, |params| {
-                            &params.taps.velocity_high.cutoff
-                        })
-                        .class("widget");
-                    })
-                    .class("row");
-                })
-                .class("param-group");
-
-                HStack::new(cx, |cx| {
-                    HStack::new(cx, |cx| {
-                        Label::new(cx, "drive").class("slider-label");
-                        ParamSlider::new(cx, Data::params, |params| {
-                            &params.taps.velocity_low.drive
-                        })
-                        .class("widget");
-                    })
-                    .class("row");
-                    HStack::new(cx, |cx| {
-                        Label::new(cx, "drive").class("slider-label");
-                        ParamSlider::new(cx, Data::params, |params| {
-                            &params.taps.velocity_high.drive
-                        })
-                        .class("widget");
-                    })
-                    .class("row");
-                })
-                .class("param-group");
-            })
-            .class("parameters-right");
-        })
-        .class("parameters-minimal");
+fn filter_parameters(cx: &mut Context) {
+    HStack::new(cx, |cx| {
+        Label::new(cx, "main").class("column-title").class("left");
+        Label::new(cx, "modulation").class("column-title");
     })
-    .class("parameters-labels-minimal");
+    .class("column-title-group");
+    HStack::new(cx, |cx| {
+        Binding::new(
+            cx,
+            Data::params.map(|params| params.taps.use_note_frequency.value()), // Map to get the bool value
+            |cx, _modulation_type| {
+                let params = Data::params.get(cx);
+                if params.taps.use_note_frequency.value() {
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "octave").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_octave)
+                            .class("widget");
+                    })
+                    .class("row");
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "transpose").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_transpose)
+                            .class("widget");
+                    })
+                    .class("row");
+                } else {
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "cutoff").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_main)
+                            .class("widget");
+                    })
+                    .class("row");
+                    HStack::new(cx, |cx| {
+                        Label::new(cx, "velocity").class("slider-label");
+                        ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_mod)
+                            .class("widget");
+                    })
+                    .class("row");
+                }
+            },
+        );
+    })
+    .class("param-group");
+
+    HStack::new(cx, |cx| {
+        HStack::new(cx, |cx| {
+            Label::new(cx, "res").class("slider-label");
+            ParamSlider::new(cx, Data::params, |params| &params.taps.res_main).class("widget");
+        })
+        .class("row");
+        HStack::new(cx, |cx| {
+            Label::new(cx, "velocity").class("slider-label");
+            ParamSlider::new(cx, Data::params, |params| &params.taps.res_mod).class("widget");
+        })
+        .class("row");
+    })
+    .class("param-group");
+
+    HStack::new(cx, |cx| {
+        HStack::new(cx, |cx| {
+            Label::new(cx, "drive").class("slider-label");
+            ParamSlider::new(cx, Data::params, |params| &params.taps.drive_main).class("widget");
+        })
+        .class("row");
+        HStack::new(cx, |cx| {
+            Label::new(cx, "velocity").class("slider-label");
+            ParamSlider::new(cx, Data::params, |params| &params.taps.drive_mod).class("widget");
+        })
+        .class("row");
+    })
+    .class("param-group");
 }
+
+fn minimal_parameters(cx: &mut Context) {
+    HStack::new(cx, |cx| {
+        VStack::new(cx, |cx| {
+            ZStack::new(cx, |cx| {
+                HStack::new(cx, |cx| {
+                    CollapseButton::new(cx).class("show-full-parameters");
+                })
+                .class("row");
+                Label::new(cx, "global").class("group-title");
+            })
+            .class("show-global");
+
+            HStack::new(cx, |cx| {
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "dry/wet").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.global.dry_wet)
+                        .class("widget");
+                })
+                .class("row");
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "mutes").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
+                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
+                        .class("widget");
+                })
+                .class("row");
+            })
+            .class("param-group");
+
+            Label::new(cx, "triggers").class("mid-group-title");
+            HStack::new(cx, |cx| {
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "mute in").class("action-name");
+                    ActionTrigger::new(
+                        cx,
+                        Data::params,
+                        Data::is_learning,
+                        Data::learning_index,
+                        Data::learned_notes,
+                        Data::last_learned_notes,
+                        Data::last_played_notes,
+                        Data::enabled_actions,
+                        MUTE_IN,
+                    );
+                })
+                .class("row");
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "clear taps").class("action-name");
+                    ActionTrigger::new(
+                        cx,
+                        Data::params,
+                        Data::is_learning,
+                        Data::learning_index,
+                        Data::learned_notes,
+                        Data::last_learned_notes,
+                        Data::last_played_notes,
+                        Data::enabled_actions,
+                        CLEAR_TAPS,
+                    );
+                })
+                .class("row");
+            })
+            .class("param-group");
+
+            HStack::new(cx, |cx| {
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "mute out").class("action-name");
+                    ActionTrigger::new(
+                        cx,
+                        Data::params,
+                        Data::is_learning,
+                        Data::learning_index,
+                        Data::learned_notes,
+                        Data::last_learned_notes,
+                        Data::last_played_notes,
+                        Data::enabled_actions,
+                        MUTE_OUT,
+                    );
+                })
+                .class("row");
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "lock taps").class("action-name");
+                    ActionTrigger::new(
+                        cx,
+                        Data::params,
+                        Data::is_learning,
+                        Data::learning_index,
+                        Data::learned_notes,
+                        Data::last_learned_notes,
+                        Data::last_played_notes,
+                        Data::enabled_actions,
+                        LOCK_TAPS,
+                    );
+                })
+                .class("row");
+            })
+            .class("param-group");
+        })
+        .class("parameters-left");
+
+        VStack::new(cx, |cx| {
+            Label::new(cx, "filters").class("group-title");
+
+            HStack::new(cx, |cx| {
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "type").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.filter_type)
+                        .class("widget");
+                })
+                .class("row");
+
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "cutoff mode").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.use_note_frequency)
+                        .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
+                        .class("widget");
+                })
+                .class("row");
+            })
+            .class("param-group");
+
+            filter_parameters(cx);
+        })
+        .class("parameters-right");
+    })
+    .class("parameters-minimal");
+    // })
+    // .class("parameters-labels-minimal");
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //                             DelayGraph                            //
 ///////////////////////////////////////////////////////////////////////////////
@@ -1080,7 +1067,7 @@ impl DelayGraph {
         border_color: vg::Color,
         background_color: vg::Color,
     ) {
-        let first_note = params.first_note.load(Ordering::SeqCst);
+        let first_note = params.first_note.load(Ordering::SeqCst) as f32;
 
         let mut note_path = vg::Path::new();
         let mut center_path = vg::Path::new();
@@ -1088,14 +1075,9 @@ impl DelayGraph {
         let mut pan_foreground_path = vg::Path::new();
 
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
-        let panning_center_value = params.taps.panning_center.value();
+        let panning_center =
+            (first_note + params.taps.panning_offset.value() * 127.0).clamp(0.0, 127.0);
         let panning_amount = params.taps.panning_amount.value();
-
-        let panning_center = if panning_center_value < 0 {
-            first_note
-        } else {
-            panning_center_value as u8
-        };
 
         let (min_note_value, max_note_value) = {
             // Initialize min and max with first_note and panning_center
@@ -1104,7 +1086,7 @@ impl DelayGraph {
 
             // Iterate through notes to find min and max
             for i in 0..tap_counter {
-                let loaded_note = params.notes[i].load(Ordering::SeqCst);
+                let loaded_note = params.notes[i].load(Ordering::SeqCst) as f32;
                 if loaded_note < min {
                     min = loaded_note;
                 } else if loaded_note > max {
@@ -1112,36 +1094,26 @@ impl DelayGraph {
                 }
             }
 
-            let zoom_min = if first_note < min + 12 {
-                first_note.saturating_sub(12)
-            } else {
-                min
-            };
-            let zoom_max = if max < first_note + 12 {
-                first_note.saturating_add(12)
-            } else {
-                max
-            };
-
-            let range_too_large = (i16::from(min) - i16::from(max)).abs() > 24;
-            let (final_min, final_max) = if range_too_large {
-                (min, max)
-            } else {
-                (zoom_min, zoom_max)
-            };
-
-            (f32::from(final_min), f32::from(final_max))
+            const ZOOM_NOTES: f32 = 12.0;
+            const HALF_ZOOM_NOTES: f32 = ZOOM_NOTES * 0.5;
+            let final_min = (first_note - HALF_ZOOM_NOTES)
+                .max(max - ZOOM_NOTES)
+                .min(min);
+            let final_max = (first_note + HALF_ZOOM_NOTES)
+                .min(min + ZOOM_NOTES)
+                .max(max);
+            (final_min, final_max)
         };
 
         let note_size = line_width * 2.0; // Width and height of a note
         let margin = 10.0 * line_width;
         let available_height = (-(margin + note_size + border_width)).mul_add(2.0, bounds.h);
 
-        let get_normalized_value = |value: u8, min: f32, max: f32| -> f32 {
+        let get_normalized_value = |value: f32, min: f32, max: f32| -> f32 {
             if (max - min).abs() < 0.5 {
-                f32::from(value) / 127.0
+                value / 127.0
             } else {
-                (f32::from(value) - min) / (max - min)
+                (value - min) / (max - min)
             }
         };
 
@@ -1260,7 +1232,7 @@ impl DelayGraph {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst);
             let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
 
-            let note_value = params.notes[i].load(Ordering::SeqCst);
+            let note_value = params.notes[i].load(Ordering::SeqCst) as f32;
             let normalized_note = get_normalized_value(note_value, min_note_value, max_note_value);
             let note_height = Self::gui_smooth(
                 1.0 - normalized_note,
@@ -1714,9 +1686,9 @@ impl CollapseButton {
                 Data::show_full_parameters.map(|show_full_parameters| {
                     // ▲ ▼ ◀ ▶
                     if *show_full_parameters {
-                        String::from("▴")
+                        String::from("show less")
                     } else {
-                        String::from("▸")
+                        String::from("show more")
                     }
                 }),
             );

@@ -13,38 +13,36 @@
 
 .parameters-left {
     top: 0px;
-    bottom: 13px;
+    bottom: 9px;
     left: 0px;
     right: 1s;
+    child-right: 9px;
     width: 50%;
 }
 
 .parameters-right {
     top: 0px;
-    bottom: 13px;
+    bottom: 9px;
     right: 13px;
     width: 50%;
 }
 .parameters-all {
-    /* height: 402px; */
-    height: 390px;
+    height: 370px;
 }
 .parameters-minimal {
     top: 0px;
     bottom: 0px;
-    /* background-color: #5879af; */
-    /* top: 13px; */
-    height: 80px;
+    height: 260px;
 }
 
 .parameters-labels-minimal {
     top: 4px;
     bottom: 4px;
-    height: 124px;
+    height: 324px;
 }
 param-slider {
     height: 30px;
-    width: 194px;
+    width: 210px;
     border-width: 1px;
     background-color: #4e4e4e;
     border-color: #fabdf0;
@@ -60,6 +58,11 @@ param-slider:hover {
 
 param-slider .fill {
     background-color: #5879af;
+    /* TODO: make this add to the other glow */
+    /* box-shadow: 0px 0px 9px #5879afbf; */
+}
+param-slider .fill--modulation {
+    background-color: #e0ce9109;
 }
 /* param-slider .fill--modulation { */
 /* background-color: #a4eafc69; */
@@ -79,15 +82,14 @@ param-slider .value-entry .selection {
     background-color: #fabdf0;
 }
 .show-full-parameters {
-    font-size: 69;
+    font-size: 30;
     color: #4e4e4e;
-    height: 30px;
-    width: 30px;
-    left: 10px;
-    top: 1s;
-    bottom: 19px;
+    /* height: 30px; */
+    width: auto;
+    left: 13px;
+
+    top: 8px;
     transition: color 240ms;
-    box-shadow: 0px 0px 08px #4e4e4e;
 }
 .show-full-parameters:active,
 .show-full-parameters:hover {
@@ -104,10 +106,13 @@ param-slider .value-entry .selection {
     box-shadow: 0px 0px 16px #fabdf009;
 }
 
+.show-global {
+    height: 48px;
+}
 .group-title {
     font-size: 30;
     /* // This should align nicely with the right edge of the slider */
-    left: 303px;
+    left: 323px;
     right: 1s;
     top: 0px;
     bottom: 9px;
@@ -117,7 +122,7 @@ param-slider .value-entry .selection {
 .mid-group-title {
     font-size: 30;
     /* // This should align nicely with the right edge of the slider */
-    left: 303px;
+    left: 323px;
     right: 1s;
     top: 1s;
     bottom: 9px;
@@ -126,21 +131,27 @@ param-slider .value-entry .selection {
 
 .column-title {
     font-size: 23;
-    left: 1s;
     right: 0px;
     box-shadow: 0px 0px 24px #e0ce9109;
 }
-.low-velocity-minimal-title {
-    font-size: 23;
-    left: 280px;
+/* TODO: this should not be needed: */
+.left {
+    left: 258px;
+}
+.column-title-group-minimal {
+    /* height: auto; */
+    background-color: #fabdf00a;
+    /* width: 100%; */
+    /* left: 18px; */
     /* right: 0px; */
-    box-shadow: 0px 0px 24px #e0ce9109;
+    /* top: 19px; */
+    /* bottom: 9px; */
 }
 .column-title-group {
     height: auto;
     left: 18px;
     right: 0px;
-    top: 3px;
+    top: 19px;
     bottom: 9px;
 }
 .column-title-group-minimal {
@@ -187,7 +198,7 @@ delay-graph {
 }
 
 action-trigger {
-    width: 194px;
+    width: 210px;
     height: 30px;
     top: 0px;
     bottom: 0px;
@@ -200,13 +211,20 @@ action-trigger {
     transition: background-color 240ms;
 }
 
+.trigger-element {
+    width: 210px;
+    height: 30px;
+
+    border-width: 1px;
+    border-color: #fabdf0;
+    box-shadow: 0px 0px 13px #fabdf03f;
+}
 action-trigger:hover {
     background-color: #292929;
     transition: background-color 120ms;
 }
 .action-name {
     right: 9px;
-    top: 1s;
     bottom: 4px;
     box-shadow: 0px 0px 24px #e0ce9109;
 }
