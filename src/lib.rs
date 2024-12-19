@@ -228,7 +228,7 @@ impl GlobalParams {
                 },
             )
             .with_value_to_string(Del2::v2s_f32_ms_then_s(3))
-            .with_string_to_value(Del2::s2v_f32_ms_then_s()),
+            .with_string_to_value(Del2::s2v_f32_s_or_ms_if_bigger_than(5_000.0)),
             release_ms: FloatParam::new(
                 "Release",
                 13.0,
@@ -239,7 +239,7 @@ impl GlobalParams {
                 },
             )
             .with_value_to_string(Del2::v2s_f32_ms_then_s(3))
-            .with_string_to_value(Del2::s2v_f32_ms_then_s()),
+            .with_string_to_value(Del2::s2v_f32_s_or_ms_if_bigger_than(20_000.0)),
             min_tap_milliseconds: FloatParam::new(
                 "min tap",
                 13.0,
@@ -250,7 +250,7 @@ impl GlobalParams {
                 },
             )
             .with_value_to_string(Del2::v2s_f32_ms_then_s(3))
-            .with_string_to_value(Del2::s2v_f32_ms_then_s()),
+            .with_string_to_value(Del2::s2v_f32_s_or_ms_if_bigger_than(1000.0)),
             max_tap_ms: FloatParam::new(
                 "max tap",
                 3030.0,
@@ -261,7 +261,9 @@ impl GlobalParams {
                 },
             )
             .with_value_to_string(Del2::v2s_f32_ms_then_s(3))
-            .with_string_to_value(Del2::s2v_f32_ms_then_s()),
+            .with_string_to_value(Del2::s2v_f32_s_or_ms_if_bigger_than(
+                MAX_TAP_SECONDS as f32 * 1000.0,
+            )),
 
             channel: IntParam::new(
                 "channel",
@@ -1502,6 +1504,48 @@ impl Del2 {
                     (total_digits - seconds.trunc().to_string().len()).max(0);
                 format!("{seconds:.digits_after_decimal$} s")
             }
+        })
+    }
+
+    // TODO: test, when skia vizia fixes the bug where it won't go into text mode
+    fn s2v_f32_s_or_ms_if_bigger_than(
+        max_val: f32,
+    ) -> Arc<dyn Fn(&str) -> Option<f32> + Send + Sync> {
+        Arc::new(move |string| {
+            let string = string.trim().to_lowercase();
+
+            if let Some(ms_value_str) = string
+                .strip_suffix("ms")
+                .or_else(|| string.strip_suffix(" ms"))
+            {
+                // Explicitly specified as milliseconds
+                return ms_value_str.trim().parse::<f32>().ok();
+            }
+
+            if let Some(s_value_str) = string
+                .strip_suffix("s")
+                .or_else(|| string.strip_suffix(" s"))
+            {
+                // Explicitly specified as seconds
+                return s_value_str.trim().parse::<f32>().ok().map(|s| {
+                    let ms_value = s * 1000.0;
+                    if ms_value > max_val {
+                        ms_value // Treat it as milliseconds
+                    } else {
+                        s // Keep as seconds if the milliseconds value isn't greater than max_val
+                    }
+                });
+            }
+
+            // If no specification, interpret as seconds and check
+            string.parse::<f32>().ok().map(|val| {
+                let ms_value = val * 1000.0;
+                if ms_value > max_val {
+                    ms_value // Treat it as milliseconds
+                } else {
+                    val // Keep as seconds
+                }
+            })
         })
     }
 
