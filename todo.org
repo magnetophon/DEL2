@@ -43,3 +43,4 @@ https://discord.com/channels/590254806208217089/948004564005703740/1185546968206
 ** otoh: this differentiates the triggers from the knobs
 * on hover: more is more / less is more
 * zoom notes only after time-out?
+* show (& change) mod amount in main knob
