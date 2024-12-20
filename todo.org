@@ -44,3 +44,33 @@ https://discord.com/channels/590254806208217089/948004564005703740/1185546968206
 * on hover: more is more / less is more
 * zoom notes only after time-out?
 * show (& change) mod amount in main knob
+* match note zooming main to skia
+* make gui_zoom take a f32 current_value and an atomic bool should_smooth?
+** less atomic reads: only needs one bool for all taps
+** less atomic writes: only when the bool changes, not during smoothing
+** imp:
+/// Smoothly updates the value based on a target value and a smoothing flag.
+/// If the smoothing flag is false, it directly returns the target value.
+fn gui_smooth(target_value: f32, current_value: f32, should_smooth: &AtomicBool, gui_decay_weight: f32) -> f32 {
+    // Check if smoothing should be applied
+    if !should_smooth.load(Ordering::SeqCst) {
+        return target_value;
+    }
+
+    // Define the threshold relative to the target value
+    let threshold = 0.001 * target_value.abs();
+
+    // Early exit if the current value is very close to the target value
+    if (target_value - current_value).abs() < threshold {
+        return target_value;
+    }
+
+    // Compute the smoothed value using frame-rate independent smoothing
+    let smoothed_value = current_value.mul_add(
+        gui_decay_weight,
+        target_value.mul_add(-gui_decay_weight, target_value),
+    );
+
+    // Return the smoothed value
+    smoothed_value
+}
