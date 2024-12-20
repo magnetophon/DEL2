@@ -877,14 +877,14 @@ impl DelayGraph {
         );
 
         let glow_paint = vg::Paint::box_gradient(
-            box_width.mul_add(-0.5, x_pos),                                    // x
-            bounds.y,                                                          // y
-            box_width,                                                         // width
-            box_height,                                                        // height
-            corner_radius,                                                     // radius
-            feather,                                                           // feather
-            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 137), // Core color
-            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0),   // Fade out
+            box_width.mul_add(-0.5, x_pos),                                   // x
+            bounds.y,                                                         // y
+            box_width,                                                        // width
+            box_height,                                                       // height
+            corner_radius,                                                    // radius
+            feather,                                                          // feather
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 81), // Core color
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0),  // Fade out
         );
 
         // Create and fill glow path
@@ -1008,7 +1008,7 @@ impl DelayGraph {
                 y_end - y_start,                                                   // height
                 corner_radius,                                                     // radius
                 feather,                                                           // feather
-                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142), // Core color
+                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 107), // Core color
                 vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0),   // Fade out
             );
 
@@ -1111,8 +1111,8 @@ impl DelayGraph {
             (final_min, final_max)
         };
 
-        let note_size = line_width * 2.0; // Width and height of a note
-        let margin = 10.0 * line_width;
+        let note_size = line_width * 3.0; // Width and height of a note
+        let margin = 42.0;
         let available_height = (-(margin + note_size + border_width)).mul_add(2.0, bounds.h);
 
         let get_normalized_value = |value: f32, min: f32, max: f32| -> f32 {
@@ -1142,10 +1142,10 @@ impl DelayGraph {
             (font_color.b * 255.0) as u8,
         );
 
-        let note_half_size = line_width;
+        let note_half_size = line_width * 1.74;
         let box_width = note_half_size * 2.0;
         let corner_radius = box_width * 0.5;
-        let feather = box_width * 1.75;
+        let feather = box_width * 0.75;
         let padding = feather * 2.0;
 
         let normalized_first_note =
@@ -1165,7 +1165,7 @@ impl DelayGraph {
                 box_width,                                 // height
                 corner_radius,                             // radius
                 feather,                                   // feather
-                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 127),
+                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 74),
                 vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0),
             );
 
@@ -1209,7 +1209,7 @@ impl DelayGraph {
             box_width,                                    // height
             corner_radius,                                // radius
             feather,                                      // feather
-            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142), // Core color
+            vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 81), // Core color
             vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0), // Fade out
         );
 
@@ -1258,7 +1258,7 @@ impl DelayGraph {
                 box_width,                              // height
                 corner_radius,                          // radius
                 feather,                                // feather
-                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 142), // Core color
+                vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 81), // Core color
                 vg::Color::rgba(color_bytes.0, color_bytes.1, color_bytes.2, 0), // Fade out
             );
 
@@ -1374,7 +1374,7 @@ impl DelayGraph {
             &pan_background_path,
             &vg::Paint::color(border_color).with_line_width(line_width),
         );
-        canvas.stroke_path(
+        canvas.fill_path(
             &center_path,
             &vg::Paint::color(font_color).with_line_width(line_width),
         );
@@ -1382,7 +1382,7 @@ impl DelayGraph {
             &pan_foreground_path,
             &vg::Paint::color(font_color).with_line_width(line_width),
         );
-        canvas.stroke_path(
+        canvas.fill_path(
             &note_path,
             &vg::Paint::color(color).with_line_width(line_width),
         );
