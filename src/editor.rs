@@ -80,21 +80,22 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
 
         editor_data.clone().build(cx);
 
-        VStack::new(cx, |cx| {
-            ZStack::new(cx, |cx| {
-                DelayGraph::new(cx, Data::params, Data::tap_meters, Data::input_meter, Data::output_meter, Data::meter_indexes)
+        ZStack::new(cx, |cx| {
+            VStack::new(cx, |cx| {
+                ZStack::new(cx, |cx| {
+                    DelayGraph::new(cx, Data::params, Data::tap_meters, Data::input_meter, Data::output_meter, Data::meter_indexes)
                 // .overflow(Overflow::Hidden)
                     ;
-                Label::new(cx, "DEL2").class("plugin-name");
+                    Label::new(cx, "DEL2").class("plugin-name");
+                });
+                Binding::new(cx, Data::show_full_parameters, |cx, show| {
+                    if show.get(cx) {
+                        full_parameters(cx);
+                    } else {
+                        minimal_parameters(cx);
+                    }
+                });
             });
-            Binding::new(cx, Data::show_full_parameters, |cx, show| {
-                if show.get(cx) {
-                    full_parameters(cx);
-                } else {
-                    minimal_parameters(cx);
-                }
-            });
-
             ResizeHandle::new(cx);
         });
     })
@@ -103,12 +104,11 @@ fn full_parameters(cx: &mut Context) {
     HStack::new(cx, |cx| {
         VStack::new(cx, |cx| {
             ZStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    CollapseButton::new(cx).class("show-full-parameters");
-                })
-                .class("row");
+                CollapseButton::new(cx).class("show-full-parameters");
                 Label::new(cx, "global").class("group-title");
-            });
+            })
+            .class("collapse-zstack");
+
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "dry/wet").class("slider-label");
@@ -118,7 +118,7 @@ fn full_parameters(cx: &mut Context) {
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "mute mode").class("slider-label");
+                    Label::new(cx, "mute").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
                         .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");
@@ -248,7 +248,10 @@ fn full_parameters(cx: &mut Context) {
         .class("parameters-left");
 
         VStack::new(cx, |cx| {
-            Label::new(cx, "panning").class("group-title");
+            ZStack::new(cx, |cx| {
+                Label::new(cx, "panning").class("group-title");
+            })
+            .class("collapse-zstack");
 
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
@@ -276,7 +279,7 @@ fn full_parameters(cx: &mut Context) {
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff mode").class("slider-label");
+                    Label::new(cx, "cutoff").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.taps.use_note_frequency)
                         .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");
@@ -369,13 +372,10 @@ fn minimal_parameters(cx: &mut Context) {
     HStack::new(cx, |cx| {
         VStack::new(cx, |cx| {
             ZStack::new(cx, |cx| {
-                HStack::new(cx, |cx| {
-                    CollapseButton::new(cx).class("show-full-parameters");
-                })
-                .class("row");
+                CollapseButton::new(cx).class("show-full-parameters");
                 Label::new(cx, "global").class("group-title");
             })
-            .class("show-global");
+            .class("collapse-zstack");
 
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
@@ -386,7 +386,7 @@ fn minimal_parameters(cx: &mut Context) {
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "mute mode").class("slider-label");
+                    Label::new(cx, "mute").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.global.mute_is_toggle)
                         .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");
@@ -467,7 +467,10 @@ fn minimal_parameters(cx: &mut Context) {
         .class("parameters-left");
 
         VStack::new(cx, |cx| {
-            Label::new(cx, "filters").class("group-title");
+            ZStack::new(cx, |cx| {
+                Label::new(cx, "filters").class("group-title");
+            })
+            .class("collapse-zstack");
 
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
@@ -478,7 +481,7 @@ fn minimal_parameters(cx: &mut Context) {
                 .class("row");
 
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "cutoff mode").class("slider-label");
+                    Label::new(cx, "cutoff").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.taps.use_note_frequency)
                         .set_style(ParamSliderStyle::CurrentStepLabeled { even: true })
                         .class("widget");

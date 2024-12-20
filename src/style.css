@@ -13,21 +13,22 @@
 
 .parameters-left {
     top: 0px;
-    bottom: 9px;
+    bottom: 13px;
     left: 0px;
     right: 1s;
-    child-right: 9px;
     width: 50%;
 }
 
 .parameters-right {
     top: 0px;
-    bottom: 9px;
+    bottom: 13px;
+    left: 0px;
     right: 13px;
     width: 50%;
 }
 .parameters-all {
-    height: 370px;
+    /* height: 370px; */
+    height: 369px;
 }
 .parameters-minimal {
     top: 0px;
@@ -64,9 +65,9 @@ param-slider .fill {
 param-slider .fill--modulation {
     background-color: #e0ce9109;
 }
-/* param-slider .fill--modulation { */
-/* background-color: #a4eafc69; */
-/* } */
+param-slider .fill--modulation {
+    background-color: #a4eafc69;
+}
 
 /* This is a textbox, but we want it to appear just like the label */
 param-slider .value-entry {
@@ -83,12 +84,14 @@ param-slider .value-entry .selection {
 }
 .show-full-parameters {
     font-size: 30;
+    top: 0px;
+    bottom: 9px;
     color: #4e4e4e;
     /* height: 30px; */
     width: auto;
     left: 13px;
 
-    top: 8px;
+    /* top: 8px; */
     transition: color 240ms;
 }
 .show-full-parameters:active,
@@ -106,7 +109,7 @@ param-slider .value-entry .selection {
     box-shadow: 0px 0px 16px #fabdf009;
 }
 
-.show-global {
+.collapse-zstack {
     height: 48px;
 }
 .group-title {
@@ -138,28 +141,12 @@ param-slider .value-entry .selection {
 .left {
     left: 258px;
 }
-.column-title-group-minimal {
-    /* height: auto; */
-    background-color: #fabdf00a;
-    /* width: 100%; */
-    /* left: 18px; */
-    /* right: 0px; */
-    /* top: 19px; */
-    /* bottom: 9px; */
-}
 .column-title-group {
     height: auto;
     left: 18px;
     right: 0px;
-    top: 19px;
+    top: 18px;
     bottom: 9px;
-}
-.column-title-group-minimal {
-    /* height: 30px; */
-    left: 0px;
-    right: 13px;
-    top: 0px;
-    bottom: 0px;
 }
 .slider-label {
     left: 1s;
@@ -211,14 +198,6 @@ action-trigger {
     transition: background-color 240ms;
 }
 
-.trigger-element {
-    width: 210px;
-    height: 30px;
-
-    border-width: 1px;
-    border-color: #fabdf0;
-    box-shadow: 0px 0px 13px #fabdf03f;
-}
 action-trigger:hover {
     background-color: #292929;
     transition: background-color 120ms;
