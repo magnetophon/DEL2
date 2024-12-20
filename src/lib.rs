@@ -1545,7 +1545,7 @@ impl Del2 {
         })
     }
 
-    fn s2v_f32_ms_then_s() -> Arc<dyn Fn(&str) -> Option<f32> + Send + Sync> {
+    fn _s2v_f32_ms_then_s() -> Arc<dyn Fn(&str) -> Option<f32> + Send + Sync> {
         Arc::new(move |string| {
             let string = string.trim().to_lowercase();
             if let Some(ms_value_str) = string
