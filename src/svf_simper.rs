@@ -77,7 +77,7 @@ impl SVFSimper {
     }
     #[allow(dead_code)]
     #[inline]
-    pub fn process(&mut self, v0: f32x4) -> f32x4 {
+    pub fn lowpass(&mut self, v0: f32x4) -> f32x4 {
         let v3 = v0 - self.ic2eq;
         let v1 = (self.a1 * self.ic1eq) + (self.a2 * v3);
         let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
@@ -87,7 +87,24 @@ impl SVFSimper {
 
         v2
     }
+    #[inline]
+    pub fn highpass(&mut self, v0: f32x4) -> f32x4 {
+        let v3 = v0 - self.ic2eq;
+        let v1 = (self.a1 * self.ic1eq) + (self.a2 * v3);
+        let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
 
+        self.ic1eq = (f32x4::splat(2.0) * v1) - self.ic1eq;
+        self.ic2eq = (f32x4::splat(2.0) * v2) - self.ic2eq;
+
+        // should be this:
+        // v0 - k * v1 - v2
+        // but we don't have k
+        v0 - v2
+    }
+
+    // TODO:
+    // last 0.1dB: fade to input,
+    // at 0.0dB: early exit
     #[inline]
     pub fn highshelf(&mut self, v0: f32x4, lin_gain: f32x4) -> f32x4 {
         let v3 = v0 - self.ic2eq;

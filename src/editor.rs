@@ -28,7 +28,7 @@ const ZOOM_NOTES: f32 = 12.0;
 const HALF_ZOOM_NOTES: f32 = ZOOM_NOTES * 0.5;
 
 /// The minimum decibel value that the meters display
-const MIN_TICK: f32 = -60.0;
+const MIN_TICK: f32 = -90.0;
 /// The maximum decibel value that the meters display
 const MAX_TICK: f32 = 0.0;
 
