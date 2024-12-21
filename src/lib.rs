@@ -457,7 +457,6 @@ impl TapsParams {
                 IntRange::Linear { min: -12, max: 12 },
             )
             .with_callback(Arc::new({
-                let should_update_filter = should_update_filter;
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
         }

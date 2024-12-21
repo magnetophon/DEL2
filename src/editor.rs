@@ -24,6 +24,9 @@ use crate::nih_log;
 const GUI_SMOOTHING_DECAY_MS: f64 = 242.0;
 const MAX_LEARNING_NANOS: u64 = 10_000_000_000; // 10 seconds
 
+const ZOOM_NOTES: f32 = 12.0;
+const HALF_ZOOM_NOTES: f32 = ZOOM_NOTES * 0.5;
+
 /// The minimum decibel value that the meters display
 const MIN_TICK: f32 = -60.0;
 /// The maximum decibel value that the meters display
@@ -1104,8 +1107,6 @@ impl DelayGraph {
                 }
             }
 
-            const ZOOM_NOTES: f32 = 12.0;
-            const HALF_ZOOM_NOTES: f32 = ZOOM_NOTES * 0.5;
             let final_min = (first_note - HALF_ZOOM_NOTES)
                 .max(max - ZOOM_NOTES)
                 .min(min);
