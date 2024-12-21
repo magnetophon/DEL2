@@ -1073,7 +1073,7 @@ impl DelayGraph {
         border_color: vg::Color,
         background_color: vg::Color,
     ) {
-        let first_note = params.first_note.load(Ordering::SeqCst) as f32;
+        let first_note = f32::from(params.first_note.load(Ordering::SeqCst));
 
         let mut note_path = vg::Path::new();
         let mut center_path = vg::Path::new();
@@ -1081,8 +1081,12 @@ impl DelayGraph {
         let mut pan_foreground_path = vg::Path::new();
 
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
-        let panning_center =
-            (first_note + params.taps.panning_offset.value() * 127.0).clamp(0.0, 127.0);
+        let panning_center = params
+            .taps
+            .panning_offset
+            .value()
+            .mul_add(127.0, first_note)
+            .clamp(0.0, 127.0);
         let panning_amount = params.taps.panning_amount.value();
 
         let (min_note_value, max_note_value) = {
@@ -1092,7 +1096,7 @@ impl DelayGraph {
 
             // Iterate through notes to find min and max
             for i in 0..tap_counter {
-                let loaded_note = params.notes[i].load(Ordering::SeqCst) as f32;
+                let loaded_note = f32::from(params.notes[i].load(Ordering::SeqCst));
                 if loaded_note < min {
                     min = loaded_note;
                 } else if loaded_note > max {
@@ -1238,7 +1242,7 @@ impl DelayGraph {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst);
             let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
 
-            let note_value = params.notes[i].load(Ordering::SeqCst) as f32;
+            let note_value = f32::from(params.notes[i].load(Ordering::SeqCst));
             let normalized_note = get_normalized_value(note_value, min_note_value, max_note_value);
             let note_height = Self::gui_smooth(
                 1.0 - normalized_note,
@@ -1287,8 +1291,7 @@ impl DelayGraph {
             note_path.line_to(note_center_x, note_center_y - note_half_size);
             note_path.close();
 
-            let pan_value = ((f32::from(note_value) - f32::from(panning_center)) * panning_amount)
-                .clamp(-1.0, 1.0);
+            let pan_value = ((note_value - panning_center) * panning_amount).clamp(-1.0, 1.0);
 
             let line_length = if pan_value.abs() > 1.0 / 50.0 {
                 50.0

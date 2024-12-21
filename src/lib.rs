@@ -343,14 +343,13 @@ impl TapsParams {
             .with_unit(" %")
             .with_value_to_string(formatters::v2s_f32_percentage(0))
             .with_string_to_value(formatters::s2v_f32_percentage()),
-            filter_type: EnumParam::new(format!("filter type"), MyLadderMode::lp6()).with_callback(
-                Arc::new({
+            filter_type: EnumParam::new("filter type".to_string(), MyLadderMode::lp6())
+                .with_callback(Arc::new({
                     let should_update_filter = should_update_filter.clone();
                     move |_| should_update_filter.store(true, Ordering::Release)
-                }),
-            ),
+                })),
 
-            use_note_frequency: BoolParam::new(format!("cutoff mode"), false)
+            use_note_frequency: BoolParam::new("cutoff mode".to_string(), false)
                 .with_callback(Arc::new({
                     let should_update_filter = should_update_filter.clone();
                     move |_| should_update_filter.store(true, Ordering::Release)
@@ -364,7 +363,7 @@ impl TapsParams {
                 })),
 
             cutoff_main: FloatParam::new(
-                format!("cutoff"),
+                "cutoff".to_string(),
                 1_690.0,
                 FloatRange::Skewed {
                     min: 10.0,
@@ -379,7 +378,7 @@ impl TapsParams {
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
             res_main: FloatParam::new(
-                format!("resonance"),
+                "resonance".to_string(),
                 0.13,
                 FloatRange::Linear { min: 0., max: 1. },
             )
@@ -389,7 +388,7 @@ impl TapsParams {
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
             drive_main: FloatParam::new(
-                format!("drive"),
+                "drive".to_string(),
                 13.0,
                 FloatRange::Skewed {
                     min: 0.0,
@@ -403,7 +402,7 @@ impl TapsParams {
             .with_unit(" dB"),
 
             cutoff_mod: FloatParam::new(
-                format!("cutoff mod"),
+                "cutoff mod".to_string(),
                 0.13,
                 FloatRange::Linear {
                     min: -1.0,
@@ -418,7 +417,7 @@ impl TapsParams {
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
             res_mod: FloatParam::new(
-                format!("resonance mod"),
+                "resonance mod".to_string(),
                 0.0,
                 FloatRange::Linear {
                     min: -1.0,
@@ -434,7 +433,7 @@ impl TapsParams {
             })),
 
             drive_mod: FloatParam::new(
-                format!("drive mod"),
+                "drive mod".to_string(),
                 13.0,
                 FloatRange::SymmetricalSkewed {
                     min: -42.0,
@@ -458,7 +457,7 @@ impl TapsParams {
                 IntRange::Linear { min: -12, max: 12 },
             )
             .with_callback(Arc::new({
-                let should_update_filter = should_update_filter.clone();
+                let should_update_filter = should_update_filter;
                 move |_| should_update_filter.store(true, Ordering::Release)
             })),
         }
@@ -773,8 +772,15 @@ impl Plugin for Del2 {
         // Write the audio buffer into the delay
         self.write_into_delay(buffer);
 
-        let panning_center = (f32::from(self.params.first_note.load(Ordering::SeqCst))
-            + self.params.taps.panning_offset.value() as f32 * 127.0)
+        let panning_center = self
+            .params
+            .taps
+            .panning_offset
+            .value()
+            .mul_add(
+                127.0,
+                f32::from(self.params.first_note.load(Ordering::SeqCst)),
+            )
             .clamp(0.0, 127.0);
 
         let panning_amount = self.params.taps.panning_amount.value();
@@ -1351,12 +1357,14 @@ impl Del2 {
                 let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
 
                 // Compute filter parameters
-                let res = (res_main + res_mod * velocity_factor).clamp(0.0, 1.0);
+                let res = res_mod.mul_add(velocity_factor, res_main).clamp(0.0, 1.0);
                 // cutoff_mod is in octaves, 8.0 octaves gives most of the range.
                 let velocity_cutoff =
                     Self::modulate_log(cutoff_main, cutoff_mod * 8.0 * velocity_factor);
                 let note_cutoff = util::f32_midi_note_to_freq(
-                    delay_tap.note as f32 + (cutoff_octave * 12) as f32 + cutoff_transpose as f32,
+                    f32::from(delay_tap.note)
+                        + (cutoff_octave * 12) as f32
+                        + cutoff_transpose as f32,
                 );
 
                 let cutoff = if *use_note_frequency {
@@ -1388,7 +1396,7 @@ impl Del2 {
 
     #[inline]
     fn modulate_log(main: f32, modulation: f32) -> f32 {
-        main * 2f32.powf(modulation)
+        main * modulation.exp2()
     }
     // Takes a pan value and gives a delay offset, in samples
     // instead of adding delay, it subtracts delay from the other channel,
