@@ -258,14 +258,14 @@ fn full_parameters(cx: &mut Context) {
 
             HStack::new(cx, |cx| {
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "offset").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.panning_offset)
+                    Label::new(cx, "note>pan").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.panning_amount)
                         .class("widget");
                 })
                 .class("row");
                 HStack::new(cx, |cx| {
-                    Label::new(cx, "note>pan").class("slider-label");
-                    ParamSlider::new(cx, Data::params, |params| &params.taps.panning_amount)
+                    Label::new(cx, "offset").class("slider-label");
+                    ParamSlider::new(cx, Data::params, |params| &params.taps.panning_offset)
                         .class("widget");
                 })
                 .class("row");
