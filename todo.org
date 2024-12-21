@@ -1,76 +1,47 @@
 #+title: Todo
 
 
-* make offset smaller
-* make modulation a curve param, with view like vital?
-* make modulation a curve editor?
-* increase meter range, add pre-delay low cut
-* maybe add dry/wet for filters
-* make attack and release continuously update
-* increase minimal attack and release
-* offset/amount  -> amount/offset
-* simd smoother, for up to 8 smoothers at once!
-* README: add chorus trick and gated delay example
-* make everything smaller, just scale down
-* reset button (for expert mode separately?)
-* downgrade macos (& ubuntu?)
-* friendly welcome text on first open
-* make easy/expert a normal slider
-* resize window on easy/expert change, so that button stays in the same place
-* note> pan:  make it a range and adjust zoom range to it?
-* make loop trigger
-* make bpm sync the default (maybe check (at init?if tempo available)
-* don't create a new smoother on every new tap?
-# TODO: test!
-* smarter s2v seconds: if s < max seconds: interpret as seconds else as ms     or just always as sec?
-* make attack and release Exponential?
-* see which param needs an Arc and why
-* why don't the notes smooth when switching presets?
-* put back gui smoother per note?
-** when there is a new tap while the previous one isn't done smoothing, we get glitches
-** when we load new presets too
-* default preset:
-** should be the state of parameters struct contained in the Default instance of your plugin
+* today
+** increase meter range, add pre-delay low cut
+
+* soon
+** downgrade macos (& ubuntu?)
+** make attack and release continuously update
+** make attack and release Exponential?
+*** done in skia branch, TODO: test
+
+** README: add chorus trick and gated delay example
+** default preset:
+*** should be the state of parameters struct contained in the Default instance of your plugin
 https://discord.com/channels/590254806208217089/948004564005703740/1185546968206954547
-*** but doesn't work in bitwig
-* factory presets:
-** https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Locations+Format/Preset+Locations.html
-** https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Presets+Program+Lists/Index.html
-* position action labels
-* slider positions: offset & note>pan down a bit, type & cutoff up a bit
-* keep glow on hover action?
-** maybe put it everywhere?
-** otoh: this differentiates the triggers from the knobs
-* on hover: more is more / less is more
-* zoom notes only after time-out?
-* show (& change) mod amount in main knob
-* match note zooming main to skia
-* make gui_zoom take a f32 current_value and an atomic bool should_smooth?
-** less atomic reads: only needs one bool for all taps
-** less atomic writes: only when the bool changes, not during smoothing
-** imp:
-/// Smoothly updates the value based on a target value and a smoothing flag.
-/// If the smoothing flag is false, it directly returns the target value.
-fn gui_smooth(target_value: f32, current_value: f32, should_smooth: &AtomicBool, gui_decay_weight: f32) -> f32 {
-    // Check if smoothing should be applied
-    if !should_smooth.load(Ordering::SeqCst) {
-        return target_value;
-    }
-
-    // Define the threshold relative to the target value
-    let threshold = 0.001 * target_value.abs();
-
-    // Early exit if the current value is very close to the target value
-    if (target_value - current_value).abs() < threshold {
-        return target_value;
-    }
-
-    // Compute the smoothed value using frame-rate independent smoothing
-    let smoothed_value = current_value.mul_add(
-        gui_decay_weight,
-        target_value.mul_add(-gui_decay_weight, target_value),
-    );
-
-    // Return the smoothed value
-    smoothed_value
-}
+**** but doesn't work in bitwig
+** factory presets:
+*** https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Locations+Format/Preset+Locations.html
+*** https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Presets+Program+Lists/Index.html
+** make loop trigger
+*** one trigger to signify the end of the loop and start looping
+*** one trigger to toggle between loop and live
+** resize window on easy/expert change, so that button stays in the same place
+  works, but with glitches: https://github.com/robbert-vdh/nih-plug/issues/127#issuecomment-2555783459
+* sometime
+** simd smoother, for up to 8 smoothers at once!
+** make modulation a curve param, with view like vital?
+** make modulation a curve editor?
+** see which param needs an Arc/Atomic and why
+*** the gui smooth temp vals need an atomic cause the delaygraph draw fn doesn't have access to anything mutable
+** why don't the notes smooth when switching presets?
+*** put back gui smoother per note?
+**** when there is a new tap while the previous one isn't done smoothing, we get glitches
+**** when we load new presets too
+** don't create a new smoother on every new tap?
+** show (& change) mod amount in main knob
+* maybe?
+** zoom notes only after time-out?
+** friendly welcome text on first open
+** make easy/expert a normal slider
+** add dry/wet for filters
+** make everything smaller, just scale down
+** reset button (for expert mode separately?)
+** keep glow on hover action that is in skia branch?
+*** maybe put it everywhere?
+*** otoh: this differentiates the triggers from the knobs
