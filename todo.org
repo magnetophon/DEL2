@@ -2,7 +2,6 @@
 
 
 * today
-** don't smooth initial delay offset -> detune at tap init
 ** crossfade highshelf to bypass when gain is low
 *** return input when gain is 0
 ** HQ mode: stereo simd, LQ mode: 4 chan simd

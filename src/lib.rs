@@ -910,6 +910,11 @@ impl Plugin for Del2 {
                         let pan = ((f32::from(delay_tap.note) - panning_center) * panning_amount)
                             .clamp(-1.0, 1.0);
                         let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
+                        if meter_index + 1 > old_nr_taps {
+                            // nih_log!("reset offset for {meter_index}");
+                            delay_tap.smoothed_offset_l.reset(offset_l);
+                            delay_tap.smoothed_offset_r.reset(offset_r);
+                        }
                         delay_tap
                             .smoothed_offset_l
                             .set_target(sample_rate, offset_l);
