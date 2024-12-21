@@ -671,8 +671,6 @@ impl Plugin for Del2 {
         self.delay_taps.iter_mut().for_each(|delay_tap| {
             delay_tap.is_alive = false;
             delay_tap.amp_envelope.reset(0.0);
-            delay_tap.smoothed_offset_l.reset(0.0);
-            delay_tap.smoothed_offset_r.reset(0.0);
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
         });
 
@@ -910,23 +908,29 @@ impl Plugin for Del2 {
                         let pan = ((f32::from(delay_tap.note) - panning_center) * panning_amount)
                             .clamp(-1.0, 1.0);
                         let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
-                        if meter_index + 1 > old_nr_taps {
+                        let is_new_tap = meter_index + 1 > old_nr_taps;
+                        if is_new_tap {
                             // nih_log!("reset offset for {meter_index}");
                             delay_tap.smoothed_offset_l.reset(offset_l);
                             delay_tap.smoothed_offset_r.reset(offset_r);
+                        } else {
+                            delay_tap
+                                .smoothed_offset_l
+                                .set_target(sample_rate, offset_l);
+                            delay_tap
+                                .smoothed_offset_r
+                                .set_target(sample_rate, offset_r);
                         }
-                        delay_tap
-                            .smoothed_offset_l
-                            .set_target(sample_rate, offset_l);
-                        delay_tap
-                            .smoothed_offset_r
-                            .set_target(sample_rate, offset_r);
 
                         let calculate_and_set_gain =
                             |target: &mut Smoother<f32>, min_gain: f32, multiplier: f32| {
                                 let gain_value =
                                     util::db_to_gain_fast((min_gain * pan * multiplier).min(0.0));
-                                target.set_target(sample_rate, gain_value);
+                                if is_new_tap {
+                                    target.reset(gain_value);
+                                } else {
+                                    target.set_target(sample_rate, gain_value);
+                                }
                             };
 
                         calculate_and_set_gain(&mut delay_tap.eq_gain_l, MIN_EQ_GAIN, 1.0);
@@ -1018,12 +1022,14 @@ impl Plugin for Del2 {
                                     .unwrap_or(1.0),
                             ]);
 
-                            let frame_filtered = *delay_tap.ladders.tick_pivotal(frame).as_array();
+                            let frame_filtered =
+                            // frame;
+                                *delay_tap.ladders.tick_pivotal(frame).as_array();
+                            // *delay_tap.ladders.tick_linear(frame).as_array();
                             let frame_out = delay_tap
                                 .shelving_eq
                                 .highshelf(frame_filtered.into(), gain_values);
 
-                            // let frame_out = *delay_tap.ladders.tick_linear(frame).as_array();
                             delay_tap.delayed_audio_l[i] = frame_out[0];
                             delay_tap.delayed_audio_r[i] = frame_out[1];
                             if i + 1 < block_end {
