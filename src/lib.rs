@@ -222,7 +222,7 @@ impl GlobalParams {
                 "Attack",
                 13.0,
                 FloatRange::Skewed {
-                    min: 0.0,
+                    min: 1.0,
                     max: 5_000.0,
                     factor: FloatRange::skew_factor(-1.2),
                 },
@@ -332,7 +332,7 @@ impl TapsParams {
 
             panning_amount: FloatParam::new(
                 "panning amount",
-                0.0,
+                0.13,
                 FloatRange::SymmetricalSkewed {
                     min: -1.0,
                     max: 1.0,
@@ -389,7 +389,7 @@ impl TapsParams {
             })),
             drive_main: FloatParam::new(
                 "drive".to_string(),
-                13.0,
+                0.0,
                 FloatRange::Skewed {
                     min: 0.0,
                     max: 42.0,
