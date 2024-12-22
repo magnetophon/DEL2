@@ -3,7 +3,7 @@ use std::sync::Arc;
 use synfx_dsp::fh_va::FilterParams;
 use synfx_dsp::fh_va::LadderFilter;
 
-use crate::{SVFSimper, MAX_BLOCK_SIZE, NO_LEARNED_NOTE, PANNER_EQ_FREQ};
+use crate::{SVFSimper, MAX_BLOCK_SIZE, NO_LEARNED_NOTE, PANNER_EQ_FREQ, PANNER_EQ_RES};
 
 const PAN_SMOOTHING_TIME: f32 = 242.0;
 
@@ -57,7 +57,7 @@ impl DelayTap {
             delayed_audio_r: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
             filter_params: filter_params.clone(),
             ladders: LadderFilter::new(filter_params),
-            shelving_eq: SVFSimper::new(PANNER_EQ_FREQ, 0.0, 48000.0),
+            shelving_eq: SVFSimper::new(PANNER_EQ_FREQ, PANNER_EQ_RES, 48000.0),
             mute_in_delayed: vec![false; MAX_BLOCK_SIZE].into_boxed_slice(),
             amp_envelope: Smoother::new(SmoothingStyle::Linear(13.0)),
             internal_id: 0,

@@ -42,6 +42,7 @@ pub struct SVFSimper<const LANES: usize>
 where
     LaneCount<LANES>: SupportedLaneCount,
 {
+    pub k: Simd<f32, LANES>,
     pub a1: Simd<f32, LANES>,
     pub a2: Simd<f32, LANES>,
     pub a3: Simd<f32, LANES>,
@@ -56,9 +57,10 @@ where
 {
     pub fn new(cutoff: f32, resonance: f32, sample_rate: f32) -> Self {
         let pi_over_sr = consts::PI / sample_rate;
-        let (a1, a2, a3) = Self::compute_parameters(cutoff, resonance, pi_over_sr);
+        let (k, a1, a2, a3) = Self::compute_parameters(cutoff, resonance, pi_over_sr);
 
         Self {
+            k: Simd::splat(k),
             a1: Simd::splat(a1),
             a2: Simd::splat(a2),
             a3: Simd::splat(a3),
@@ -80,22 +82,23 @@ where
     #[inline]
     pub fn set(&mut self, cutoff: f32, resonance: f32) {
         let pi_over_sr = self.pi_over_sr[0]; // Use the precomputed value
-        let (a1, a2, a3) = Self::compute_parameters(cutoff, resonance, pi_over_sr);
+        let (k, a1, a2, a3) = Self::compute_parameters(cutoff, resonance, pi_over_sr);
 
+        self.k = Simd::splat(k);
         self.a1 = Simd::splat(a1);
         self.a2 = Simd::splat(a2);
         self.a3 = Simd::splat(a3);
     }
 
     #[inline]
-    fn compute_parameters(cutoff: f32, resonance: f32, pi_over_sr: f32) -> (f32, f32, f32) {
+    fn compute_parameters(cutoff: f32, resonance: f32, pi_over_sr: f32) -> (f32, f32, f32, f32) {
         let g = (cutoff * pi_over_sr).tan();
         let k = 2.0 * (1.0 - resonance.clamp(0.0, 1.0));
         let a1 = g.mul_add(g + k, 1.0).recip();
         let a2 = g * a1;
         let a3 = g * a2;
 
-        (a1, a2, a3)
+        (k, a1, a2, a3)
     }
 
     #[inline]
@@ -118,15 +121,31 @@ where
 
     #[inline]
     pub fn highpass(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
-        // should be this:
-        // v0 - k * v1 - v2
-        // but we don't have k
+        let (v1, v2) = self.process(v0);
+        v0 - self.k * v1 - v2
+    }
+    #[inline]
+    pub fn highpass_cheap(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
         let (_, v2) = self.process(v0);
         v0 - v2
+    }
+    #[inline]
+    pub fn allpass(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
+        let (v1, _) = self.process(v0);
+        let two = Simd::splat(2.0);
+        v0 - two * self.k * v1
     }
 
     #[inline]
     pub fn highshelf(
+        &mut self,
+        v0: Simd<f32, LANES>,
+        lin_gain: Simd<f32, LANES>,
+    ) -> Simd<f32, LANES> {
+        let (v1, v2) = self.process(v0);
+        v2 + (lin_gain * (v0 - self.k * v1 - v2)) - self.k * v1
+    }
+    pub fn highshelf_cheap(
         &mut self,
         v0: Simd<f32, LANES>,
         lin_gain: Simd<f32, LANES>,
@@ -137,10 +156,6 @@ where
 }
 /*
 
-make separate:
-reset(&mut self, cutoff: f32, resonance: f32, sample_rate: f32)
-set(&mut self, cutoff: f32, resonance: f32)
-
 
 implement all filter types
 
@@ -148,9 +163,8 @@ make nonlin variants
 
 make set_x4
 
-make wider variants
+use wider
 iiuc, my cpu can do f32x8 and M1 macs can do f32x16
 
-use wider
 
  */

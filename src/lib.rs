@@ -56,9 +56,11 @@ const NO_GUI_SMOOTHING: f32 = f32::MAX;
 
 const MAX_HAAS_MS: f32 = 30.0;
 const PANNER_EQ_FREQ: f32 = 5_000.0;
+const PANNER_EQ_RES: f32 = 0.0;
 const MIN_EQ_GAIN: f32 = -13.0;
 const MIN_PAN_GAIN: f32 = -3.0;
 const DC_HP_FREQ: f32 = 80.0;
+const DC_HP_RES: f32 = 0.0;
 const DEFAULT_TEMPO: f32 = 60.0;
 
 pub struct Del2 {
@@ -471,7 +473,7 @@ impl Default for Del2 {
             ],
             mute_in_delay_buffer: BMRingBuf::<bool>::from_len(TOTAL_DELAY_SAMPLES),
             mute_in_delay_temp_buffer: bool::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            dc_filter: SVFSimper::new(DC_HP_FREQ, 0.0, 48000.0),
+            dc_filter: SVFSimper::new(DC_HP_FREQ, DC_HP_RES, 48000.0),
 
             dry_wet_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             drive_main_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
@@ -630,14 +632,14 @@ impl Plugin for Del2 {
             0.25f64.powf((f64::from(sample_rate) * PEAK_METER_DECAY_MS / 1000.0).recip()) as f32;
         // Calculate and set the delay buffer size
         self.set_delay_buffer_size(buffer_config);
-        self.dc_filter.reset(DC_HP_FREQ, 0.0, sample_rate);
+        self.dc_filter.reset(DC_HP_FREQ, DC_HP_RES, sample_rate);
 
         // Initialize filter parameters for each tap
         self.initialize_filter_parameters();
         for delay_tap in &mut self.delay_taps {
             delay_tap
                 .shelving_eq
-                .reset(PANNER_EQ_FREQ, 0.0, sample_rate);
+                .reset(PANNER_EQ_FREQ, PANNER_EQ_RES, sample_rate);
         }
         true
     }
@@ -972,7 +974,8 @@ impl Plugin for Del2 {
                             // let frame_out = *delay_tap.ladders.tick_linear(frame).as_array();
                             let frame_out = delay_tap
                                 .shelving_eq
-                                .highshelf(frame_filtered.into(), gain_values);
+                                .highshelf_cheap(frame_filtered.into(), gain_values);
+                            // .highshelf(frame_filtered.into(), gain_values);
 
                             delay_tap.delayed_audio_l[i] = frame_out[0];
                             delay_tap.delayed_audio_r[i] = frame_out[1];
@@ -1096,7 +1099,7 @@ impl Del2 {
             for i in 0..block_len {
                 let frame = f32x4::from_array([out_l[i], out_r[i], 0.0, 0.0]);
                 // filter to remove dc-offset, since offsets can make the non lin filter models behave weirdly
-                let filtered_frame = self.dc_filter.highpass(frame);
+                let filtered_frame = self.dc_filter.highpass_cheap(frame);
 
                 self.delay_buffer[0][write_index + i as isize] = filtered_frame[0];
                 self.delay_buffer[1][write_index + i as isize] = filtered_frame[1];
