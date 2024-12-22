@@ -46,17 +46,13 @@ pub struct SVFSimper {
 
     pub ic1eq: f32x4,
     pub ic2eq: f32x4,
+    sr_recip_pi: f32x4,
 }
 
 impl SVFSimper {
     pub fn new(cutoff: f32, resonance: f32, sample_rate: f32) -> Self {
-        let g = (consts::PI * (cutoff / sample_rate)).tan();
-        // let k = 2f32 - (1.9f32 * resonance.min(1f32).max(0f32));
-        let k = 2f32.mul_add(-resonance.clamp(0.0, 1.0), 2f32);
-
-        let a1 = 1.0 / g.mul_add(g + k, 1.0);
-        let a2 = g * a1;
-        let a3 = g * a2;
+        let sr_recip_pi = consts::PI * sample_rate.recip();
+        let (a1, a2, a3) = Self::compute_parameters(cutoff, resonance, sr_recip_pi);
 
         Self {
             a1: f32x4::splat(a1),
@@ -65,15 +61,38 @@ impl SVFSimper {
 
             ic1eq: f32x4::splat(0.0),
             ic2eq: f32x4::splat(0.0),
+            sr_recip_pi: f32x4::splat(sr_recip_pi),
         }
     }
 
-    pub fn set(&mut self, cutoff: f32, resonance: f32, sample_rate: f32) {
-        let new = Self::new(cutoff, resonance, sample_rate);
+    pub fn reset(&mut self, cutoff: f32, resonance: f32, sample_rate: f32) {
+        let sr_recip_pi = consts::PI * sample_rate.recip();
+        self.sr_recip_pi = f32x4::splat(sr_recip_pi);
+        self.ic1eq = f32x4::splat(0.0);
+        self.ic2eq = f32x4::splat(0.0);
 
-        self.a1 = new.a1;
-        self.a2 = new.a2;
-        self.a3 = new.a3;
+        self.set(cutoff, resonance);
+    }
+
+    #[inline]
+    pub fn set(&mut self, cutoff: f32, resonance: f32) {
+        let sr_recip_pi = self.sr_recip_pi[0]; // Use the precomputed value
+        let (a1, a2, a3) = Self::compute_parameters(cutoff, resonance, sr_recip_pi);
+
+        self.a1 = f32x4::splat(a1);
+        self.a2 = f32x4::splat(a2);
+        self.a3 = f32x4::splat(a3);
+    }
+    #[inline]
+    fn compute_parameters(cutoff: f32, resonance: f32, sr_recip_pi: f32) -> (f32, f32, f32) {
+        let g = (cutoff * sr_recip_pi).tan();
+        let k = 2f32 * (1.0 - resonance.clamp(0.0, 1.0));
+
+        let a1 = 1.0 / (g * (g + k) + 1.0);
+        let a2 = g * a1;
+        let a3 = g * a2;
+
+        (a1, a2, a3)
     }
     #[allow(dead_code)]
     #[inline]
@@ -128,5 +147,12 @@ precompute sr_recip_pi
 implement all filter types
 
 make nonlin variants
+
+make set_x4
+
+make wider variants
+iiuc, my cpu can do f32x8 and M1 macs can do f32x16
+
+use wider
 
  */

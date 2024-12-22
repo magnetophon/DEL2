@@ -630,12 +630,14 @@ impl Plugin for Del2 {
             0.25f64.powf((f64::from(sample_rate) * PEAK_METER_DECAY_MS / 1000.0).recip()) as f32;
         // Calculate and set the delay buffer size
         self.set_delay_buffer_size(buffer_config);
-        self.dc_filter.set(DC_HP_FREQ, 0.0, sample_rate);
+        self.dc_filter.reset(DC_HP_FREQ, 0.0, sample_rate);
 
         // Initialize filter parameters for each tap
         self.initialize_filter_parameters();
         for delay_tap in &mut self.delay_taps {
-            delay_tap.shelving_eq.set(PANNER_EQ_FREQ, 0.0, sample_rate);
+            delay_tap
+                .shelving_eq
+                .reset(PANNER_EQ_FREQ, 0.0, sample_rate);
         }
         true
     }
