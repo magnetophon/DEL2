@@ -35,58 +35,65 @@ DEALINGS IN THE SOFTWARE.
 // thanks, andy!
 
 use std::f32::consts;
+use std::simd::{LaneCount, Simd, SupportedLaneCount};
 
-use std::simd::f32x4;
-
+// Define the SVFSimper struct with generic SIMD support
 #[derive(Debug, Clone)]
-pub struct SVFSimper {
-    pub a1: f32x4,
-    pub a2: f32x4,
-    pub a3: f32x4,
+pub struct SVFSimper<const LANES: usize>
+where
+    LaneCount<LANES>: SupportedLaneCount,
+{
+    pub a1: Simd<f32, LANES>,
+    pub a2: Simd<f32, LANES>,
+    pub a3: Simd<f32, LANES>,
 
-    pub ic1eq: f32x4,
-    pub ic2eq: f32x4,
-    sr_recip_pi: f32x4,
+    pub ic1eq: Simd<f32, LANES>,
+    pub ic2eq: Simd<f32, LANES>,
+    pi_over_sr: Simd<f32, LANES>,
 }
 
-impl SVFSimper {
+impl<const LANES: usize> SVFSimper<LANES>
+where
+    LaneCount<LANES>: SupportedLaneCount,
+{
     pub fn new(cutoff: f32, resonance: f32, sample_rate: f32) -> Self {
-        let sr_recip_pi = consts::PI * sample_rate.recip();
-        let (a1, a2, a3) = Self::compute_parameters(cutoff, resonance, sr_recip_pi);
+        let pi_over_sr = consts::PI / sample_rate;
+        let (a1, a2, a3) = Self::compute_parameters(cutoff, resonance, pi_over_sr);
 
         Self {
-            a1: f32x4::splat(a1),
-            a2: f32x4::splat(a2),
-            a3: f32x4::splat(a3),
+            a1: Simd::splat(a1),
+            a2: Simd::splat(a2),
+            a3: Simd::splat(a3),
 
-            ic1eq: f32x4::splat(0.0),
-            ic2eq: f32x4::splat(0.0),
-            sr_recip_pi: f32x4::splat(sr_recip_pi),
+            ic1eq: Simd::splat(0.0),
+            ic2eq: Simd::splat(0.0),
+            pi_over_sr: Simd::splat(pi_over_sr),
         }
     }
 
     pub fn reset(&mut self, cutoff: f32, resonance: f32, sample_rate: f32) {
-        let sr_recip_pi = consts::PI * sample_rate.recip();
-        self.sr_recip_pi = f32x4::splat(sr_recip_pi);
-        self.ic1eq = f32x4::splat(0.0);
-        self.ic2eq = f32x4::splat(0.0);
+        let pi_over_sr = consts::PI / sample_rate;
+        self.pi_over_sr = Simd::splat(pi_over_sr);
+        self.ic1eq = Simd::splat(0.0);
+        self.ic2eq = Simd::splat(0.0);
 
         self.set(cutoff, resonance);
     }
 
     #[inline]
     pub fn set(&mut self, cutoff: f32, resonance: f32) {
-        let sr_recip_pi = self.sr_recip_pi[0]; // Use the precomputed value
-        let (a1, a2, a3) = Self::compute_parameters(cutoff, resonance, sr_recip_pi);
+        let pi_over_sr = self.pi_over_sr[0]; // Use the precomputed value
+        let (a1, a2, a3) = Self::compute_parameters(cutoff, resonance, pi_over_sr);
 
-        self.a1 = f32x4::splat(a1);
-        self.a2 = f32x4::splat(a2);
-        self.a3 = f32x4::splat(a3);
+        self.a1 = Simd::splat(a1);
+        self.a2 = Simd::splat(a2);
+        self.a3 = Simd::splat(a3);
     }
+
     #[inline]
-    fn compute_parameters(cutoff: f32, resonance: f32, sr_recip_pi: f32) -> (f32, f32, f32) {
-        let g = (cutoff * sr_recip_pi).tan();
-        let k = 2f32 * (1.0 - resonance.clamp(0.0, 1.0));
+    fn compute_parameters(cutoff: f32, resonance: f32, pi_over_sr: f32) -> (f32, f32, f32) {
+        let g = (cutoff * pi_over_sr).tan();
+        let k = 2.0 * (1.0 - resonance.clamp(0.0, 1.0));
 
         let a1 = 1.0 / (g * (g + k) + 1.0);
         let a2 = g * a1;
@@ -94,26 +101,28 @@ impl SVFSimper {
 
         (a1, a2, a3)
     }
+
     #[allow(dead_code)]
     #[inline]
-    pub fn lowpass(&mut self, v0: f32x4) -> f32x4 {
+    pub fn lowpass(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
         let v3 = v0 - self.ic2eq;
         let v1 = (self.a1 * self.ic1eq) + (self.a2 * v3);
         let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
 
-        self.ic1eq = (f32x4::splat(2.0) * v1) - self.ic1eq;
-        self.ic2eq = (f32x4::splat(2.0) * v2) - self.ic2eq;
+        self.ic1eq = (Simd::splat(2.0) * v1) - self.ic1eq;
+        self.ic2eq = (Simd::splat(2.0) * v2) - self.ic2eq;
 
         v2
     }
+
     #[inline]
-    pub fn highpass(&mut self, v0: f32x4) -> f32x4 {
+    pub fn highpass(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
         let v3 = v0 - self.ic2eq;
         let v1 = (self.a1 * self.ic1eq) + (self.a2 * v3);
         let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
 
-        self.ic1eq = (f32x4::splat(2.0) * v1) - self.ic1eq;
-        self.ic2eq = (f32x4::splat(2.0) * v2) - self.ic2eq;
+        self.ic1eq = (Simd::splat(2.0) * v1) - self.ic1eq;
+        self.ic2eq = (Simd::splat(2.0) * v2) - self.ic2eq;
 
         // should be this:
         // v0 - k * v1 - v2
@@ -121,17 +130,18 @@ impl SVFSimper {
         v0 - v2
     }
 
-    // TODO:
-    // last 0.1dB: fade to input,
-    // at 0.0dB: early exit
     #[inline]
-    pub fn highshelf(&mut self, v0: f32x4, lin_gain: f32x4) -> f32x4 {
+    pub fn highshelf(
+        &mut self,
+        v0: Simd<f32, LANES>,
+        lin_gain: Simd<f32, LANES>,
+    ) -> Simd<f32, LANES> {
         let v3 = v0 - self.ic2eq;
         let v1 = (self.a1 * self.ic1eq) + (self.a2 * v3);
         let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
 
-        self.ic1eq = (f32x4::splat(2.0) * v1) - self.ic1eq;
-        self.ic2eq = (f32x4::splat(2.0) * v2) - self.ic2eq;
+        self.ic1eq = (Simd::splat(2.0) * v1) - self.ic1eq;
+        self.ic2eq = (Simd::splat(2.0) * v2) - self.ic2eq;
 
         v2 + (lin_gain * (v0 - v2))
     }
@@ -142,7 +152,6 @@ make separate:
 reset(&mut self, cutoff: f32, resonance: f32, sample_rate: f32)
 set(&mut self, cutoff: f32, resonance: f32)
 
-precompute sr_recip_pi
 
 implement all filter types
 

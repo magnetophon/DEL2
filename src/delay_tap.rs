@@ -14,7 +14,7 @@ pub struct DelayTap {
 
     pub filter_params: Arc<FilterParams>,
     pub ladders: LadderFilter,
-    pub shelving_eq: SVFSimper,
+    pub shelving_eq: SVFSimper<4>,
     pub mute_in_delayed: Box<[bool]>,
     /// Fades between 0 and 1 with timings based on the global attack and release settings.
     pub amp_envelope: Smoother<f32>,

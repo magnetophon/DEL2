@@ -74,7 +74,7 @@ pub struct Del2 {
     delay_buffer: [BMRingBuf<f32>; 2],
     mute_in_delay_buffer: BMRingBuf<bool>,
     mute_in_delay_temp_buffer: Box<[bool]>,
-    dc_filter: SVFSimper,
+    dc_filter: SVFSimper<4>,
 
     // for the smoothers
     dry_wet_block: Box<[f32]>,
