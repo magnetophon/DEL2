@@ -8,10 +8,10 @@ https://github.com/AquaEBM/svf
 https://github.com/neodsp/simper-filter
 // https://github.com/SamiPerttu/fundsp/blob/801ad0a0c97838f9744d0dbe506512215f780b7d/src/svf.rs#L2
 
+** smarter s2v hz:  1k is 1000
+** make simper variant without Q
 
 
-
-TODO: research choke event, possibly clear_taps()
 
 * today
 ** HQ mode: stereo simd, LQ mode: 4 chan simd
@@ -61,6 +61,7 @@ https://discord.com/channels/590254806208217089/948004564005703740/1185546968206
 ** don't create a new smoother on every new tap?
 ** show (& change) mod amount in main knob
 * maybe?
+** research choke event, possibly clear_taps()
 ** make mutes sample-accurate
 ** optional: live-mode / daw-mode switch
 *** compensate for host latency by adjusting the delay read index
