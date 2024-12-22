@@ -951,66 +951,68 @@ impl Plugin for Del2 {
                                 ) * pre_filter_gain;
                         }
                         // HQ mode:
-                        // for i in block_start..block_end {
-                        //     let frame = f32x4::from_array([
-                        //         delay_tap.delayed_audio_l[i],
-                        //         delay_tap.delayed_audio_r[i],
-                        //         0.0,
-                        //         0.0,
-                        //     ]);
-
-                        //     let gain_values = f32x4::from_array([
-                        //         self.delay_tap_eq_gain_l_block[i],
-                        //         self.delay_tap_eq_gain_r_block[i],
-                        //         0.0,0.0,
-                        //     ]);
-
-                        //     let frame_filtered = *delay_tap.ladders.tick_pivotal(frame).as_array();
-                        //     // let frame_out = *delay_tap.ladders.tick_linear(frame).as_array();
-                        //     let frame_out = delay_tap
-                        //         .shelving_eq
-                        //         .highshelf(frame_filtered.into(), gain_values);
-
-                        //     delay_tap.delayed_audio_l[i] = frame_out[0];
-                        //     delay_tap.delayed_audio_r[i] = frame_out[1];
-                        // }
-
-                        for i in (block_start..block_end).step_by(2) {
+                        for i in block_start..block_end {
                             let frame = f32x4::from_array([
                                 delay_tap.delayed_audio_l[i],
                                 delay_tap.delayed_audio_r[i],
-                                delay_tap.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
-                                delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
+                                0.0,
+                                0.0,
                             ]);
 
                             let gain_values = f32x4::from_array([
                                 self.delay_tap_eq_gain_l_block[i],
                                 self.delay_tap_eq_gain_r_block[i],
-                                self.delay_tap_eq_gain_l_block
-                                    .get(i + 1)
-                                    .copied()
-                                    .unwrap_or(1.0),
-                                self.delay_tap_eq_gain_r_block
-                                    .get(i + 1)
-                                    .copied()
-                                    .unwrap_or(1.0),
+                                0.0,
+                                0.0,
                             ]);
 
-                            let frame_filtered =
-                            // frame;
-                                *delay_tap.ladders.tick_pivotal(frame).as_array();
-                            // *delay_tap.ladders.tick_linear(frame).as_array();
+                            let frame_filtered = *delay_tap.ladders.tick_pivotal(frame).as_array();
+                            // let frame_out = *delay_tap.ladders.tick_linear(frame).as_array();
                             let frame_out = delay_tap
                                 .shelving_eq
                                 .highshelf(frame_filtered.into(), gain_values);
 
                             delay_tap.delayed_audio_l[i] = frame_out[0];
                             delay_tap.delayed_audio_r[i] = frame_out[1];
-                            if i + 1 < block_end {
-                                delay_tap.delayed_audio_l[i + 1] = frame_out[2];
-                                delay_tap.delayed_audio_r[i + 1] = frame_out[3];
-                            }
                         }
+
+                        // LQ mode:
+                        //     for i in (block_start..block_end).step_by(2) {
+                        //         let frame = f32x4::from_array([
+                        //             delay_tap.delayed_audio_l[i],
+                        //             delay_tap.delayed_audio_r[i],
+                        //             delay_tap.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
+                        //             delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
+                        //         ]);
+
+                        //         let gain_values = f32x4::from_array([
+                        //             self.delay_tap_eq_gain_l_block[i],
+                        //             self.delay_tap_eq_gain_r_block[i],
+                        //             self.delay_tap_eq_gain_l_block
+                        //                 .get(i + 1)
+                        //                 .copied()
+                        //                 .unwrap_or(1.0),
+                        //             self.delay_tap_eq_gain_r_block
+                        //                 .get(i + 1)
+                        //                 .copied()
+                        //                 .unwrap_or(1.0),
+                        //         ]);
+
+                        //         let frame_filtered =
+                        //         // frame;
+                        //             *delay_tap.ladders.tick_pivotal(frame).as_array();
+                        //         // *delay_tap.ladders.tick_linear(frame).as_array();
+                        //         let frame_out = delay_tap
+                        //             .shelving_eq
+                        //             .highshelf(frame_filtered.into(), gain_values);
+
+                        //         delay_tap.delayed_audio_l[i] = frame_out[0];
+                        //         delay_tap.delayed_audio_r[i] = frame_out[1];
+                        //         if i + 1 < block_end {
+                        //             delay_tap.delayed_audio_l[i + 1] = frame_out[2];
+                        //             delay_tap.delayed_audio_r[i + 1] = frame_out[3];
+                        //         }
+                        //     }
                     }
 
                     // Process the output and meter updates
