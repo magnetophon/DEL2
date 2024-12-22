@@ -2,18 +2,8 @@
 * INBOX
 
 
-** evaluate filters:
-https://github.com/AquaEBM/svf
- also simper, with simd, non nonlin
-https://github.com/neodsp/simper-filter
-// https://github.com/SamiPerttu/fundsp/blob/801ad0a0c97838f9744d0dbe506512215f780b7d/src/svf.rs#L2
-
-** smarter s2v hz:  1k is 1000
-** make simper variant without Q
-
-
-
 * today
+** smarter s2v hz:  1k is 1000
 ** HQ mode: stereo simd, LQ mode: 4 chan simd
 *** check HP filters in LQ mode, maybe switch to LP only for now?
 *** fix cutoff in LQ mode
@@ -23,6 +13,9 @@ https://github.com/neodsp/simper-filter
 * soon
 ** downgrade macos (& ubuntu?)
 ** make attack and release continuously update
+** better interpolation panner delay
+*** use separate crate for panner delay?
+*** put back block-wise copy of main delay
 ** increase gain opposite chan when panning?
 ** make attack and release Exponential?
 *** done in skia branch, TODO: test
