@@ -95,7 +95,7 @@ where
         let g = (cutoff * pi_over_sr).tan();
         let k = 2.0 * (1.0 - resonance.clamp(0.0, 1.0));
 
-        let a1 = 1.0 / (g * (g + k) + 1.0);
+        let a1 = g.mul_add(g + k, 1.0).recip();
         let a2 = g * a1;
         let a3 = g * a2;
 
