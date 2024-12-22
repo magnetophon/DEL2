@@ -57,7 +57,7 @@ const NO_GUI_SMOOTHING: f32 = f32::MAX;
 const MAX_HAAS_MS: f32 = 30.0;
 const PANNER_EQ_FREQ: f32 = 5_000.0;
 const MIN_EQ_GAIN: f32 = -13.0;
-const MIN_PAN_GAIN: f32 = -6.0;
+const MIN_PAN_GAIN: f32 = -3.0;
 const DC_HP_FREQ: f32 = 80.0;
 const DEFAULT_TEMPO: f32 = 60.0;
 
@@ -85,8 +85,7 @@ pub struct Del2 {
     delay_tap_smoothed_offset_r_block: Box<[f32]>,
     delay_tap_eq_gain_l_block: Box<[f32]>,
     delay_tap_eq_gain_r_block: Box<[f32]>,
-    delay_tap_pan_gain_l_block: Box<[f32]>,
-    delay_tap_pan_gain_r_block: Box<[f32]>,
+    delay_tap_pan_gain_block: Box<[f32]>,
     drive_main_smoother: Smoother<f32>,
     peak_meter_decay_weight: f32,
     input_meter: Arc<AtomicF32>,
@@ -482,8 +481,7 @@ impl Default for Del2 {
             delay_tap_smoothed_offset_r_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_eq_gain_l_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             delay_tap_eq_gain_r_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            delay_tap_pan_gain_l_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
-            delay_tap_pan_gain_r_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
+            delay_tap_pan_gain_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             drive_main_smoother: Smoother::new(SmoothingStyle::Linear(13.0)),
 
             peak_meter_decay_weight: 1.0,
@@ -900,21 +898,25 @@ impl Plugin for Del2 {
                                 .set_target(sample_rate, offset_r);
                         }
 
-                        let calculate_and_set_gain =
-                            |target: &mut Smoother<f32>, min_gain: f32, multiplier: f32| {
-                                let gain_value =
-                                    util::db_to_gain_fast((min_gain * pan * multiplier).min(0.0));
-                                if is_new_tap {
-                                    target.reset(gain_value);
-                                } else {
-                                    target.set_target(sample_rate, gain_value);
-                                }
-                            };
+                        let calculate_and_set_gain = |target: &mut Smoother<f32>, min_gain: f32| {
+                            let gain_value = util::db_to_gain_fast((min_gain * pan).min(0.0));
+                            if is_new_tap {
+                                target.reset(gain_value);
+                            } else {
+                                target.set_target(sample_rate, gain_value);
+                            }
+                        };
 
-                        calculate_and_set_gain(&mut delay_tap.eq_gain_l, MIN_EQ_GAIN, 1.0);
-                        calculate_and_set_gain(&mut delay_tap.eq_gain_r, MIN_EQ_GAIN, -1.0);
-                        calculate_and_set_gain(&mut delay_tap.pan_gain_l, MIN_PAN_GAIN, 1.0);
-                        calculate_and_set_gain(&mut delay_tap.pan_gain_r, MIN_PAN_GAIN, -1.0);
+                        calculate_and_set_gain(&mut delay_tap.eq_gain_l, MIN_EQ_GAIN);
+                        calculate_and_set_gain(&mut delay_tap.eq_gain_r, MIN_EQ_GAIN * -1.0);
+
+                        // don't use calculate_and_set_gain here, cause we don't want it clamped
+                        let pan_gain_value = util::db_to_gain_fast(MIN_PAN_GAIN * pan);
+                        if is_new_tap {
+                            delay_tap.pan_gain.reset(pan_gain_value);
+                        } else {
+                            delay_tap.pan_gain.set_target(sample_rate, pan_gain_value);
+                        }
                         delay_tap
                             .smoothed_offset_l
                             .next_block(&mut self.delay_tap_smoothed_offset_l_block, block_len);
@@ -928,17 +930,11 @@ impl Plugin for Del2 {
                             .eq_gain_r
                             .next_block(&mut self.delay_tap_eq_gain_r_block, block_len);
                         delay_tap
-                            .pan_gain_l
-                            .next_block(&mut self.delay_tap_pan_gain_l_block, block_len);
-                        delay_tap
-                            .pan_gain_r
-                            .next_block(&mut self.delay_tap_pan_gain_r_block, block_len);
+                            .pan_gain
+                            .next_block(&mut self.delay_tap_pan_gain_block, block_len);
                         for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
                             let pre_filter_gain =
-                            // 1.0;
-                                drive_main_block[value_idx]
-                            // ;
-                                * drive_mod_block[value_idx];
+                                drive_main_block[value_idx] * drive_mod_block[value_idx];
 
                             // if self.delay_tap_amp_envelope_block[value_idx] != 1.0 && self.delay_tap_amp_envelope[value_idx] != 0.0 {
                             // nih_log!("self.delay_tap_amp_envelope_block[value_idx]: {}", self.delay_tap_amp_envelope[value_idx]);
@@ -970,11 +966,11 @@ impl Plugin for Del2 {
                         //     ]);
 
                         //     let frame_filtered = *delay_tap.ladders.tick_pivotal(frame).as_array();
+                        //     // let frame_out = *delay_tap.ladders.tick_linear(frame).as_array();
                         //     let frame_out = delay_tap
                         //         .shelving_eq
                         //         .highshelf(frame_filtered.into(), gain_values);
 
-                        //     // let frame_out = *delay_tap.ladders.tick_linear(frame).as_array();
                         //     delay_tap.delayed_audio_l[i] = frame_out[0];
                         //     delay_tap.delayed_audio_r[i] = frame_out[1];
                         // }
@@ -1025,10 +1021,9 @@ impl Plugin for Del2 {
                             / drive_main_block[value_idx];
                         let left = delay_tap.delayed_audio_l[sample_idx]
                             * post_filter_gain
-                            * self.delay_tap_pan_gain_l_block[value_idx];
-                        let right = delay_tap.delayed_audio_r[sample_idx]
-                            * post_filter_gain
-                            * self.delay_tap_pan_gain_r_block[value_idx];
+                            * self.delay_tap_pan_gain_block[value_idx];
+                        let right = delay_tap.delayed_audio_r[sample_idx] * post_filter_gain
+                            / self.delay_tap_pan_gain_block[value_idx];
                         output[0][sample_idx] += left;
                         output[1][sample_idx] += right;
                         amplitude += (left.abs() + right.abs()) * 0.5;
@@ -1423,6 +1418,7 @@ impl Del2 {
     // Takes a pan value and gives a delay offset, in samples
     // instead of adding delay, it subtracts delay from the other channel,
     // so we stay under the maximum delay value
+    // TODO: this approach breaks down for delay taps shorter then the haas delay
     #[inline]
     fn pan_to_haas_samples(pan: f32, sample_rate: f32) -> (f32, f32) {
         let delay_samples = pan.abs() * (MAX_HAAS_MS * 0.001) * sample_rate;
