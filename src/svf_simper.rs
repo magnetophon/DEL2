@@ -37,8 +37,6 @@ DEALINGS IN THE SOFTWARE.
 use std::f32::consts;
 
 use std::simd::f32x4;
-/// for early exit of shelving filters
-const ALMOST_UNITY_GAIN: f32x4 = f32x4::from_array([0.999; 4]);
 
 #[derive(Debug, Clone)]
 pub struct SVFSimper {
@@ -109,11 +107,6 @@ impl SVFSimper {
     // at 0.0dB: early exit
     #[inline]
     pub fn highshelf(&mut self, v0: f32x4, lin_gain: f32x4) -> f32x4 {
-        // Fast path for unity gain
-        // we do not use this EQ for boosts
-        if lin_gain > ALMOST_UNITY_GAIN {
-            return v0;
-        }
         let v3 = v0 - self.ic2eq;
         let v1 = (self.a1 * self.ic1eq) + (self.a2 * v3);
         let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
