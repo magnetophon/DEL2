@@ -195,6 +195,8 @@ where
 
 
 implement all filter types
+see: git@github.com:AquaEBM/filte.rs.git
+benchmark against it
 
 make nonlin variants
 

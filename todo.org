@@ -12,6 +12,7 @@
 
 * soon
 ** downgrade macos (& ubuntu?)
+** use https://build.opensuse.org/
 ** make attack and release continuously update
 ** better interpolation panner delay
 *** use separate crate for panner delay?
