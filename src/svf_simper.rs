@@ -37,7 +37,6 @@ DEALINGS IN THE SOFTWARE.
 use std::f32::consts;
 use std::simd::{LaneCount, Simd, SupportedLaneCount};
 
-// Define the SVFSimper struct with generic SIMD support
 #[derive(Debug, Clone)]
 pub struct SVFSimper<const LANES: usize>
 where
@@ -46,7 +45,6 @@ where
     pub a1: Simd<f32, LANES>,
     pub a2: Simd<f32, LANES>,
     pub a3: Simd<f32, LANES>,
-
     pub ic1eq: Simd<f32, LANES>,
     pub ic2eq: Simd<f32, LANES>,
     pi_over_sr: Simd<f32, LANES>,
@@ -64,7 +62,6 @@ where
             a1: Simd::splat(a1),
             a2: Simd::splat(a2),
             a3: Simd::splat(a3),
-
             ic1eq: Simd::splat(0.0),
             ic2eq: Simd::splat(0.0),
             pi_over_sr: Simd::splat(pi_over_sr),
@@ -94,7 +91,6 @@ where
     fn compute_parameters(cutoff: f32, resonance: f32, pi_over_sr: f32) -> (f32, f32, f32) {
         let g = (cutoff * pi_over_sr).tan();
         let k = 2.0 * (1.0 - resonance.clamp(0.0, 1.0));
-
         let a1 = g.mul_add(g + k, 1.0).recip();
         let a2 = g * a1;
         let a3 = g * a2;
@@ -102,9 +98,8 @@ where
         (a1, a2, a3)
     }
 
-    #[allow(dead_code)]
     #[inline]
-    pub fn lowpass(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
+    fn process(&mut self, v0: Simd<f32, LANES>) -> (Simd<f32, LANES>, Simd<f32, LANES>) {
         let v3 = v0 - self.ic2eq;
         let v1 = (self.a1 * self.ic1eq) + (self.a2 * v3);
         let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
@@ -112,21 +107,21 @@ where
         self.ic1eq = (Simd::splat(2.0) * v1) - self.ic1eq;
         self.ic2eq = (Simd::splat(2.0) * v2) - self.ic2eq;
 
+        (v1, v2)
+    }
+
+    #[inline]
+    pub fn lowpass(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
+        let (_, v2) = self.process(v0);
         v2
     }
 
     #[inline]
     pub fn highpass(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
-        let v3 = v0 - self.ic2eq;
-        let v1 = (self.a1 * self.ic1eq) + (self.a2 * v3);
-        let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
-
-        self.ic1eq = (Simd::splat(2.0) * v1) - self.ic1eq;
-        self.ic2eq = (Simd::splat(2.0) * v2) - self.ic2eq;
-
         // should be this:
         // v0 - k * v1 - v2
         // but we don't have k
+        let (_, v2) = self.process(v0);
         v0 - v2
     }
 
@@ -136,13 +131,7 @@ where
         v0: Simd<f32, LANES>,
         lin_gain: Simd<f32, LANES>,
     ) -> Simd<f32, LANES> {
-        let v3 = v0 - self.ic2eq;
-        let v1 = (self.a1 * self.ic1eq) + (self.a2 * v3);
-        let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
-
-        self.ic1eq = (Simd::splat(2.0) * v1) - self.ic1eq;
-        self.ic2eq = (Simd::splat(2.0) * v2) - self.ic2eq;
-
+        let (_, v2) = self.process(v0);
         v2 + (lin_gain * (v0 - v2))
     }
 }
