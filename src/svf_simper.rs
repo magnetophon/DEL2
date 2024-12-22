@@ -35,7 +35,7 @@ DEALINGS IN THE SOFTWARE.
 // thanks, andy!
 
 use std::f32::consts;
-use std::simd::{LaneCount, Simd, SupportedLaneCount};
+use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
 
 #[derive(Debug, Clone)]
 pub struct SVFSimper<const LANES: usize>
@@ -120,6 +120,11 @@ where
     }
 
     #[inline]
+    pub fn bandpass(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
+        let (v1, _) = self.process(v0);
+        v1
+    }
+    #[inline]
     pub fn highpass(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
         let (v1, v2) = self.process(v0);
         v0 - self.k * v1 - v2
@@ -129,6 +134,18 @@ where
         let (_, v2) = self.process(v0);
         v0 - v2
     }
+
+    #[inline]
+    pub fn notch(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
+        let (v1, _) = self.process(v0);
+        v0 - self.k * v1
+    }
+    #[inline]
+    pub fn peak(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
+        let (v1, v2) = self.process(v0);
+        let two = Simd::splat(2.0);
+        v0 - self.k * v1 - two * v2
+    }
     #[inline]
     pub fn allpass(&mut self, v0: Simd<f32, LANES>) -> Simd<f32, LANES> {
         let (v1, _) = self.process(v0);
@@ -137,23 +154,43 @@ where
     }
 
     #[inline]
+    pub fn lowshelf(
+        &mut self,
+        v0: Simd<f32, LANES>,
+        lin_gain: Simd<f32, LANES>,
+    ) -> Simd<f32, LANES> {
+        let (v1, v2) = self.process(v0);
+        // lin_gain.mul_add(v2, v0 - self.k * v1 - v2) - self.k * v1
+        (lin_gain - Simd::splat(1.0)).mul_add(v2, v0) - (Simd::splat(2.0) * self.k * v1)
+    }
+    pub fn lowshelf_cheap(
+        &mut self,
+        v0: Simd<f32, LANES>,
+        lin_gain: Simd<f32, LANES>,
+    ) -> Simd<f32, LANES> {
+        let (v1, v2) = self.process(v0);
+        lin_gain.mul_add(v2, v0 - v2)
+    }
+    #[inline]
     pub fn highshelf(
         &mut self,
         v0: Simd<f32, LANES>,
         lin_gain: Simd<f32, LANES>,
     ) -> Simd<f32, LANES> {
         let (v1, v2) = self.process(v0);
-        v2 + (lin_gain * (v0 - self.k * v1 - v2)) - self.k * v1
+        lin_gain.mul_add(v0 - self.k * v1 - v2, v2) - self.k * v1
     }
+    #[inline]
     pub fn highshelf_cheap(
         &mut self,
         v0: Simd<f32, LANES>,
         lin_gain: Simd<f32, LANES>,
     ) -> Simd<f32, LANES> {
         let (_, v2) = self.process(v0);
-        v2 + (lin_gain * (v0 - v2))
+        lin_gain.mul_add(v0 - v2, v2)
     }
 }
+
 /*
 
 
@@ -166,5 +203,10 @@ make set_x4
 use wider
 iiuc, my cpu can do f32x8 and M1 macs can do f32x16
 
+make lerp that crossfades
+
+look at olegs impl in faust:
+mix is a dot mult
+A = pow(10.0, G/40.0);
 
  */

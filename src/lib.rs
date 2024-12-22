@@ -582,6 +582,8 @@ impl Plugin for Del2 {
 
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
+    const HARD_REALTIME_ONLY: bool = false;
+
     // If the plugin can send or receive SysEx messages, it can define a type to wrap around those
     // messages here. The type implements the `SysExMessage` trait, which allows conversion to and
     // from plain byte buffers.
@@ -971,11 +973,13 @@ impl Plugin for Del2 {
                             ]);
 
                             let frame_filtered = *delay_tap.ladders.tick_pivotal(frame).as_array();
-                            // let frame_out = *delay_tap.ladders.tick_linear(frame).as_array();
+                            // let frame_filtered = *delay_tap.ladders.tick_linear(frame).as_array();
                             let frame_out = delay_tap
                                 .shelving_eq
                                 .highshelf_cheap(frame_filtered.into(), gain_values);
+                            // .lowshelf_cheap(frame.into(), gain_values);
                             // .highshelf(frame_filtered.into(), gain_values);
+                            // .allpass(frame.into());
 
                             delay_tap.delayed_audio_l[i] = frame_out[0];
                             delay_tap.delayed_audio_r[i] = frame_out[1];
