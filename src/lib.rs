@@ -1,25 +1,3 @@
-/*
-TODO:
-
-- smooth all dsp params (at the end of the interpolation?)
-
-- evaluate filters:
-https://github.com/AquaEBM/svf
- also simper, with simd, non nonlin
-https://github.com/neodsp/simper-filter
-// https://github.com/SamiPerttu/fundsp/blob/801ad0a0c97838f9744d0dbe506512215f780b7d/src/svf.rs#L2
-
-- other way to change the delay time: https://signalsmith-audio.co.uk/writing/2021/stride-interpolated-delay/
-
-- make mutes sample-accurate
-
-- optional: live-mode / daw-mode switch
-  - compensate for host latency by adjusting the delay read index
-
-TODO: research choke event, possibly clear_taps()
-
- */
-
 // #![allow(non_snake_case)]
 // #![deny(clippy::all)]
 #![warn(clippy::pedantic)]
