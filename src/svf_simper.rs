@@ -35,6 +35,7 @@ DEALINGS IN THE SOFTWARE.
 // thanks, andy!
 
 use std::f32::consts;
+use std::simd::num::SimdFloat;
 use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
 
 #[derive(Debug, Clone)]
@@ -101,10 +102,31 @@ where
         (k, a1, a2, a3)
     }
 
+    // https://www.desmos.com/calculator/xj0nabg0we
+    // x * (25.95+x * x) / (26.396+8.78 * x * x)
+    // https://www.kvraudio.com/forum/viewtopic.php?p=7310333&sid=9308335d2247a9e996b48ab71d47c2bc#p7310333
+    #[inline]
+    pub fn fast_tanh(v: Simd<f32, LANES>) -> Simd<f32, LANES> {
+        let square = v * v; // Element-wise squaring
+        v * (Simd::splat(25.95) + square)
+            / (Simd::splat(26.369) + Simd::splat(8.78) * square)
+                .simd_clamp(Simd::splat(-1.0), Simd::splat(1.0))
+    }
+
+    // quickerTanh / quickerTanh64 credits to mopo synthesis library:
+    // Under GPLv3 or any later.
+    // Little IO <littleioaudio@gmail.com>
+    // Matt Tytel <matthewtytel@gmail.com>
+    #[inline]
+    pub fn quicker_tanh(v: Simd<f32, LANES>) -> Simd<f32, LANES> {
+        let square = v * v; // Element-wise squaring
+        v / (Simd::splat(1.0) + square / (Simd::splat(3.0) + square / Simd::splat(5.0)))
+    }
+
     #[inline]
     fn process(&mut self, v0: Simd<f32, LANES>) -> (Simd<f32, LANES>, Simd<f32, LANES>) {
         let v3 = v0 - self.ic2eq;
-        let v1 = (self.a1 * self.ic1eq) + (self.a2 * v3);
+        let v1 = Self::fast_tanh((self.a1 * self.ic1eq) + (self.a2 * v3));
         let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
 
         self.ic1eq = (Simd::splat(2.0) * v1) - self.ic1eq;
@@ -199,6 +221,8 @@ see: git@github.com:AquaEBM/filte.rs.git
 benchmark against it
 
 make nonlin variants
+https://discord.com/channels/590254806208217089/590657587939115048/1290733076972044461
+that is exactly the thing you're trying to do: applying saturation to the bandpass output before it goes into the integrator that turns it into the lowpass output
 
 make set_x4
 
