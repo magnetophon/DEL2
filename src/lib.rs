@@ -639,6 +639,7 @@ impl Plugin for Del2 {
         // Initialize filter parameters for each tap
         self.initialize_filter_parameters();
         for delay_tap in &mut self.delay_taps {
+            delay_tap.lowpass.reset(440.0, 0.5, sample_rate);
             delay_tap
                 .shelving_eq
                 .reset(PANNER_EQ_FREQ, PANNER_EQ_RES, sample_rate);
@@ -655,7 +656,6 @@ impl Plugin for Del2 {
             delay_tap.amp_envelope.reset(0.0);
             delay_tap.ladders.s = [f32x4::splat(0.); 4];
         });
-
         self.drive_main_smoother.reset(0.0);
         // then fill the array
         for tap_index in 0..tap_counter {
@@ -956,6 +956,12 @@ impl Plugin for Del2 {
                                         + value_idx as f32,
                                 ) * pre_filter_gain;
                         }
+
+                        // TODO: smooth
+                        let cutoff = taps_params.cutoff_main.value();
+                        let res = taps_params.res_main.value();
+                        delay_tap.lowpass.set(cutoff, res * 2.0);
+
                         // HQ mode:
                         for i in block_start..block_end {
                             let frame = f32x4::from_array([
@@ -972,8 +978,10 @@ impl Plugin for Del2 {
                                 0.0,
                             ]);
 
-                            let frame_filtered = *delay_tap.ladders.tick_pivotal(frame).as_array();
+                            // let frame_filtered = *delay_tap.ladders.tick_pivotal(frame).as_array();
                             // let frame_filtered = *delay_tap.ladders.tick_linear(frame).as_array();
+                            let frame_filtered = delay_tap.lowpass.lowpass(frame);
+                            // let frame_filtered = delay_tap.lowpass.bandpass(frame);
                             let frame_out = delay_tap
                                 .shelving_eq
                                 .highshelf_cheap(frame_filtered.into(), gain_values);

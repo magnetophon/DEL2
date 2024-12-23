@@ -14,6 +14,7 @@ pub struct DelayTap {
 
     pub filter_params: Arc<FilterParams>,
     pub ladders: LadderFilter,
+    pub lowpass: SVFSimper<4>,
     pub shelving_eq: SVFSimper<4>,
     pub mute_in_delayed: Box<[bool]>,
     /// Fades between 0 and 1 with timings based on the global attack and release settings.
@@ -57,6 +58,7 @@ impl DelayTap {
             delayed_audio_r: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
             filter_params: filter_params.clone(),
             ladders: LadderFilter::new(filter_params),
+            lowpass: SVFSimper::new(440.0, 0.5, 48000.0),
             shelving_eq: SVFSimper::new(PANNER_EQ_FREQ, PANNER_EQ_RES, 48000.0),
             mute_in_delayed: vec![false; MAX_BLOCK_SIZE].into_boxed_slice(),
             amp_envelope: Smoother::new(SmoothingStyle::Linear(13.0)),

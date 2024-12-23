@@ -94,7 +94,9 @@ where
     #[inline]
     fn compute_parameters(cutoff: f32, resonance: f32, pi_over_sr: f32) -> (f32, f32, f32, f32) {
         let g = (cutoff * pi_over_sr).tan();
-        let k = 2.0 * (1.0 - resonance.clamp(0.0, 1.0));
+        // let k = 2.0 * (1.0 - resonance.clamp(0.0, 1.0));
+        // let k = (2.0 * (1.0 - resonance)).min(2.0);
+        let k = 2.0 * (1.0 - resonance);
         let a1 = g.mul_add(g + k, 1.0).recip();
         let a2 = g * a1;
         let a3 = g * a2;
@@ -108,9 +110,8 @@ where
     #[inline]
     pub fn fast_tanh(v: Simd<f32, LANES>) -> Simd<f32, LANES> {
         let square = v * v; // Element-wise squaring
-        v * (Simd::splat(25.95) + square)
-            / (Simd::splat(26.369) + Simd::splat(8.78) * square)
-                .simd_clamp(Simd::splat(-1.0), Simd::splat(1.0))
+        (v * (Simd::splat(25.95) + square) / (Simd::splat(26.369) + Simd::splat(8.78) * square))
+            .simd_clamp(Simd::splat(-1.0), Simd::splat(1.0))
     }
 
     // quickerTanh / quickerTanh64 credits to mopo synthesis library:
@@ -126,11 +127,13 @@ where
     #[inline]
     fn process(&mut self, v0: Simd<f32, LANES>) -> (Simd<f32, LANES>, Simd<f32, LANES>) {
         let v3 = v0 - self.ic2eq;
-        let v1 = Self::fast_tanh((self.a1 * self.ic1eq) + (self.a2 * v3));
+        let v1 = (self.a1 * self.ic1eq) + (self.a2 * v3);
         let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
 
-        self.ic1eq = (Simd::splat(2.0) * v1) - self.ic1eq;
-        self.ic2eq = (Simd::splat(2.0) * v2) - self.ic2eq;
+        // self.ic1eq = (Simd::splat(2.0) * v1) - self.ic1eq;
+        self.ic1eq = Self::fast_tanh((Simd::splat(2.0) * v1) - self.ic1eq);
+        // self.ic2eq = (Simd::splat(2.0) * v2) - self.ic2eq;
+        self.ic2eq = Self::fast_tanh((Simd::splat(2.0) * v2) - self.ic2eq);
 
         (v1, v2)
     }
@@ -190,7 +193,7 @@ where
         v0: Simd<f32, LANES>,
         lin_gain: Simd<f32, LANES>,
     ) -> Simd<f32, LANES> {
-        let (v1, v2) = self.process(v0);
+        let (_, v2) = self.process(v0);
         lin_gain.mul_add(v2, v0 - v2)
     }
     #[inline]
