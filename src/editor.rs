@@ -260,6 +260,7 @@ fn full_parameters(cx: &mut Context) {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "note>pan").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.taps.panning_amount)
+                        .set_style(ParamSliderStyle::FromMidPoint)
                         .class("widget");
                 })
                 .class("row");
@@ -333,6 +334,7 @@ fn filter_parameters(cx: &mut Context) {
                     HStack::new(cx, |cx| {
                         Label::new(cx, "velocity").class("slider-label");
                         ParamSlider::new(cx, Data::params, |params| &params.taps.cutoff_mod)
+                            .set_style(ParamSliderStyle::FromMidPoint)
                             .class("widget");
                     })
                     .class("row");
@@ -350,7 +352,9 @@ fn filter_parameters(cx: &mut Context) {
         .class("row");
         HStack::new(cx, |cx| {
             Label::new(cx, "velocity").class("slider-label");
-            ParamSlider::new(cx, Data::params, |params| &params.taps.res_mod).class("widget");
+            ParamSlider::new(cx, Data::params, |params| &params.taps.res_mod)
+                .class("widget")
+                .set_style(ParamSliderStyle::FromMidPoint);
         })
         .class("row");
     })
@@ -364,7 +368,9 @@ fn filter_parameters(cx: &mut Context) {
         .class("row");
         HStack::new(cx, |cx| {
             Label::new(cx, "velocity").class("slider-label");
-            ParamSlider::new(cx, Data::params, |params| &params.taps.drive_mod).class("widget");
+            ParamSlider::new(cx, Data::params, |params| &params.taps.drive_mod)
+                .class("widget")
+                .set_style(ParamSliderStyle::FromMidPoint);
         })
         .class("row");
     })
