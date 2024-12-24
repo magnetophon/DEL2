@@ -206,9 +206,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.94"
+version = "1.0.95"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1fd03a028ef38ba2276dce7e33fcd6369c158a1bca17946c4b1b701891c1ff7"
+checksum = "34ac096ce696dc2fcabef30516bb13c0a68a11d30131d3df6f04711467681b04"
 
 [[package]]
 name = "anymap"
@@ -356,7 +356,7 @@ dependencies = [
  "regex",
  "rustc-hash",
  "shlex",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -403,9 +403,9 @@ dependencies = [
 
 [[package]]
 name = "bon"
-version = "3.3.0"
+version = "3.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f265cdb2e8501f1c952749e78babe8f1937be92c98120e5f78fc72d634682bad"
+checksum = "61030e4aaccae9727cc388843dcc7ad1fb9e1ccdef5571e3e8393976b49b74ce"
 dependencies = [
  "bon-macros",
  "rustversion",
@@ -413,9 +413,9 @@ dependencies = [
 
 [[package]]
 name = "bon-macros"
-version = "3.3.0"
+version = "3.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38aa5c627cd7706490e5b003d685f8b9d69bc343b1a00b9fdd01e75fdf6827cf"
+checksum = "67d5d25cc9bd33120702000acc60836db15f06eabc4466230bf79dc80bd0a6ee"
 dependencies = [
  "darling",
  "ident_case",
@@ -423,7 +423,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rustversion",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -434,9 +434,9 @@ checksum = "79296716171880943b8470b5f8d03aa55eb2e645a4874bdbb28adb49162e012c"
 
 [[package]]
 name = "bytemuck"
-version = "1.20.0"
+version = "1.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b37c88a63ffd85d15b406896cc343916d7cf57838a847b3a6f2ca5d39a5695a"
+checksum = "ef657dfab802224e671f5818e9a4935f9b1957ed18e58292690cc39e7a4092a3"
 
 [[package]]
 name = "byteorder"
@@ -633,7 +633,7 @@ dependencies = [
  "heck",
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -966,7 +966,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13b588ba4ac1a99f7f2964d24b3d896ddc6bf847ee3855dbd4366f058cfcd331"
 dependencies = [
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -996,7 +996,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "strsim",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -1007,7 +1007,7 @@ checksum = "d336a2a514f6ccccaa3e09b02d41d35330c07ddf03a62165fcec10bb561c7806"
 dependencies = [
  "darling_core",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -1053,7 +1053,7 @@ checksum = "5f33878137e4dafd7fa914ad4e259e18a4e8e532b9617a2d0150262bf53abfce"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -1086,7 +1086,7 @@ checksum = "97369cbbc041bc366949bc74d34658d6cda5621039731c6310521892a3a20ae0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -1242,7 +1242,7 @@ checksum = "1a5c6c585bc94aaf2c7b51dd4c2ba22680844aba4c687be581871a6f518c5742"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -1964,7 +1964,7 @@ checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -1994,7 +1994,7 @@ dependencies = [
  "proc-macro-crate",
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -2240,9 +2240,9 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.36.5"
+version = "0.36.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aedf0a2d09c573ed1d8d85b30c119153926a2b36dce0ab28322c09a117a4683e"
+checksum = "62948e14d923ea95ea2c7c86c71013138b66525b86bdc08d2dcc262bdb497b87"
 dependencies = [
  "memchr",
 ]
@@ -2380,7 +2380,7 @@ dependencies = [
  "phf_shared",
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -2409,7 +2409,7 @@ checksum = "3c0f5fad0874fc7abcd4d750e76917eaebbecaa2c20bde22e1dbeeba8beb758c"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -2464,7 +2464,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64d1ec885c64d0457d564db4ec299b2dae3f9c02808b8ad9c3a089c591b18033"
 dependencies = [
  "proc-macro2",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -2685,7 +2685,7 @@ checksum = "1db149f81d46d2deba7cd3c50772474707729550221e69588478ebf9ada425ae"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -2761,14 +2761,14 @@ checksum = "46f859dbbf73865c6627ed570e78961cd3ac92407a2d117204c49232485da55e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
 name = "serde_json"
-version = "1.0.133"
+version = "1.0.134"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7fceb2473b9166b2294ef05efcb65a3db80803f0b03ef86a5fc88a2b85ee377"
+checksum = "d00f4175c42ee48b15416f6193a959ba3a0d67fc699a0db9ad12df9f83991c7d"
 dependencies = [
  "itoa",
  "memchr",
@@ -2856,7 +2856,7 @@ checksum = "044dd2233c9717a74f75197f3e7f0a966db2127c0ffb5e05013b480a9b75b2c7"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -2949,9 +2949,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.90"
+version = "2.0.91"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "919d3b74a5dd0ccd15aeb8f93e7006bd9e14c295087c9896a110f490752bcf31"
+checksum = "d53cbcb5a243bd33b7858b1d7f4aca2153490815872d86d955d6ea29f743c035"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3023,7 +3023,7 @@ checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
@@ -3095,9 +3095,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.8.0"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "445e881f4f6d382d5f27c034e25eb92edd7c784ceab92a0937db7f2e9471b938"
+checksum = "022db8904dfa342efe721985167e9fcd16c29b226db4397ed752a761cfce81e8"
 dependencies = [
  "tinyvec_macros",
 ]
@@ -3249,7 +3249,7 @@ checksum = "1ed7f4237ba393424195053097c1516bd4590dc82b84f2f97c5c69e12704555b"
 dependencies = [
  "proc-macro-hack",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
  "unic-langid-impl",
 ]
 
@@ -3304,7 +3304,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "vizia"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#d66c8c90d62ce327a05c8d9a9d0c2bad40e5f8f8"
 dependencies = [
  "vizia_baseview",
  "vizia_core",
@@ -3314,7 +3314,7 @@ dependencies = [
 [[package]]
 name = "vizia_baseview"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#d66c8c90d62ce327a05c8d9a9d0c2bad40e5f8f8"
 dependencies = [
  "baseview 0.1.0 (git+https://github.com/RustAudio/baseview.git?rev=9a0b42c09d712777b2edb4c5e0cb6baf21e988f0)",
  "gl",
@@ -3328,7 +3328,7 @@ dependencies = [
 [[package]]
 name = "vizia_core"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#d66c8c90d62ce327a05c8d9a9d0c2bad40e5f8f8"
 dependencies = [
  "accesskit",
  "bitflags 2.6.0",
@@ -3361,22 +3361,22 @@ dependencies = [
 [[package]]
 name = "vizia_derive"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#d66c8c90d62ce327a05c8d9a9d0c2bad40e5f8f8"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
 
 [[package]]
 name = "vizia_id"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#d66c8c90d62ce327a05c8d9a9d0c2bad40e5f8f8"
 
 [[package]]
 name = "vizia_input"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#d66c8c90d62ce327a05c8d9a9d0c2bad40e5f8f8"
 dependencies = [
  "bitflags 2.6.0",
  "keyboard-types",
@@ -3397,7 +3397,7 @@ dependencies = [
 [[package]]
 name = "vizia_storage"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#d66c8c90d62ce327a05c8d9a9d0c2bad40e5f8f8"
 dependencies = [
  "morphorm",
  "vizia_id",
@@ -3406,7 +3406,7 @@ dependencies = [
 [[package]]
 name = "vizia_style"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#d66c8c90d62ce327a05c8d9a9d0c2bad40e5f8f8"
 dependencies = [
  "bitflags 2.6.0",
  "cssparser",
@@ -3421,7 +3421,7 @@ dependencies = [
 [[package]]
 name = "vizia_window"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#d66c8c90d62ce327a05c8d9a9d0c2bad40e5f8f8"
 dependencies = [
  "accesskit",
  "bitflags 2.6.0",
@@ -3433,7 +3433,7 @@ dependencies = [
 [[package]]
 name = "vizia_winit"
 version = "0.2.0"
-source = "git+https://github.com/vizia/vizia?branch=vizia_plug#be06ec3683dcb51c8bf7cdb3a6452bab89d69e95"
+source = "git+https://github.com/vizia/vizia?branch=vizia_plug#d66c8c90d62ce327a05c8d9a9d0c2bad40e5f8f8"
 dependencies = [
  "accesskit",
  "copypasta",
@@ -3524,7 +3524,7 @@ dependencies = [
  "log",
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
  "wasm-bindgen-shared",
 ]
 
@@ -3559,7 +3559,7 @@ checksum = "30d7a95b763d3c45903ed6c81f156801839e5ee968bb07e534c44df0fcd330c2"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
@@ -4005,9 +4005,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winit"
-version = "0.30.5"
+version = "0.30.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0be9e76a1f1077e04a411f0b989cbd3c93339e1771cb41e71ac4aee95bfd2c67"
+checksum = "dba50bc8ef4b6f1a75c9274fb95aa9a8f63fbc66c56f391bd85cf68d51e7b1a3"
 dependencies = [
  "ahash",
  "android-activity",
@@ -4176,9 +4176,9 @@ dependencies = [
 
 [[package]]
 name = "xxhash-rust"
-version = "0.8.12"
+version = "0.8.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a5cbf750400958819fb6178eaa83bee5cd9c29a26a40cc241df8c70fdd46984"
+checksum = "a08fd76779ae1883bbf1e46c2c46a75a0c4e37c445e68a24b01479d438f26ae6"
 
 [[package]]
 name = "zerocopy"
@@ -4197,5 +4197,5 @@ checksum = "fa4f8080344d4671fb4e831a13ad1e68092748387dfc4f55e356242fae12ce3e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.90",
+ "syn 2.0.91",
 ]
