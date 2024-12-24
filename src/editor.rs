@@ -276,6 +276,7 @@ fn full_parameters(cx: &mut Context) {
                 HStack::new(cx, |cx| {
                     Label::new(cx, "note>pan").class("slider-label");
                     ParamSlider::new(cx, Data::params, |params| &params.taps.panning_amount)
+                        .set_style(ParamSliderStyle::FromMidPoint)
                         .class("widget");
                 })
                 .class("row");

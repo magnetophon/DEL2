@@ -3386,7 +3386,6 @@ dependencies = [
 [[package]]
 name = "vizia_plug"
 version = "0.1.0"
-source = "git+https://github.com/vizia/vizia-plug#59002af5fc52da9e55b2c69bdd1bcfb626e6cc91"
 dependencies = [
  "crossbeam",
  "nih_plug",

@@ -347,7 +347,7 @@ impl TapsParams {
 
             panning_amount: FloatParam::new(
                 "panning amount",
-                0.0,
+                0.13,
                 FloatRange::SymmetricalSkewed {
                     min: -1.0,
                     max: 1.0,

@@ -21,7 +21,9 @@ nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["a
 # nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["assert_process_allocs"] }
 bit_mask_ring_buf = "0.5"
 
-vizia_plug = { git = "https://github.com/vizia/vizia-plug"}
+# untill https://github.com/vizia/vizia-plug/pull/1 is merged
+# vizia_plug = { git = "https://github.com/vizia/vizia-plug"}
+vizia_plug = { path = "../vizia-plug" }
 synfx-dsp     = { version = "0.5.6" }
 array-init = "2.1.0"
 default-boxed = { version = "0.2.0" }
