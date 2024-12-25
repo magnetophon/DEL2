@@ -103,7 +103,39 @@ where
 
         (k, a1, a2, a3)
     }
+    #[inline]
+    pub fn set_simd(&mut self, cutoff: Simd<f32, LANES>, resonance: Simd<f32, LANES>) {
+        let (k, a1, a2, a3) = Self::compute_parameters_simd(cutoff, resonance, self.pi_over_sr);
 
+        self.k = k;
+        self.a1 = a1;
+        self.a2 = a2;
+        self.a3 = a3;
+    }
+
+    #[inline]
+    fn compute_parameters_simd(
+        cutoff: Simd<f32, LANES>,
+        resonance: Simd<f32, LANES>,
+        pi_over_sr: Simd<f32, LANES>,
+    ) -> (
+        Simd<f32, LANES>,
+        Simd<f32, LANES>,
+        Simd<f32, LANES>,
+        Simd<f32, LANES>,
+    ) {
+        let g = Self::fast_tanh(cutoff * pi_over_sr);
+
+        // Apply clamping via SIMD instructions if needed
+        // let k = (Simd::splat(2.0) * (Simd::splat(1.0) - resonance.clamp(Simd::splat(0.0), Simd::splat(1.0))));
+        let k = Simd::splat(2.0) * (Simd::splat(1.0) - resonance);
+
+        let a1 = g.mul_add(g + k, Simd::splat(1.0)).recip();
+        let a2 = g * a1;
+        let a3 = g * a2;
+
+        (k, a1, a2, a3)
+    }
     // https://www.desmos.com/calculator/xj0nabg0we
     // x * (25.95+x * x) / (26.396+8.78 * x * x)
     // https://www.kvraudio.com/forum/viewtopic.php?p=7310333&sid=9308335d2247a9e996b48ab71d47c2bc#p7310333
