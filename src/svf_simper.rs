@@ -263,11 +263,29 @@ make set_x4
 
 use wider
 iiuc, my cpu can do f32x8 and M1 macs can do f32x16
+rust supports up to f32x64
+
 
 make lerp that crossfades
 
 look at olegs impl in faust:
 mix is a dot mult
 A = pow(10.0, G/40.0);
+
+for matching taps to simd:
+good enough?
+- at startup, get nr_lanes supported by HW
+- make enum[nr_lanes] containing simd_blocks for audio and params
+- nr_iterations =  ((nr_taps*2)/nr_lanes).ceil()
+- run filters
+for i 0..nr_iterations {
+  if is_smoothing {set(cf,res)}
+  highpas
+  lowpass
+  high_shelf
+}
+
+optimal:
+- binary count for number of taps, similar to faust slidingMin
 
  */
