@@ -28,10 +28,12 @@ pub struct DelayTap {
     pub delay_time: u32,
     // for modulated delay times from panning
     pub drive_mod_smoother: Smoother<f32>,
+    pub cutoff_smoother: Smoother<f32>,
+    pub res_smoother: Smoother<f32>,
+    // TODO: make l/r a single smoother
     pub smoothed_offset_l: Smoother<f32>,
     pub smoothed_offset_r: Smoother<f32>,
-    pub eq_gain_l: Smoother<f32>,
-    pub eq_gain_r: Smoother<f32>,
+    pub eq_gain: Smoother<f32>,
     pub pan_gain: Smoother<f32>,
     /// The note's key/note, in `0..128`. Only used for the delay tap terminated event.
     pub note: u8,
@@ -65,10 +67,11 @@ impl DelayTap {
             internal_id: 0,
             delay_time: 0,
             drive_mod_smoother: Smoother::new(SmoothingStyle::Linear(13.0)),
+            cutoff_smoother: Smoother::new(SmoothingStyle::Linear(13.0)),
+            res_smoother: Smoother::new(SmoothingStyle::Linear(13.0)),
             smoothed_offset_l: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
             smoothed_offset_r: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
-            eq_gain_l: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
-            eq_gain_r: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
+            eq_gain: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
             pan_gain: Smoother::new(SmoothingStyle::Linear(PAN_SMOOTHING_TIME)),
             note: NO_LEARNED_NOTE,
             velocity: 0.0,

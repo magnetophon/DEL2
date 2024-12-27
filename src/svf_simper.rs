@@ -124,9 +124,8 @@ where
         Simd<f32, LANES>,
         Simd<f32, LANES>,
     ) {
-        let g = Self::fast_tanh(cutoff * pi_over_sr);
+        let g = Self::fast_tan(cutoff * pi_over_sr);
 
-        // Apply clamping via SIMD instructions if needed
         // let k = (Simd::splat(2.0) * (Simd::splat(1.0) - resonance.clamp(Simd::splat(0.0), Simd::splat(1.0))));
         let k = Simd::splat(2.0) * (Simd::splat(1.0) - resonance);
 
@@ -155,7 +154,24 @@ where
         let square = v * v; // Element-wise squaring
         v / (Simd::splat(1.0) + square / (Simd::splat(3.0) + square / Simd::splat(5.0)))
     }
+    // fast tan(x) approximation
+    // adapted from : https://github.com/AquaEBM/simd_util/blob/7b6b3aff8b828e79fe9c4c63a645efb5af327aea/src/math.rs#L13
+    #[inline]
+    pub fn fast_tan(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
+        // optimized into constants, hopefully
+        let na = Simd::splat(1. / 15120.);
+        let nb = Simd::splat(-1. / 36.);
+        let nc = Simd::splat(1.);
+        let da = Simd::splat(1. / 504.);
+        let db = Simd::splat(-2. / 9.);
+        let dc = Simd::splat(1.);
 
+        let x2 = x * x;
+        let num = x.mul_add(x2.mul_add(x2.mul_add(na, nb), nc), Simd::splat(0.));
+        let den = x2.mul_add(x2.mul_add(da, db), dc);
+
+        num / den
+    }
     #[inline]
     fn process(&mut self, v0: Simd<f32, LANES>) -> (Simd<f32, LANES>, Simd<f32, LANES>) {
         let v3 = v0 - self.ic2eq;
