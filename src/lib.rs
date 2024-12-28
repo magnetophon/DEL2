@@ -20,7 +20,7 @@ use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::ops::Index;
-use std::simd::{f32x32, f32x4, Simd};
+use std::simd::{f32x32, f32x4};
 use std::sync::atomic::{
     AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering,
 };
@@ -83,8 +83,13 @@ pub struct Del2 {
     cutoff_freqs: Box<[f32]>,
     /// block of smoothed resonances for each filter
     resonances: Box<[f32]>,
+    /// block of smoothed  gains for each eq
+    eq_gains: Box<[f32]>,
+
+    // todo: make stereo, or integrate into per tap dsp
     dc_filter: SVFSimper<4>,
     lowpass: SVFSimper<32>,
+    shelving_eq: SVFSimper<32>,
 
     // for the smoothers
     dry_wet_block: Box<[f32]>,
@@ -485,8 +490,10 @@ impl Default for Del2 {
             delayed_audio: vec![0.0; MAX_BLOCK_SIZE * NUM_TAPS * 2].into_boxed_slice(),
             cutoff_freqs: vec![0.0; MAX_BLOCK_SIZE * NUM_TAPS].into_boxed_slice(),
             resonances: vec![0.0; MAX_BLOCK_SIZE * NUM_TAPS].into_boxed_slice(),
+            eq_gains: vec![0.0; MAX_BLOCK_SIZE * NUM_TAPS].into_boxed_slice(),
             dc_filter: SVFSimper::new(DC_HP_FREQ, DC_HP_RES, 48000.0),
             lowpass: SVFSimper::new(440.0, 0.5, 48000.0),
+            shelving_eq: SVFSimper::new(PANNER_EQ_FREQ, PANNER_EQ_RES, 48000.0),
 
             dry_wet_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             cutoff_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
@@ -650,6 +657,8 @@ impl Plugin for Del2 {
         self.set_delay_buffer_size(buffer_config);
         self.dc_filter.reset(DC_HP_FREQ, DC_HP_RES, sample_rate);
         self.lowpass.reset(4400.0, 0.5, sample_rate);
+        self.shelving_eq
+            .reset(PANNER_EQ_FREQ, PANNER_EQ_RES, sample_rate);
 
         // Initialize filter parameters for each tap
         self.initialize_filter_parameters();
@@ -990,6 +999,13 @@ impl Plugin for Del2 {
                             self.cutoff_freqs[right_index] = cutoff_block[value_idx];
                             self.resonances[left_index] = res_block[value_idx];
                             self.resonances[right_index] = res_block[value_idx];
+
+                            // negative (in dB) gains only
+                            self.eq_gains[left_index] =
+                                self.delay_tap_eq_gain_block[value_idx].min(1.0);
+                            // flip the dB value
+                            self.eq_gains[right_index] =
+                                self.delay_tap_eq_gain_block[value_idx].recip().min(1.0);
                             // TODO: remove
                             delay_tap.delayed_audio_l[sample_idx] =
                                 self.delay_buffer[0].lin_interp_f32(
@@ -1149,14 +1165,17 @@ impl Plugin for Del2 {
                 let mut audio = [0.0f32; 32];
                 let mut cutoff = [0.0f32; 32];
                 let mut res = [0.0f32; 32];
+                let mut eq_gain = [0.0f32; 32];
                 for j in 0..32 {
                     audio[j] = self.delayed_audio[i + block_len * j];
                     cutoff[j] = self.cutoff_freqs[i + block_len * j];
                     res[j] = self.resonances[i + block_len * j];
+                    eq_gain[j] = self.eq_gains[i + block_len * j];
                 }
                 let audio_frame = f32x32::from_array(audio);
                 let cutoff_frame = f32x32::from_array(cutoff);
                 let res_frame = f32x32::from_array(res);
+                let eq_gain_frame = f32x32::from_array(eq_gain);
 
                 // let frame = f32x32::from_array(
                 // (0..32)
@@ -1189,12 +1208,12 @@ impl Plugin for Del2 {
                 // println!("self.cutoff_freqs[0]: {}", self.cutoff_freqs[0]);
                 // self.lowpass.set(cutoff_frame[0], res_frame[0]);
                 // self.lowpass.set_simd(Simd::splat(999.9), Simd::splat(0.8));
-                let frame_out = self.lowpass.lowpass(audio_frame);
+                let frame_filtered = self.lowpass.lowpass(audio_frame);
 
                 // let frame_filtered = delay_tap.lowpass.lowpass(frame);
-                // let frame_out = delay_tap
-                // .shelving_eq
-                // .highshelf_cheap(frame_filtered.into(), gain_values);
+                let frame_out = self
+                    .shelving_eq
+                    .highshelf_cheap(frame_filtered.into(), eq_gain_frame);
 
                 // delay_tap.delayed_audio_l[i] = frame_out[0];
                 // delay_tap.delayed_audio_r[i] = frame_out[1];
