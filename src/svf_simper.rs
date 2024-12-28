@@ -142,9 +142,9 @@ where
         let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
 
         // self.ic1eq = (Simd::splat(2.0) * v1) - self.ic1eq;
-        self.ic1eq = Self::fast_tanh((Simd::splat(2.0) * v1) - self.ic1eq);
+        self.ic1eq = Self::fast_tanh(Simd::splat(2.0) * v1) - self.ic1eq;
         // self.ic2eq = (Simd::splat(2.0) * v2) - self.ic2eq;
-        self.ic2eq = Self::fast_tanh((Simd::splat(2.0) * v2) - self.ic2eq);
+        self.ic2eq = Self::fast_tanh(Simd::splat(2.0) * v2) - self.ic2eq;
 
         (v1, v2)
     }
