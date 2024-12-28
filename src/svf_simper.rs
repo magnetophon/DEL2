@@ -135,43 +135,6 @@ where
 
         (k, a1, a2, a3)
     }
-    // https://www.desmos.com/calculator/xj0nabg0we
-    // x * (25.95+x * x) / (26.396+8.78 * x * x)
-    // https://www.kvraudio.com/forum/viewtopic.php?p=7310333&sid=9308335d2247a9e996b48ab71d47c2bc#p7310333
-    #[inline]
-    pub fn fast_tanh(v: Simd<f32, LANES>) -> Simd<f32, LANES> {
-        let square = v * v; // Element-wise squaring
-        (v * (Simd::splat(25.95) + square) / (Simd::splat(26.369) + Simd::splat(8.78) * square))
-            .simd_clamp(Simd::splat(-1.0), Simd::splat(1.0))
-    }
-
-    // quickerTanh / quickerTanh64 credits to mopo synthesis library:
-    // Under GPLv3 or any later.
-    // Little IO <littleioaudio@gmail.com>
-    // Matt Tytel <matthewtytel@gmail.com>
-    #[inline]
-    pub fn quicker_tanh(v: Simd<f32, LANES>) -> Simd<f32, LANES> {
-        let square = v * v; // Element-wise squaring
-        v / (Simd::splat(1.0) + square / (Simd::splat(3.0) + square / Simd::splat(5.0)))
-    }
-    // fast tan(x) approximation
-    // adapted from : https://github.com/AquaEBM/simd_util/blob/7b6b3aff8b828e79fe9c4c63a645efb5af327aea/src/math.rs#L13
-    #[inline]
-    pub fn fast_tan(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
-        // optimized into constants, hopefully
-        let na = Simd::splat(1. / 15120.);
-        let nb = Simd::splat(-1. / 36.);
-        let nc = Simd::splat(1.);
-        let da = Simd::splat(1. / 504.);
-        let db = Simd::splat(-2. / 9.);
-        let dc = Simd::splat(1.);
-
-        let x2 = x * x;
-        let num = x.mul_add(x2.mul_add(x2.mul_add(na, nb), nc), Simd::splat(0.));
-        let den = x2.mul_add(x2.mul_add(da, db), dc);
-
-        num / den
-    }
     #[inline]
     fn process(&mut self, v0: Simd<f32, LANES>) -> (Simd<f32, LANES>, Simd<f32, LANES>) {
         let v3 = v0 - self.ic2eq;
@@ -261,6 +224,44 @@ where
     ) -> Simd<f32, LANES> {
         let (_, v2) = self.process(v0);
         lin_gain.mul_add(v0 - v2, v2)
+    }
+
+    // https://www.desmos.com/calculator/xj0nabg0we
+    // x * (25.95+x * x) / (26.396+8.78 * x * x)
+    // https://www.kvraudio.com/forum/viewtopic.php?p=7310333&sid=9308335d2247a9e996b48ab71d47c2bc#p7310333
+    #[inline]
+    pub fn fast_tanh(v: Simd<f32, LANES>) -> Simd<f32, LANES> {
+        let square = v * v; // Element-wise squaring
+        (v * (Simd::splat(25.95) + square) / (Simd::splat(26.396) + Simd::splat(8.78) * square))
+            .simd_clamp(Simd::splat(-1.0), Simd::splat(1.0))
+    }
+
+    // quickerTanh / quickerTanh64 credits to mopo synthesis library:
+    // Under GPLv3 or any later.
+    // Little IO <littleioaudio@gmail.com>
+    // Matt Tytel <matthewtytel@gmail.com>
+    #[inline]
+    pub fn quicker_tanh(v: Simd<f32, LANES>) -> Simd<f32, LANES> {
+        let square = v * v; // Element-wise squaring
+        v / (Simd::splat(1.0) + square / (Simd::splat(3.0) + square / Simd::splat(5.0)))
+    }
+    // fast tan(x) approximation
+    // adapted from : https://github.com/AquaEBM/simd_util/blob/7b6b3aff8b828e79fe9c4c63a645efb5af327aea/src/math.rs#L13
+    #[inline]
+    pub fn fast_tan(x: Simd<f32, LANES>) -> Simd<f32, LANES> {
+        // optimized into constants, hopefully
+        let na = Simd::splat(1. / 15120.);
+        let nb = Simd::splat(-1. / 36.);
+        let nc = Simd::splat(1.);
+        let da = Simd::splat(1. / 504.);
+        let db = Simd::splat(-2. / 9.);
+        let dc = Simd::splat(1.);
+
+        let x2 = x * x;
+        let num = x.mul_add(x2.mul_add(x2.mul_add(na, nb), nc), Simd::splat(0.));
+        let den = x2.mul_add(x2.mul_add(da, db), dc);
+
+        num / den
     }
 }
 
