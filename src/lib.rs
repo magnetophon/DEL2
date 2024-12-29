@@ -1177,7 +1177,17 @@ impl Plugin for Del2 {
             // self.cutoff_freqs[right_index] = cutoff_block[value_idx];
             // self.resonances[left_index] = res_block[value_idx];
 
+            // let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
             // for tap_index in 0..tap_counter {
+
+            let mut update_filter = false;
+
+            for tap_index in 0..NUM_TAPS {
+                let tap_offset = tap_index * 2 * block_len;
+                update_filter = update_filter
+                    || self.cutoff_freqs[tap_offset] != self.cutoff_freqs[tap_offset + 1]
+                    || self.resonances[tap_offset] != self.resonances[tap_offset + 1];
+            }
 
             let mut audio = [0.0f32; 32];
             let mut cutoff = [0.0f32; 32];
@@ -1198,7 +1208,9 @@ impl Plugin for Del2 {
                 let eq_gain_frame = f32x32::from_array(eq_gain);
                 let post_gain_frame = f32x32::from_array(post_gain);
 
-                self.lowpass.set_simd(cutoff_frame, res_frame);
+                if update_filter {
+                    self.lowpass.set_simd(cutoff_frame, res_frame);
+                }
 
                 let frame_filtered = self.lowpass.lowpass(audio_frame);
 
@@ -1222,8 +1234,8 @@ impl Plugin for Del2 {
             }
 
             // }
-
-            for tap_index in 0..NUM_TAPS {
+            // TODO tap_counter
+            for tap_index in 0..tap_counter {
                 let mut amplitude = 0.0;
 
                 for sample_idx in block_start..block_end {
@@ -1908,7 +1920,7 @@ impl Del2 {
                     delay_tap.amp_envelope.set_target(sample_rate, 1.0);
                     self.meter_indexes[new_index].store(index, Ordering::Relaxed);
                     // delay_tap.meter_index = new_index;
-                    nih_log!("recycled tap {index}, new_index: {new_index}");
+                    // nih_log!("recycled tap {index}, new_index: {new_index}");
                     return;
                 } else if delay_tap.internal_id < oldest_id {
                     // Track the oldest active tap
@@ -1927,10 +1939,10 @@ impl Del2 {
 
         if let Some(delay_tap) = found_inactive {
             // Initialize the non-active tap
-            nih_log!(
-                "start_tap: inactive tap: {}, new_index: {new_index}",
-                found_inactive_index.unwrap()
-            );
+            // nih_log!(
+            //     "start_tap: inactive tap: {}, new_index: {new_index}",
+            //     found_inactive_index.unwrap()
+            // );
             delay_tap.init(
                 amp_envelope,
                 self.next_internal_id,
@@ -1941,10 +1953,10 @@ impl Del2 {
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
             self.meter_indexes[new_index].store(found_inactive_index.unwrap(), Ordering::Relaxed);
         } else if let Some(oldest_delay_tap) = found_oldest {
-            nih_log!(
-                "start_tap: oldest tap: {}, new_index: {new_index}",
-                found_oldest_index.unwrap()
-            );
+            // nih_log!(
+            //     "start_tap: oldest tap: {}, new_index: {new_index}",
+            //     found_oldest_index.unwrap()
+            // );
             // Replace the oldest tap if needed
             oldest_delay_tap.init(
                 amp_envelope,
