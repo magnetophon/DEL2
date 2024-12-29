@@ -904,10 +904,16 @@ impl Plugin for Del2 {
 
                     let drive_mod_block = &mut self.drive_mod_block[..block_len];
                     let drive_mod_smoother = &delay_tap.drive_mod_smoother;
-                    drive_mod_smoother.set_target(
-                        sample_rate,
-                        util::db_to_gain_fast(drive_mod * velocity_factor),
-                    );
+                    let is_new_tap = tap_index + 1 > old_nr_taps;
+                    if is_new_tap {
+                        drive_mod_smoother
+                            .reset(util::db_to_gain_fast(drive_mod * velocity_factor));
+                    } else {
+                        drive_mod_smoother.set_target(
+                            sample_rate,
+                            util::db_to_gain_fast(drive_mod * velocity_factor),
+                        );
+                    }
                     drive_mod_smoother.next_block(drive_mod_block, block_len);
                     delay_tap
                         .cutoff_smoother
@@ -923,7 +929,6 @@ impl Plugin for Del2 {
                         let pan = ((f32::from(delay_tap.note) - panning_center) * panning_amount)
                             .clamp(-1.0, 1.0);
                         let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
-                        let is_new_tap = tap_index + 1 > old_nr_taps;
                         if is_new_tap {
                             // nih_log!("reset offset for {tap_index}");
                             delay_tap.smoothed_offset_l.reset(offset_l);
@@ -1174,13 +1179,12 @@ impl Plugin for Del2 {
 
             // for tap_index in 0..tap_counter {
 
-            let mut amplitude = 0.0;
+            let mut audio = [0.0f32; 32];
+            let mut cutoff = [0.0f32; 32];
+            let mut res = [0.0f32; 32];
+            let mut eq_gain = [0.0f32; 32];
+            let mut post_gain = [0.0f32; 32];
             for i in block_start..block_end {
-                let mut audio = [0.0f32; 32];
-                let mut cutoff = [0.0f32; 32];
-                let mut res = [0.0f32; 32];
-                let mut eq_gain = [0.0f32; 32];
-                let mut post_gain = [0.0f32; 32];
                 for j in 0..32 {
                     audio[j] = self.delayed_audio[i + block_len * j];
                     cutoff[j] = self.cutoff_freqs[i + block_len * j];
@@ -1194,37 +1198,8 @@ impl Plugin for Del2 {
                 let eq_gain_frame = f32x32::from_array(eq_gain);
                 let post_gain_frame = f32x32::from_array(post_gain);
 
-                // let frame = f32x32::from_array(
-                // (0..32)
-                // .map(|j| self.delayed_audio[i + block_len * j])
-                // .collect::<Vec<_>>()
-                // .try_into()
-                // .unwrap(),
-                // );
-
-                // let frame = f32x32::from_array([
-                // self.delayed_audio[i],
-                // self.delayed_audio[i + block_len],
-                // self.delayed_audio[i + block_len* 2],
-                // self.delayed_audio[i + block_len* 3],
-                // self.delayed_audio[i + block_len* 4],
-                // self.delayed_audio[i + block_len* 5],
-                // self.delayed_audio[i + block_len* 6],
-                // self.delayed_audio[i + block_len* 7],
-                // ]);
-
-                // let gain_values = f32x4::from_array([
-                // self.delay_tap_eq_gain_l_block[i],
-                // self.delay_tap_eq_gain_r_block[i],
-                // 0.0,
-                // 0.0,
-                // ]);
-
                 self.lowpass.set_simd(cutoff_frame, res_frame);
-                // println!("cutoff_frame[0]: {}, res_frame[0]: {}",cutoff_frame[0], res_frame[0]);
-                // println!("self.cutoff_freqs[0]: {}", self.cutoff_freqs[0]);
-                // self.lowpass.set(cutoff_frame[0], res_frame[0]);
-                // self.lowpass.set_simd(Simd::splat(999.9), Simd::splat(0.8));
+
                 let frame_filtered = self.lowpass.lowpass(audio_frame);
 
                 // let frame_filtered = delay_tap.lowpass.lowpass(frame);
@@ -1233,55 +1208,49 @@ impl Plugin for Del2 {
                     .highshelf_cheap(frame_filtered.into(), eq_gain_frame)
                     * post_gain_frame;
 
+                // for meters:
+                for j in 0..32 {
+                    self.delayed_audio[i + block_len * j] = frame_out[j];
+                }
                 // delay_tap.delayed_audio_l[i] = frame_out[0];
                 // delay_tap.delayed_audio_r[i] = frame_out[1];
 
                 for tap_index in 0..NUM_TAPS {
-                    let left = frame_out[tap_index * 2];
-                    let right = frame_out[tap_index * 2 + 1];
-                    amplitude += (left.abs() + right.abs()) * 0.5;
-                    if self.params.editor_state.is_open() {
-                        let weight = self.peak_meter_decay_weight * 0.91;
-
-                        amplitude = (amplitude / block_len as f32).min(1.0);
-                        let current_peak_meter = self.tap_meters[tap_index].load(Ordering::Relaxed);
-                        let new_peak_meter = if amplitude > current_peak_meter {
-                            // nih_log!(
-                            // "process: self.meter_indexes[{tap_index}]: {}",
-                            // self.meter_indexes[tap_index].load(Ordering::Relaxed)
-                            // );
-                            amplitude
-                        } else {
-                            current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
-                        };
-
-                        self.tap_meters[tap_index].store(new_peak_meter, Ordering::Relaxed);
-
-                        if self.params.editor_state.is_open() {
-                            let weight = self.peak_meter_decay_weight * 0.91;
-
-                            amplitude = (amplitude / block_len as f32).min(1.0);
-                            let current_peak_meter =
-                                self.tap_meters[tap_index].load(Ordering::Relaxed);
-                            let new_peak_meter = if amplitude > current_peak_meter {
-                                // nih_log!(
-                                // "process: self.meter_indexes[{tap_index}]: {}",
-                                // self.meter_indexes[tap_index].load(Ordering::Relaxed)
-                                // );
-                                amplitude
-                            } else {
-                                current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
-                            };
-
-                            self.tap_meters[tap_index].store(new_peak_meter, Ordering::Relaxed);
-                        }
-                    }
-                    output[0][i] += left;
-                    output[1][i] += right;
+                    output[0][i] += frame_out[tap_index * 2];
+                    output[1][i] += frame_out[tap_index * 2 + 1];
                 }
             }
+
             // }
 
+            for tap_index in 0..NUM_TAPS {
+                let mut amplitude = 0.0;
+
+                for sample_idx in block_start..block_end {
+                    let left_index = sample_idx + tap_index * 2 * block_len;
+                    let right_index = sample_idx + (tap_index * 2 + 1) * block_len;
+                    amplitude += (self.delayed_audio[left_index].abs()
+                        + self.delayed_audio[right_index].abs())
+                        * 0.5;
+                }
+
+                if self.params.editor_state.is_open() {
+                    amplitude = (amplitude / block_len as f32).min(1.0);
+                    // TODO:  this scaling shouldn't be needed, but without it, the meter decays way too slow
+                    let weight = self.peak_meter_decay_weight * 0.7;
+                    let current_peak_meter = self.tap_meters[tap_index].load(Ordering::Relaxed);
+                    // let current_peak_meter = peak_meter.load(Ordering::Relaxed);
+                    let new_peak_meter = if amplitude > current_peak_meter {
+                        // println!("peak: current_peak_meter: {current_peak_meter}, amplitude: {amplitude}");
+                        amplitude
+                    } else {
+                        // println!("decay: current_peak_meter: {current_peak_meter}, amplitude: {amplitude}");
+                        current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
+                    };
+
+                    self.tap_meters[tap_index].store(new_peak_meter, Ordering::Relaxed);
+                }
+            }
             block_start = block_end;
             block_end = (block_start + MAX_BLOCK_SIZE).min(num_samples);
         }

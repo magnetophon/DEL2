@@ -3,18 +3,14 @@ use std::sync::Arc;
 use synfx_dsp::fh_va::FilterParams;
 use synfx_dsp::fh_va::LadderFilter;
 
-use crate::{SVFSimper, MAX_BLOCK_SIZE, NO_LEARNED_NOTE, PANNER_EQ_FREQ, PANNER_EQ_RES};
+use crate::{MAX_BLOCK_SIZE, NO_LEARNED_NOTE};
 
 const PAN_SMOOTHING_TIME: f32 = 242.0;
 
 #[derive(Debug, Clone)]
 pub struct DelayTap {
-    // pub delayed_audio_l: Box<[f32]>,
-    // pub delayed_audio_r: Box<[f32]>,
     pub filter_params: Arc<FilterParams>,
     pub ladders: LadderFilter,
-    // pub lowpass: SVFSimper<4>,
-    // pub shelving_eq: SVFSimper<4>,
     pub mute_in_delayed: Box<[bool]>,
     /// Fades between 0 and 1 with timings based on the global attack and release settings.
     pub amp_envelope: Smoother<f32>,
@@ -55,12 +51,8 @@ pub struct DelayTap {
 impl DelayTap {
     pub fn new(filter_params: Arc<FilterParams>) -> Self {
         Self {
-            // delayed_audio_l: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
-            // delayed_audio_r: vec![0.0; MAX_BLOCK_SIZE].into_boxed_slice(),
             filter_params: filter_params.clone(),
             ladders: LadderFilter::new(filter_params),
-            // lowpass: SVFSimper::new(440.0, 0.5, 48000.0),
-            // shelving_eq: SVFSimper::new(PANNER_EQ_FREQ, PANNER_EQ_RES, 48000.0),
             mute_in_delayed: vec![false; MAX_BLOCK_SIZE].into_boxed_slice(),
             amp_envelope: Smoother::new(SmoothingStyle::Linear(13.0)),
             internal_id: 0,
