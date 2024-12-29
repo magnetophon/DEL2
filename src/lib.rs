@@ -1068,11 +1068,12 @@ impl Plugin for Del2 {
             let mut post_gain = [0.0f32; 32];
             for i in block_start..block_end {
                 for j in 0..32 {
-                    audio[j] = self.delayed_audio[i + block_len * j];
-                    cutoff[j] = self.cutoff_freqs[i + block_len * j];
-                    res[j] = self.resonances[i + block_len * j];
-                    eq_gain[j] = self.eq_gains[i + block_len * j];
-                    post_gain[j] = self.post_gains[i + block_len * j];
+                    let idx = i + block_len * j;
+                    audio[j] = self.delayed_audio[idx];
+                    cutoff[j] = self.cutoff_freqs[idx];
+                    res[j] = self.resonances[idx];
+                    eq_gain[j] = self.eq_gains[idx];
+                    post_gain[j] = self.post_gains[idx];
                 }
                 let audio_frame = f32x32::from_array(audio);
                 let cutoff_frame = f32x32::from_array(cutoff);
@@ -1088,7 +1089,7 @@ impl Plugin for Del2 {
 
                 let frame_out = self
                     .shelving_eq
-                    .highshelf_cheap(frame_filtered.into(), eq_gain_frame)
+                    .highshelf_cheap(frame_filtered, eq_gain_frame)
                     * post_gain_frame;
 
                 // for meters:
