@@ -1022,130 +1022,9 @@ impl Plugin for Del2 {
                                 post_filter_gain * self.delay_tap_pan_gain_block[value_idx];
                             self.post_gains[right_index] =
                                 post_filter_gain / self.delay_tap_pan_gain_block[value_idx];
-
-                            // TODO: remove
-                            // delay_tap.delayed_audio_l[sample_idx] =
-                            //     self.delay_buffer[0].lin_interp_f32(
-                            //         read_index - self.delay_tap_smoothed_offset_l_block[value_idx]
-                            //             + value_idx as f32,
-                            //     ) * pre_filter_gain;
-                            // delay_tap.delayed_audio_r[sample_idx] =
-                            //     self.delay_buffer[1].lin_interp_f32(
-                            //         read_index - self.delay_tap_smoothed_offset_r_block[value_idx]
-                            //             + value_idx as f32,
-                            //     ) * pre_filter_gain;
                         }
-
-                        // TODO: mod and smooth
-                        // let cutoff = taps_params.cutoff_main.value();
-                        // let res = taps_params.res_main.value();
-                        // delay_tap.lowpass.set(cutoff, res * 2.0);
-
-                        /*
-                        // HQ mode:
-                        for i in block_start..block_end {
-                            let frame = f32x4::from_array([
-                                delay_tap.delayed_audio_l[i],
-                                delay_tap.delayed_audio_r[i],
-                                0.0,
-                                0.0,
-                            ]);
-
-                            let gain_values = f32x4::from_array([
-                                self.delay_tap_eq_gain_block[i],
-                                self.delay_tap_eq_gain_block[i],
-                                0.0,
-                                0.0,
-                            ]);
-
-                            // let frame_filtered = *delay_tap.ladders.tick_pivotal(frame).as_array();
-                            // let frame_filtered = *delay_tap.ladders.tick_linear(frame).as_array();
-                            let frame_filtered = delay_tap.lowpass.lowpass(frame);
-                            // let frame_filtered = delay_tap.lowpass.bandpass(frame);
-                            let frame_out = delay_tap
-                                .shelving_eq
-                                .highshelf_cheap(frame_filtered.into(), gain_values);
-                            // .lowshelf_cheap(frame.into(), gain_values);
-                            // .highshelf(frame_filtered.into(), gain_values);
-                            // .allpass(frame.into());
-
-                            delay_tap.delayed_audio_l[i] = frame_out[0];
-                            delay_tap.delayed_audio_r[i] = frame_out[1];
-                        }
-                         */
-
-                        // LQ mode:
-                        //     for i in (block_start..block_end).step_by(2) {
-                        //         let frame = f32x4::from_array([
-                        //             delay_tap.delayed_audio_l[i],
-                        //             delay_tap.delayed_audio_r[i],
-                        //             delay_tap.delayed_audio_l.get(i + 1).copied().unwrap_or(0.0),
-                        //             delay_tap.delayed_audio_r.get(i + 1).copied().unwrap_or(0.0),
-                        //         ]);
-
-                        //         let gain_values = f32x4::from_array([
-                        //             self.delay_tap_eq_gain_l_block[i],
-                        //             self.delay_tap_eq_gain_r_block[i],
-                        //             self.delay_tap_eq_gain_l_block
-                        //                 .get(i + 1)
-                        //                 .copied()
-                        //                 .unwrap_or(1.0),
-                        //             self.delay_tap_eq_gain_r_block
-                        //                 .get(i + 1)
-                        //                 .copied()
-                        //                 .unwrap_or(1.0),
-                        //         ]);
-
-                        //         let frame_filtered =
-                        //         // frame;
-                        //             *delay_tap.ladders.tick_pivotal(frame).as_array();
-                        //         // *delay_tap.ladders.tick_linear(frame).as_array();
-                        //         let frame_out = delay_tap
-                        //             .shelving_eq
-                        //             .highshelf(frame_filtered.into(), gain_values);
-
-                        //         delay_tap.delayed_audio_l[i] = frame_out[0];
-                        //         delay_tap.delayed_audio_r[i] = frame_out[1];
-                        //         if i + 1 < block_end {
-                        //             delay_tap.delayed_audio_l[i + 1] = frame_out[2];
-                        //             delay_tap.delayed_audio_r[i + 1] = frame_out[3];
-                        //         }
-                        //     }
                     }
 
-                    // Process the output and meter updates
-                    // let mut amplitude = 0.0;
-                    // for (value_idx, sample_idx) in (block_start..block_end).enumerate() {
-                    //     let post_filter_gain = dry_wet_block[value_idx]
-                    //         * self.delay_tap_amp_envelope_block[value_idx]
-                    //         / drive_main_block[value_idx];
-                    //     let left = delay_tap.delayed_audio_l[sample_idx]
-                    //         * post_filter_gain
-                    //         * self.delay_tap_pan_gain_block[value_idx];
-                    //     let right = delay_tap.delayed_audio_r[sample_idx] * post_filter_gain
-                    //         / self.delay_tap_pan_gain_block[value_idx];
-                    //     // output[0][sample_idx] += left;
-                    //     // output[1][sample_idx] += right;
-                    //     amplitude += (left.abs() + right.abs()) * 0.5;
-                    // }
-
-                    // if self.params.editor_state.is_open() {
-                    //     let weight = self.peak_meter_decay_weight * 0.91;
-
-                    //     amplitude = (amplitude / block_len as f32).min(1.0);
-                    //     let current_peak_meter = self.tap_meters[tap_index].load(Ordering::Relaxed);
-                    //     let new_peak_meter = if amplitude > current_peak_meter {
-                    //         // nih_log!(
-                    //         // "process: self.meter_indexes[{tap_index}]: {}",
-                    //         // self.meter_indexes[tap_index].load(Ordering::Relaxed)
-                    //         // );
-                    //         amplitude
-                    //     } else {
-                    //         current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
-                    //     };
-
-                    //     self.tap_meters[tap_index].store(new_peak_meter, Ordering::Relaxed);
-                    // }
                     if self.delay_tap_amp_envelope_block[0] == 0.0 {
                         if delay_tap.releasing {
                             delay_tap.is_alive = false;
@@ -1172,13 +1051,6 @@ impl Plugin for Del2 {
             700..799 = right tap 3
 
              */
-            // self.delayed_audio[sample_idx + tap_index * 2 * block_len] =
-            // self.delayed_audio[sample_idx + (tap_index * 2 + 1) * block_len] =
-            // self.cutoff_freqs[right_index] = cutoff_block[value_idx];
-            // self.resonances[left_index] = res_block[value_idx];
-
-            // let tap_counter = self.params.tap_counter.load(Ordering::SeqCst);
-            // for tap_index in 0..tap_counter {
 
             let mut update_filter = false;
 
@@ -1214,7 +1086,6 @@ impl Plugin for Del2 {
 
                 let frame_filtered = self.lowpass.lowpass(audio_frame);
 
-                // let frame_filtered = delay_tap.lowpass.lowpass(frame);
                 let frame_out = self
                     .shelving_eq
                     .highshelf_cheap(frame_filtered.into(), eq_gain_frame)
@@ -1224,8 +1095,6 @@ impl Plugin for Del2 {
                 for j in 0..32 {
                     self.delayed_audio[i + block_len * j] = frame_out[j];
                 }
-                // delay_tap.delayed_audio_l[i] = frame_out[0];
-                // delay_tap.delayed_audio_r[i] = frame_out[1];
 
                 for tap_index in 0..NUM_TAPS {
                     output[0][i] += frame_out[tap_index * 2];
