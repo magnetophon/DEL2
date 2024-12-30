@@ -1052,14 +1052,11 @@ impl Plugin for Del2 {
 
              */
 
-            let mut update_filter = false;
-
-            for tap_index in 0..NUM_TAPS {
-                let tap_offset = tap_index * 2 * block_len;
-                update_filter = update_filter
-                    || self.cutoff_freqs[tap_offset] != self.cutoff_freqs[tap_offset + 1]
-                    || self.resonances[tap_offset] != self.resonances[tap_offset + 1];
-            }
+            let update_filter = (0..16).any(|i| {
+                let base = i * 2 * block_len;
+                self.cutoff_freqs[base] != self.cutoff_freqs[base + 1]
+                    || self.resonances[base] != self.resonances[base + 1]
+            });
 
             let mut audio = [0.0f32; 32];
             let mut cutoff = [0.0f32; 32];
