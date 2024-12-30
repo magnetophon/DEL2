@@ -20,7 +20,7 @@ use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::ops::Index;
-use std::simd::{f32x32, f32x4};
+use std::simd::{f32x2, f32x32};
 use std::sync::atomic::{
     AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering,
 };
@@ -88,7 +88,7 @@ pub struct Del2 {
     post_gains: Box<[f32]>,
 
     // todo: make stereo, or integrate into per tap dsp
-    dc_filter: SVFSimper<4, Linear>,
+    dc_filter: SVFSimper<2, Linear>,
     lowpass: SVFSimper<32, NonLinear>,
     shelving_eq: SVFSimper<32, Linear>,
 
@@ -681,7 +681,7 @@ impl Plugin for Del2 {
         self.delay_taps.iter_mut().for_each(|delay_tap| {
             delay_tap.is_alive = false;
             delay_tap.amp_envelope.reset(0.0);
-            delay_tap.ladders.s = [f32x4::splat(0.); 4];
+            // delay_tap.ladders.s = [f32x4::splat(0.); 4];
         });
         self.drive_main_smoother.reset(0.0);
         // then fill the array
@@ -1162,7 +1162,7 @@ impl Del2 {
             let write_index = self.delay_write_index;
             // Process each sample in the block
             for i in 0..block_len {
-                let frame = f32x4::from_array([out_l[i], out_r[i], 0.0, 0.0]);
+                let frame = f32x2::from_array([out_l[i], out_r[i]]);
                 // filter to remove dc-offset, since offsets can make the non lin filter models behave weirdly
                 let filtered_frame = self.dc_filter.highpass_cheap(frame);
 

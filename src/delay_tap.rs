@@ -1,7 +1,7 @@
 use nih_plug::prelude::*;
 use std::sync::Arc;
 use synfx_dsp::fh_va::FilterParams;
-use synfx_dsp::fh_va::LadderFilter;
+// use synfx_dsp::fh_va::LadderFilter;
 
 use crate::{MAX_BLOCK_SIZE, NO_LEARNED_NOTE};
 
@@ -10,7 +10,7 @@ const PAN_SMOOTHING_TIME: f32 = 242.0;
 #[derive(Debug, Clone)]
 pub struct DelayTap {
     pub filter_params: Arc<FilterParams>,
-    pub ladders: LadderFilter,
+    // pub ladders: LadderFilter,
     pub mute_in_delayed: Box<[bool]>,
     /// Fades between 0 and 1 with timings based on the global attack and release settings.
     pub amp_envelope: Smoother<f32>,
@@ -52,7 +52,7 @@ impl DelayTap {
     pub fn new(filter_params: Arc<FilterParams>) -> Self {
         Self {
             filter_params: filter_params.clone(),
-            ladders: LadderFilter::new(filter_params),
+            // ladders: LadderFilter::new(filter_params),
             mute_in_delayed: vec![false; MAX_BLOCK_SIZE].into_boxed_slice(),
             amp_envelope: Smoother::new(SmoothingStyle::Linear(13.0)),
             internal_id: 0,
