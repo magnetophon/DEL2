@@ -35,11 +35,56 @@ DEALINGS IN THE SOFTWARE.
 // thanks, andy!
 
 use std::f32::consts;
+use std::marker::PhantomData;
 use std::simd::num::SimdFloat;
 use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
 
+// First, define a trait for the filter behavior
+pub trait FilterBehavior {
+    fn process_state<const LANES: usize>(
+        v1: Simd<f32, LANES>,
+        v2: Simd<f32, LANES>,
+    ) -> (Simd<f32, LANES>, Simd<f32, LANES>)
+    where
+        LaneCount<LANES>: SupportedLaneCount;
+}
+
+// Implement linear behavior
+pub struct Linear;
+impl FilterBehavior for Linear {
+    #[inline]
+    fn process_state<const LANES: usize>(
+        v1: Simd<f32, LANES>,
+        v2: Simd<f32, LANES>,
+    ) -> (Simd<f32, LANES>, Simd<f32, LANES>)
+    where
+        LaneCount<LANES>: SupportedLaneCount,
+    {
+        ((Simd::splat(2.0) * v1), (Simd::splat(2.0) * v2))
+    }
+}
+
+// Implement nonlinear behavior
+pub struct NonLinear;
+impl FilterBehavior for NonLinear {
+    #[inline]
+    fn process_state<const LANES: usize>(
+        v1: Simd<f32, LANES>,
+        v2: Simd<f32, LANES>,
+    ) -> (Simd<f32, LANES>, Simd<f32, LANES>)
+    where
+        LaneCount<LANES>: SupportedLaneCount,
+    {
+        (
+            SVFSimper::<LANES>::fast_tanh(Simd::splat(2.0) * v1),
+            SVFSimper::<LANES>::fast_tanh(Simd::splat(2.0) * v2),
+        )
+    }
+}
+
+// Modify SVFSimper to be generic over the behavior
 #[derive(Debug, Clone)]
-pub struct SVFSimper<const LANES: usize>
+pub struct SVFSimper<const LANES: usize, B: FilterBehavior = Linear>
 where
     LaneCount<LANES>: SupportedLaneCount,
 {
@@ -50,9 +95,10 @@ where
     pub ic1eq: Simd<f32, LANES>,
     pub ic2eq: Simd<f32, LANES>,
     pi_over_sr: Simd<f32, LANES>,
+    _behavior: PhantomData<B>,
 }
 
-impl<const LANES: usize> SVFSimper<LANES>
+impl<const LANES: usize, B: FilterBehavior> SVFSimper<LANES, B>
 where
     LaneCount<LANES>: SupportedLaneCount,
 {
@@ -68,6 +114,7 @@ where
             ic1eq: Simd::splat(0.0),
             ic2eq: Simd::splat(0.0),
             pi_over_sr: Simd::splat(pi_over_sr),
+            _behavior: PhantomData,
         }
     }
 
@@ -94,8 +141,6 @@ where
     #[inline]
     fn compute_parameters(cutoff: f32, resonance: f32, pi_over_sr: f32) -> (f32, f32, f32, f32) {
         let g = (cutoff * pi_over_sr).tan();
-        // let k = 2.0 * (1.0 - resonance.clamp(0.0, 1.0));
-        // let k = (2.0 * (1.0 - resonance)).min(2.0);
         let k = 2.0 * (1.0 - resonance);
         let a1 = g.mul_add(g + k, 1.0).recip();
         let a2 = g * a1;
@@ -126,7 +171,6 @@ where
     ) {
         let g = Self::fast_tan(cutoff * pi_over_sr);
 
-        // let k = (Simd::splat(2.0) * (Simd::splat(1.0) - resonance.clamp(Simd::splat(0.0), Simd::splat(1.0))));
         let k = Simd::splat(2.0) * (Simd::splat(1.0) - resonance);
 
         let a1 = g.mul_add(g + k, Simd::splat(1.0)).recip();
@@ -135,16 +179,16 @@ where
 
         (k, a1, a2, a3)
     }
+
     #[inline]
     fn process(&mut self, v0: Simd<f32, LANES>) -> (Simd<f32, LANES>, Simd<f32, LANES>) {
         let v3 = v0 - self.ic2eq;
         let v1 = (self.a1 * self.ic1eq) + (self.a2 * v3);
         let v2 = self.ic2eq + (self.a2 * self.ic1eq) + (self.a3 * v3);
 
-        // self.ic1eq = (Simd::splat(2.0) * v1) - self.ic1eq;
-        self.ic1eq = Self::fast_tanh(Simd::splat(2.0) * v1) - self.ic1eq;
-        // self.ic2eq = (Simd::splat(2.0) * v2) - self.ic2eq;
-        self.ic2eq = Self::fast_tanh(Simd::splat(2.0) * v2) - self.ic2eq;
+        let (new_ic1, new_ic2) = B::process_state(v1, v2);
+        self.ic1eq = new_ic1 - self.ic1eq;
+        self.ic2eq = new_ic2 - self.ic2eq;
 
         (v1, v2)
     }

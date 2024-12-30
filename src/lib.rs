@@ -31,7 +31,7 @@ mod delay_tap;
 mod editor;
 mod svf_simper;
 use delay_tap::DelayTap;
-use svf_simper::SVFSimper;
+use svf_simper::{Linear, NonLinear, SVFSimper};
 
 // max seconds per tap
 const MAX_TAP_SECONDS: usize = 20;
@@ -88,9 +88,9 @@ pub struct Del2 {
     post_gains: Box<[f32]>,
 
     // todo: make stereo, or integrate into per tap dsp
-    dc_filter: SVFSimper<4>,
-    lowpass: SVFSimper<32>,
-    shelving_eq: SVFSimper<32>,
+    dc_filter: SVFSimper<4, Linear>,
+    lowpass: SVFSimper<32, NonLinear>,
+    shelving_eq: SVFSimper<32, Linear>,
 
     // for the smoothers
     dry_wet_block: Box<[f32]>,
