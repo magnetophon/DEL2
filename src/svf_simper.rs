@@ -39,6 +39,229 @@ use std::marker::PhantomData;
 use std::simd::num::SimdFloat;
 use std::simd::{LaneCount, Simd, StdFloat, SupportedLaneCount};
 
+#[cfg(target_arch = "aarch64")]
+use std::arch::aarch64::*;
+#[cfg(target_arch = "x86")]
+use std::arch::x86::*;
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
+
+// pub trait SimdOps<const LANES: usize> {
+//     type Vector;
+
+//     unsafe fn load(ptr: *const f32) -> Self::Vector;
+//     unsafe fn store(ptr: *mut f32, a: Self::Vector);
+//     unsafe fn set1(val: f32) -> Self::Vector;
+//     unsafe fn add(a: Self::Vector, b: Self::Vector) -> Self::Vector;
+//     unsafe fn mul(a: Self::Vector, b: Self::Vector) -> Self::Vector;
+// }
+
+// Add SIMD implementation enum
+#[derive(Clone, Copy, Debug)]
+enum SimdImpl {
+    Avx512,
+    Avx2,
+    Sse2,
+    Neon,
+    Fallback,
+}
+
+impl SimdImpl {
+    fn detect() -> Self {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx512f") {
+                return SimdImpl::Avx512;
+            }
+            if is_x86_feature_detected!("avx2") {
+                return SimdImpl::Avx2;
+            }
+            if is_x86_feature_detected!("sse2") {
+                return SimdImpl::Sse2;
+            }
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            if is_aarch64_feature_detected!("neon") {
+                return SimdImpl::Neon;
+            }
+        }
+        SimdImpl::Fallback
+    }
+}
+
+pub trait SimdOps {
+    type Vector;
+
+    unsafe fn load(ptr: *const f32) -> Self::Vector;
+    unsafe fn store(ptr: *mut f32, a: Self::Vector);
+    unsafe fn add(a: Self::Vector, b: Self::Vector) -> Self::Vector;
+    unsafe fn mul(a: Self::Vector, b: Self::Vector) -> Self::Vector;
+    unsafe fn mul_add(a: Self::Vector, b: Self::Vector, c: Self::Vector) -> Self::Vector;
+    unsafe fn splat(val: f32) -> Self::Vector;
+}
+
+#[cfg(target_arch = "x86_64")]
+mod avx512_ops {
+    use super::*;
+    pub struct Avx512;
+
+    impl SimdOps for Avx512 {
+        type Vector = __m512;
+
+        #[inline(always)]
+        unsafe fn load(ptr: *const f32) -> Self::Vector {
+            _mm512_loadu_ps(ptr)
+        }
+
+        #[inline(always)]
+        unsafe fn store(ptr: *mut f32, a: Self::Vector) {
+            _mm512_storeu_ps(ptr, a)
+        }
+
+        #[inline(always)]
+        unsafe fn add(a: Self::Vector, b: Self::Vector) -> Self::Vector {
+            _mm512_add_ps(a, b)
+        }
+
+        #[inline(always)]
+        unsafe fn mul(a: Self::Vector, b: Self::Vector) -> Self::Vector {
+            _mm512_mul_ps(a, b)
+        }
+
+        #[inline(always)]
+        unsafe fn mul_add(a: Self::Vector, b: Self::Vector, c: Self::Vector) -> Self::Vector {
+            _mm512_fmadd_ps(a, b, c)
+        }
+
+        #[inline(always)]
+        unsafe fn splat(val: f32) -> Self::Vector {
+            _mm512_set1_ps(val)
+        }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+mod avx2_ops {
+    use super::*;
+    pub struct Avx2;
+
+    impl SimdOps for Avx2 {
+        type Vector = __m256;
+
+        #[inline(always)]
+        unsafe fn load(ptr: *const f32) -> Self::Vector {
+            _mm256_loadu_ps(ptr)
+        }
+
+        #[inline(always)]
+        unsafe fn store(ptr: *mut f32, a: Self::Vector) {
+            _mm256_storeu_ps(ptr, a)
+        }
+
+        #[inline(always)]
+        unsafe fn add(a: Self::Vector, b: Self::Vector) -> Self::Vector {
+            _mm256_add_ps(a, b)
+        }
+
+        #[inline(always)]
+        unsafe fn mul(a: Self::Vector, b: Self::Vector) -> Self::Vector {
+            _mm256_mul_ps(a, b)
+        }
+
+        #[inline(always)]
+        unsafe fn mul_add(a: Self::Vector, b: Self::Vector, c: Self::Vector) -> Self::Vector {
+            _mm256_fmadd_ps(a, b, c)
+        }
+
+        #[inline(always)]
+        unsafe fn splat(val: f32) -> Self::Vector {
+            _mm256_set1_ps(val)
+        }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+mod sse2_ops {
+    use super::*;
+    pub struct Sse2;
+
+    impl SimdOps for Sse2 {
+        type Vector = __m128;
+
+        #[inline(always)]
+        unsafe fn load(ptr: *const f32) -> Self::Vector {
+            _mm_loadu_ps(ptr)
+        }
+
+        #[inline(always)]
+        unsafe fn store(ptr: *mut f32, a: Self::Vector) {
+            _mm_storeu_ps(ptr, a)
+        }
+
+        #[inline(always)]
+        unsafe fn add(a: Self::Vector, b: Self::Vector) -> Self::Vector {
+            _mm_add_ps(a, b)
+        }
+
+        #[inline(always)]
+        unsafe fn mul(a: Self::Vector, b: Self::Vector) -> Self::Vector {
+            _mm_mul_ps(a, b)
+        }
+
+        #[inline(always)]
+        unsafe fn mul_add(a: Self::Vector, b: Self::Vector, c: Self::Vector) -> Self::Vector {
+            // SSE2 doesn't have FMA, so we do it manually
+            _mm_add_ps(_mm_mul_ps(a, b), c)
+        }
+
+        #[inline(always)]
+        unsafe fn splat(val: f32) -> Self::Vector {
+            _mm_set1_ps(val)
+        }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+mod neon_ops {
+    use super::*;
+    pub struct Neon;
+
+    impl SimdOps for Neon {
+        type Vector = float32x4_t;
+
+        #[inline(always)]
+        unsafe fn load(ptr: *const f32) -> Self::Vector {
+            vld1q_f32(ptr)
+        }
+
+        #[inline(always)]
+        unsafe fn store(ptr: *mut f32, a: Self::Vector) {
+            vst1q_f32(ptr, a)
+        }
+
+        #[inline(always)]
+        unsafe fn add(a: Self::Vector, b: Self::Vector) -> Self::Vector {
+            vaddq_f32(a, b)
+        }
+
+        #[inline(always)]
+        unsafe fn mul(a: Self::Vector, b: Self::Vector) -> Self::Vector {
+            vmulq_f32(a, b)
+        }
+
+        #[inline(always)]
+        unsafe fn mul_add(a: Self::Vector, b: Self::Vector, c: Self::Vector) -> Self::Vector {
+            vfmaq_f32(c, a, b)
+        }
+
+        #[inline(always)]
+        unsafe fn splat(val: f32) -> Self::Vector {
+            vdupq_n_f32(val)
+        }
+    }
+}
+
 // First, define a trait for the filter behavior
 pub trait FilterBehavior {
     fn process_state<const LANES: usize>(
@@ -129,13 +352,148 @@ where
 
     #[inline]
     pub fn set(&mut self, cutoff: f32, resonance: f32) {
-        let pi_over_sr = self.pi_over_sr[0]; // Use the precomputed value
+        let pi_over_sr = self.pi_over_sr[0];
         let (k, a1, a2, a3) = Self::compute_parameters(cutoff, resonance, pi_over_sr);
 
         self.k = Simd::splat(k);
         self.a1 = Simd::splat(a1);
         self.a2 = Simd::splat(a2);
         self.a3 = Simd::splat(a3);
+    }
+
+    #[inline]
+    pub fn set_simd(&mut self, cutoff: Simd<f32, LANES>, resonance: Simd<f32, LANES>) {
+        let (k, a1, a2, a3) = Self::compute_parameters_simd(cutoff, resonance, self.pi_over_sr);
+
+        self.k = k;
+        self.a1 = a1;
+        self.a2 = a2;
+        self.a3 = a3;
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx512f")]
+    unsafe fn filter_avx512(&mut self, input: __m512) -> __m512 {
+        let v0 = input;
+        let v3 = _mm512_loadu_ps(self.ic2eq.to_array().as_ptr());
+
+        let ic1 = _mm512_loadu_ps(self.ic1eq.to_array().as_ptr());
+        let a1_ic1 = _mm512_mul_ps(_mm512_loadu_ps(self.a1.to_array().as_ptr()), ic1);
+        let a2_v3 = _mm512_mul_ps(_mm512_loadu_ps(self.a2.to_array().as_ptr()), v3);
+        let sum = _mm512_add_ps(a1_ic1, a2_v3);
+        let v1 = _mm512_fmadd_ps(sum, _mm512_loadu_ps(self.k.to_array().as_ptr()), v0);
+
+        let v1k = _mm512_mul_ps(v1, _mm512_loadu_ps(self.k.to_array().as_ptr()));
+        let v2 = _mm512_fmadd_ps(ic1, _mm512_loadu_ps(self.a2.to_array().as_ptr()), v1k);
+
+        let two = _mm512_set1_ps(2.0);
+        self.ic1eq = Simd::from_array({
+            let mut arr = [0.0; LANES];
+            _mm512_storeu_ps(arr.as_mut_ptr(), _mm512_sub_ps(_mm512_mul_ps(v1, two), ic1));
+            arr
+        });
+        self.ic2eq = Simd::from_array({
+            let mut arr = [0.0; LANES];
+            _mm512_storeu_ps(arr.as_mut_ptr(), _mm512_sub_ps(_mm512_mul_ps(v2, two), v3));
+            arr
+        });
+
+        v2
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2")]
+    unsafe fn filter_avx2(&mut self, input: __m256) -> __m256 {
+        let v0 = input;
+        let v3 = _mm256_loadu_ps(self.ic2eq.to_array().as_ptr());
+
+        let ic1 = _mm256_loadu_ps(self.ic1eq.to_array().as_ptr());
+        let a1_ic1 = _mm256_mul_ps(_mm256_loadu_ps(self.a1.to_array().as_ptr()), ic1);
+        let a2_v3 = _mm256_mul_ps(_mm256_loadu_ps(self.a2.to_array().as_ptr()), v3);
+        let sum = _mm256_add_ps(a1_ic1, a2_v3);
+        let v1 = _mm256_fmadd_ps(sum, _mm256_loadu_ps(self.k.to_array().as_ptr()), v0);
+
+        let v1k = _mm256_mul_ps(v1, _mm256_loadu_ps(self.k.to_array().as_ptr()));
+        let v2 = _mm256_fmadd_ps(ic1, _mm256_loadu_ps(self.a2.to_array().as_ptr()), v1k);
+
+        let two = _mm256_set1_ps(2.0);
+        self.ic1eq = Simd::from_array({
+            let mut arr = [0.0; LANES];
+            _mm256_storeu_ps(arr.as_mut_ptr(), _mm256_sub_ps(_mm256_mul_ps(v1, two), ic1));
+            arr
+        });
+        self.ic2eq = Simd::from_array({
+            let mut arr = [0.0; LANES];
+            _mm256_storeu_ps(arr.as_mut_ptr(), _mm256_sub_ps(_mm256_mul_ps(v2, two), v3));
+            arr
+        });
+
+        v2
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "sse2")]
+    unsafe fn filter_sse2(&mut self, input: __m128) -> __m128 {
+        let v0 = input;
+        let v3 = _mm_loadu_ps(self.ic2eq.to_array().as_ptr());
+
+        let ic1 = _mm_loadu_ps(self.ic1eq.to_array().as_ptr());
+        let a1_ic1 = _mm_mul_ps(_mm_loadu_ps(self.a1.to_array().as_ptr()), ic1);
+        let a2_v3 = _mm_mul_ps(_mm_loadu_ps(self.a2.to_array().as_ptr()), v3);
+        let sum = _mm_add_ps(a1_ic1, a2_v3);
+        let k = _mm_loadu_ps(self.k.to_array().as_ptr());
+        let v1 = _mm_add_ps(_mm_mul_ps(sum, k), v0);
+
+        let v1k = _mm_mul_ps(v1, k);
+        let v2 = _mm_add_ps(
+            _mm_mul_ps(ic1, _mm_loadu_ps(self.a2.to_array().as_ptr())),
+            v1k,
+        );
+
+        let two = _mm_set1_ps(2.0);
+        self.ic1eq = Simd::from_array({
+            let mut arr = [0.0; LANES];
+            _mm_storeu_ps(arr.as_mut_ptr(), _mm_sub_ps(_mm_mul_ps(v1, two), ic1));
+            arr
+        });
+        self.ic2eq = Simd::from_array({
+            let mut arr = [0.0; LANES];
+            _mm_storeu_ps(arr.as_mut_ptr(), _mm_sub_ps(_mm_mul_ps(v2, two), v3));
+            arr
+        });
+
+        v2
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[target_feature(enable = "neon")]
+    unsafe fn filter_neon(&mut self, input: float32x4_t) -> float32x4_t {
+        let v0 = input;
+        let v3 = vld1q_f32(self.ic2eq.to_array().as_ptr());
+
+        let ic1 = vld1q_f32(self.ic1eq.to_array().as_ptr());
+        let a1_ic1 = vmulq_f32(vld1q_f32(self.a1.to_array().as_ptr()), ic1);
+        let a2_v3 = vmulq_f32(vld1q_f32(self.a2.to_array().as_ptr()), v3);
+        let sum = vaddq_f32(a1_ic1, a2_v3);
+        let k = vld1q_f32(self.k.to_array().as_ptr());
+        let v1 = vfmaq_f32(v0, sum, k);
+
+        let v1k = vmulq_f32(v1, k);
+        let v2 = vfmaq_f32(v1k, ic1, vld1q_f32(self.a2.to_array().as_ptr()));
+
+        let two = vdupq_n_f32(2.0);
+        self.ic1eq = Simd::from_array({
+            let mut arr = [0.0; LANES];
+            vst1q_f32(arr.as_mut_ptr(), vsubq_f32(vmulq_f32(v1, two), ic1));
+            arr
+        });
+        self.ic2eq = Simd::from_array({
+            let mut arr = [0.0; LANES];
+            vst1q_f32(arr.as_mut_ptr(), vsubq_f32(vmulq_f32(v2, two), v3));
+            arr
+        });
+
+        v2
     }
 
     #[inline]
@@ -147,15 +505,6 @@ where
         let a3 = g * a2;
 
         (k, a1, a2, a3)
-    }
-    #[inline]
-    pub fn set_simd(&mut self, cutoff: Simd<f32, LANES>, resonance: Simd<f32, LANES>) {
-        let (k, a1, a2, a3) = Self::compute_parameters_simd(cutoff, resonance, self.pi_over_sr);
-
-        self.k = k;
-        self.a1 = a1;
-        self.a2 = a2;
-        self.a3 = a3;
     }
 
     #[inline]
@@ -306,6 +655,93 @@ where
         let den = x2.mul_add(x2.mul_add(da, db), dc);
 
         num / den
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_svf_simper() {
+        let sample_rate = 48000.0;
+        let test_freqs = [110.0, 220.0, 440.0, 880.0, 1760.0, 3520.0];
+        let resonances = [0.0, 0.5, 0.7, 0.9];
+        let cutoff = 1000.0;
+
+        for &resonance in &resonances {
+            let mut filter = SVFSimper::<4>::new(cutoff, resonance, sample_rate);
+
+            // Verify k coefficient matches expected value
+            let expected_k = 2.0 * (1.0 - resonance);
+            assert!(
+                (filter.k[0] - expected_k).abs() < 1e-6,
+                "k coefficient incorrect for resonance {}: expected {}, got {}",
+                resonance,
+                expected_k,
+                filter.k[0]
+            );
+
+            // Test frequency response
+            for &freq in &test_freqs {
+                let num_samples = (sample_rate / freq * 10.0) as usize;
+                let mut power_sum_in = 0.0;
+                let mut power_sum_out = 0.0;
+
+                // Warm up filter
+                for i in 0..(2.0 * sample_rate / freq) as usize {
+                    let t = i as f32 / sample_rate;
+                    let input = (2.0 * std::f32::consts::PI * freq * t).sin();
+                    filter.process(Simd::splat(input));
+                }
+
+                // Measure response
+                for i in 0..num_samples {
+                    let t = i as f32 / sample_rate;
+                    let input = (2.0 * std::f32::consts::PI * freq * t).sin();
+                    let (_, lp) = filter.process(Simd::splat(input));
+                    let output = lp.to_array()[0];
+
+                    power_sum_in += input * input;
+                    power_sum_out += output * output;
+                }
+
+                let rms_in = (power_sum_in / num_samples as f32).sqrt();
+                let rms_out = (power_sum_out / num_samples as f32).sqrt();
+                let ratio = rms_out / rms_in;
+                let db = 20.0 * ratio.log10();
+
+                // Verify filter behavior based on resonance and frequency
+                if freq < cutoff / 2.0 {
+                    // Check passband (should have minimal attenuation)
+                    assert!(
+                        db > -3.0,
+                        "Too much attenuation in passband: {} dB at {} Hz (resonance {})",
+                        db,
+                        freq,
+                        resonance
+                    );
+                } else if freq > cutoff * 2.0 {
+                    // Check stopband (should have significant attenuation)
+                    assert!(
+                        db < -12.0,
+                        "Insufficient attenuation in stopband: {} dB at {} Hz (resonance {})",
+                        db,
+                        freq,
+                        resonance
+                    );
+                }
+
+                // For high resonance, verify peak at cutoff
+                if resonance > 0.7 && (freq as f32 - cutoff).abs() < cutoff * 0.1 {
+                    assert!(
+                        db > 0.0,
+                        "Expected resonant peak near cutoff for resonance {}",
+                        resonance
+                    );
+                }
+            }
+        }
     }
 }
 
