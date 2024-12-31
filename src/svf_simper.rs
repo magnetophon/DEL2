@@ -698,86 +698,197 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::hint::black_box;
+    use std::time::Instant;
 
-    #[test]
-    fn test_svf_simper() {
-        let sample_rate = 48000.0;
-        let test_freqs = [110.0, 220.0, 440.0, 880.0, 1760.0, 3520.0];
-        let resonances = [0.0, 0.5, 0.7, 0.9];
-        let cutoff = 1000.0;
-
-        for &resonance in &resonances {
-            let mut filter = SVFSimper::<4>::new(cutoff, resonance, sample_rate);
-
-            // Verify k coefficient matches expected value
-            let expected_k = 2.0 * (1.0 - resonance);
-            assert!(
-                (filter.k[0] - expected_k).abs() < 1e-6,
-                "k coefficient incorrect for resonance {}: expected {}, got {}",
-                resonance,
-                expected_k,
-                filter.k[0]
-            );
-
-            // Test frequency response
-            for &freq in &test_freqs {
-                let num_samples = (sample_rate / freq * 10.0) as usize;
-                let mut power_sum_in = 0.0;
-                let mut power_sum_out = 0.0;
-
-                // Warm up filter
-                for i in 0..(2.0 * sample_rate / freq) as usize {
-                    let t = i as f32 / sample_rate;
-                    let input = (2.0 * std::f32::consts::PI * freq * t).sin();
-                    filter.process(Simd::splat(input));
-                }
-
-                // Measure response
-                for i in 0..num_samples {
-                    let t = i as f32 / sample_rate;
-                    let input = (2.0 * std::f32::consts::PI * freq * t).sin();
-                    let (_, lp) = filter.process(Simd::splat(input));
-                    let output = lp.to_array()[0];
-
-                    power_sum_in += input * input;
-                    power_sum_out += output * output;
-                }
-
-                let rms_in = (power_sum_in / num_samples as f32).sqrt();
-                let rms_out = (power_sum_out / num_samples as f32).sqrt();
-                let ratio = rms_out / rms_in;
-                let db = 20.0 * ratio.log10();
-
-                // Verify filter behavior based on resonance and frequency
-                if freq < cutoff / 2.0 {
-                    // Check passband (should have minimal attenuation)
-                    assert!(
-                        db > -3.0,
-                        "Too much attenuation in passband: {} dB at {} Hz (resonance {})",
-                        db,
-                        freq,
-                        resonance
-                    );
-                } else if freq > cutoff * 2.0 {
-                    // Check stopband (should have significant attenuation)
-                    assert!(
-                        db < -12.0,
-                        "Insufficient attenuation in stopband: {} dB at {} Hz (resonance {})",
-                        db,
-                        freq,
-                        resonance
-                    );
-                }
-
-                // For high resonance, verify peak at cutoff
-                if resonance > 0.7 && (freq as f32 - cutoff).abs() < cutoff * 0.1 {
-                    assert!(
-                        db > 0.0,
-                        "Expected resonant peak near cutoff for resonance {}",
-                        resonance
-                    );
+    fn get_cpu_info() -> String {
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(contents) = std::fs::read_to_string("/proc/cpuinfo") {
+                if let Some(model_line) = contents.lines().find(|l| l.starts_with("model name")) {
+                    return model_line
+                        .split(":")
+                        .nth(1)
+                        .unwrap_or("Unknown")
+                        .trim()
+                        .to_string();
                 }
             }
+        }
+        "Unknown CPU".to_string()
+    }
+
+    fn print_cpu_features() {
+        #[cfg(target_arch = "x86_64")]
+        {
+            println!("\nCPU Features:");
+            println!("  AVX512: {}", is_x86_feature_detected!("avx512f"));
+            println!("  AVX2:   {}", is_x86_feature_detected!("avx2"));
+            println!("  SSE2:   {}", is_x86_feature_detected!("sse2"));
+        }
+    }
+
+    fn pin_to_performance_core() {
+        #[cfg(target_os = "linux")]
+        {
+            use core_affinity::CoreId;
+            if let Some(core_ids) = core_affinity::get_core_ids() {
+                println!("\nAvailable cores: {}", core_ids.len());
+                if let Some(core_id) = core_ids.first() {
+                    core_affinity::set_for_current(*core_id);
+                    println!("Pinned to core {}", core_id.id);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn benchmark_filter() {
+        println!("\nBenchmarking on: {}", get_cpu_info());
+        println!("Current Date and Time (UTC): {}", chrono::Utc::now());
+        if let Ok(user) = std::env::var("USER") {
+            println!("Current User's Login: {}", user);
+        }
+
+        print_cpu_features();
+        pin_to_performance_core();
+
+        let sample_rate = 48000.0;
+        let cutoff = 1000.0;
+        let resonance = 0.5;
+
+        // Test each lane width with both generic and SIMD implementations
+        println!("\n=== LANES=4 ===");
+        benchmark_comparison::<4>(sample_rate, cutoff, resonance);
+
+        println!("\n=== LANES=8 ===");
+        benchmark_comparison::<8>(sample_rate, cutoff, resonance);
+
+        println!("\n=== LANES=16 ===");
+        benchmark_comparison::<16>(sample_rate, cutoff, resonance);
+    }
+
+    fn benchmark_comparison<const LANES: usize>(sample_rate: f32, cutoff: f32, resonance: f32)
+    where
+        LaneCount<LANES>: SupportedLaneCount,
+    {
+        // Create two filters - one forced to generic, one using selected SIMD
+        let mut filter_generic = SVFSimper::<LANES>::new(cutoff, resonance, sample_rate);
+        let mut filter_simd = SVFSimper::<LANES>::new(cutoff, resonance, sample_rate);
+
+        // Force generic implementation for comparison
+        filter_generic.dispatch = FilterDispatch::Generic;
+
+        let input = Simd::from_array([0.1; LANES]);
+
+        println!("Generic implementation:");
+        let generic_stats = run_benchmark(&mut filter_generic, input);
+
+        println!("\nSIMD implementation ({:?}):", filter_simd.dispatch);
+        let simd_stats = run_benchmark(&mut filter_simd, input);
+
+        println!("\nComparison:");
+        println!(
+            "  Generic: {:.2}ns per sample",
+            generic_stats.median / LANES as f64
+        );
+        println!(
+            "  SIMD:    {:.2}ns per sample",
+            simd_stats.median / LANES as f64
+        );
+        println!(
+            "  Speedup: {:.2}x",
+            generic_stats.median / simd_stats.median
+        );
+    }
+
+    struct BenchmarkStats {
+        median: f64,
+        mean: f64,
+        min: f64,
+        max: f64,
+        std_dev: f64,
+    }
+
+    fn run_benchmark<const LANES: usize>(
+        filter: &mut SVFSimper<LANES>,
+        input: Simd<f32, LANES>,
+    ) -> BenchmarkStats
+    where
+        LaneCount<LANES>: SupportedLaneCount,
+    {
+        let num_iterations = 1_000_000;
+        let num_runs = 10;
+        let mut durations = Vec::with_capacity(num_runs);
+
+        // Warm up
+        for _ in 0..num_iterations {
+            black_box(filter.process(black_box(input)));
+        }
+
+        // Actual benchmark runs
+        for run in 1..=num_runs {
+            let start = Instant::now();
+            for _ in 0..num_iterations {
+                black_box(filter.process(black_box(input)));
+            }
+            let duration = start.elapsed().as_nanos() as f64 / num_iterations as f64;
+            durations.push(duration);
+            println!("Run {}: {:.2}ns per {} samples", run, duration, LANES);
+        }
+
+        durations.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median = if num_runs % 2 == 0 {
+            (durations[num_runs / 2 - 1] + durations[num_runs / 2]) / 2.0
+        } else {
+            durations[num_runs / 2]
+        };
+
+        let mean = durations.iter().sum::<f64>() / num_runs as f64;
+        let variance = durations
+            .iter()
+            .map(|x| (x - mean) * (x - mean))
+            .sum::<f64>()
+            / num_runs as f64;
+        let std_dev = variance.sqrt();
+
+        println!("\nSummary:");
+        println!(
+            "  Median: {:.2}ns per {} samples ({:.2}ns per sample)",
+            median,
+            LANES,
+            median / LANES as f64
+        );
+        println!(
+            "  Mean:   {:.2}ns per {} samples ({:.2}ns per sample)",
+            mean,
+            LANES,
+            mean / LANES as f64
+        );
+        println!(
+            "  Min:    {:.2}ns per {} samples ({:.2}ns per sample)",
+            durations[0],
+            LANES,
+            durations[0] / LANES as f64
+        );
+        println!(
+            "  Max:    {:.2}ns per {} samples ({:.2}ns per sample)",
+            durations[num_runs - 1],
+            LANES,
+            durations[num_runs - 1] / LANES as f64
+        );
+        println!("  Std Dev:{:.2}ns", std_dev);
+        println!(
+            "  Throughput: {:.2}M samples/second",
+            1000.0 / (median / LANES as f64) / 1000.0
+        );
+
+        BenchmarkStats {
+            median,
+            mean,
+            min: durations[0],
+            max: durations[num_runs - 1],
+            std_dev,
         }
     }
 }

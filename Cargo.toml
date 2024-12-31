@@ -34,3 +34,7 @@ strip = "symbols"
 inherits = "release"
 debug = true
 strip = "none"
+
+[dev-dependencies]
+core_affinity = "0.8.0"
+chrono = "0.4"
