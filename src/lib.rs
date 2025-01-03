@@ -25,6 +25,7 @@ use std::sync::atomic::{
     AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering,
 };
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use synfx_dsp::fh_va::{FilterParams, LadderMode};
 
 mod delay_tap;
@@ -162,6 +163,7 @@ pub struct Del2Params {
     previous_pan_background_lengths: AtomicF32Array,
     // for making the gui smoother frame rate independent
     last_frame_time: AtomicU64,
+    first_note_nanos: AtomicU64,
     // the rate we are nunning at now
     sample_rate: AtomicF32,
     host_tempo: AtomicF32,
@@ -569,6 +571,7 @@ impl Del2Params {
                 Arc::new(AtomicF32::new(0.0))
             })),
             last_frame_time: AtomicU64::new(0),
+            first_note_nanos: AtomicU64::new(0),
             sample_rate: 1.0.into(),
             host_tempo: (-1.0).into(),
             time_sig_numerator: (-1).into(),
@@ -1216,6 +1219,13 @@ impl Del2 {
                     // If in TimeOut state, reset and start new counting phase
                     self.clear_taps(timing, true);
                     self.params.first_note.store(note, Ordering::SeqCst);
+                    let now_nanos = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("System time should be after UNIX epoch")
+                        .as_nanos() as u64;
+                    self.params
+                        .first_note_nanos
+                        .store(now_nanos, Ordering::SeqCst);
                     self.params.preset_tempo.store(
                         self.params.host_tempo.load(Ordering::SeqCst),
                         Ordering::SeqCst,
