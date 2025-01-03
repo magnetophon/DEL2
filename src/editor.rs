@@ -549,7 +549,7 @@ impl View for DelayGraph {
         let current_time = params.current_time.load(Ordering::SeqCst);
 
         let target_time_scaling_factor = Self::compute_time_scaling_factor(&params);
-        let gui_decay_weight = Self::calculate_gui_decay_weight(&params);
+        let (gui_decay_weight, now_nanos) = Self::calculate_gui_decay_weight(&params);
         let available_width = outline_width.mul_add(-0.5, bounds.w - border_width);
         let time_scaling_factor = (Self::gui_smooth(
             target_time_scaling_factor,
@@ -618,6 +618,7 @@ impl View for DelayGraph {
                     outline_width,
                     time_scaling_factor,
                     border_width,
+                    now_nanos,
                 );
             }
         }
@@ -756,6 +757,7 @@ impl DelayGraph {
             // time out, zoom in but leave a margin
             0.11 * max_delay_time
         } else {
+            // zoom out
             max_tap_time
         };
 
@@ -763,7 +765,7 @@ impl DelayGraph {
         max_delay_time + zoom_tap_samples
     }
 
-    fn calculate_gui_decay_weight(params: &Arc<Del2Params>) -> f32 {
+    fn calculate_gui_decay_weight(params: &Arc<Del2Params>) -> (f32, u64) {
         // Get current system time in nanoseconds since the UNIX epoch
         let now_nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -787,12 +789,13 @@ impl DelayGraph {
         // Calculate and return the GUI smoothing decay weight
         let decay_ms_per_frame =
             (GUI_SMOOTHING_DECAY_MS * 1_000_000.0) / frame_duration_nanos as f64;
-        0.25f32.powf(decay_ms_per_frame.recip() as f32)
+        (0.25f32.powf(decay_ms_per_frame.recip() as f32), now_nanos)
     }
 
     /// Smoothly updates the value stored within an `f32` based on a target value.
     /// If the current value is `NO_GUI_SMOOTHING`, it initializes with the target value.
     fn gui_smooth(target_value: f32, atomic_value: &AtomicF32, gui_decay_weight: f32) -> f32 {
+        // return target_value;
         // Define the threshold relative to the target value
         let threshold = 0.001 * target_value.abs();
         // Load the current value once
@@ -867,9 +870,17 @@ impl DelayGraph {
         line_width: f32,
         time_scaling_factor: f32,
         border_width: f32,
+        now_nanos: u64,
     ) {
+        // audio time
         let current_time = params.current_time.load(Ordering::SeqCst);
         let x_offset = current_time.mul_add(time_scaling_factor, border_width * 0.5);
+        let a_x_pos = bounds.x + x_offset;
+
+        // system time
+        let elapsed_nanos = now_nanos - params.first_note_nanos.load(Ordering::SeqCst);
+        let seconds = elapsed_nanos as f32 / 1_000_000_000.0;
+        let x_offset = seconds.mul_add(time_scaling_factor, border_width * 0.5);
         let x_pos = bounds.x + x_offset;
 
         // Constants for glow effect
@@ -930,6 +941,14 @@ impl DelayGraph {
         );
 
         canvas.fill_path(&core_path, &vg::Paint::color(color));
+
+        let mut path = vg::Path::new();
+        path.move_to(a_x_pos, bounds.y);
+        path.line_to(a_x_pos, bounds.y + bounds.h);
+        canvas.stroke_path(
+            &path,
+            &vg::Paint::color(vg::Color::rgb(0, 0, 0)).with_line_width(3.0),
+        );
     }
 
     fn draw_in_out_meters(
