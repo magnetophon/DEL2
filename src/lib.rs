@@ -36,7 +36,7 @@ use svf_simper::{Linear, NonLinear, SVFSimper};
 
 // max seconds per tap
 const MAX_TAP_SECONDS: usize = 20;
-const NUM_TAPS: usize = 16;
+const NUM_TAPS: usize = 32;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * NUM_TAPS;
 const MAX_SAMPLE_RATE: usize = 192_000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
@@ -1054,8 +1054,8 @@ impl Plugin for Del2 {
 
              */
 
-            let update_filter = (0..16).any(|i| {
-                let base = i * 2 * block_len;
+            let update_filter = (0..NUM_TAPS).any(|tap_index| {
+                let base = tap_index * 2 * block_len;
                 self.cutoff_freqs[base] != self.cutoff_freqs[base + 1]
                     || self.resonances[base] != self.resonances[base + 1]
             });
@@ -1089,6 +1089,7 @@ impl Plugin for Del2 {
                 );
             }
 
+            // meters:
             for tap_index in 0..tap_counter {
                 let mut amplitude = 0.0;
 
