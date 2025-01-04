@@ -49,7 +49,7 @@ pub struct DelayTap {
 }
 
 impl DelayTap {
-    pub fn new(filter_params: Arc<FilterParams>) -> Self {
+    pub fn new(filter_params: &Arc<FilterParams>) -> Self {
         Self {
             filter_params: filter_params.clone(),
             // ladders: LadderFilter::new(filter_params),

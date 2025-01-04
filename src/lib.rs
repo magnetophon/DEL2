@@ -479,7 +479,7 @@ impl Default for Del2 {
                 learned_notes.clone(),
             )),
 
-            delay_taps: array_init(|_| DelayTap::new(Arc::new(FilterParams::new()))),
+            delay_taps: array_init(|_| DelayTap::new(&Arc::new(FilterParams::new()))),
             next_internal_id: 0,
 
             delay_buffer: [
@@ -1065,7 +1065,6 @@ impl Plugin for Del2 {
             let mut post_gain = [0.0f32; 32];
 
             for i in block_start..block_end {
-                // Fill arrays
                 for j in 0..32 {
                     let idx = i + block_len * j;
                     audio[j] = self.delayed_audio[idx];
@@ -1075,13 +1074,12 @@ impl Plugin for Del2 {
                     post_gain[j] = self.post_gains[idx];
                 }
 
-                // Call the new SIMD processing function
                 self.process_simd_block(
-                    &mut audio,
-                    &mut cutoff,
-                    &mut res,
-                    &mut eq_gain,
-                    &mut post_gain,
+                    &audio,
+                    &cutoff,
+                    &res,
+                    &eq_gain,
+                    &post_gain,
                     block_len,
                     i,
                     output,
@@ -1089,8 +1087,6 @@ impl Plugin for Del2 {
                 );
             }
 
-            // }
-            // TODO tap_counter
             for tap_index in 0..tap_counter {
                 let mut amplitude = 0.0;
 
@@ -1901,14 +1897,14 @@ impl Del2 {
         let lanes_needed = active_taps * 2; // stereo, so *2
         lanes_needed.next_power_of_two().min(32)
     }
-    #[inline(always)]
+
     fn process_simd_block(
         &mut self,
-        audio: &mut [f32; 32],
-        cutoff: &mut [f32; 32],
-        res: &mut [f32; 32],
-        eq_gain: &mut [f32; 32],
-        post_gain: &mut [f32; 32],
+        audio: &[f32; 32],
+        cutoff: &[f32; 32],
+        res: &[f32; 32],
+        eq_gain: &[f32; 32],
+        post_gain: &[f32; 32],
         block_len: usize,
         i: usize,
         output: &mut [&mut [f32]],
