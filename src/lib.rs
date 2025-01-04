@@ -91,8 +91,27 @@ pub struct Del2 {
 
     // todo: make stereo, or integrate into per tap dsp
     dc_filter: SVFSimper<2, Linear>,
+
     lowpass: SVFSimper<LANES, NonLinear>,
     shelving_eq: SVFSimper<LANES, Linear>,
+
+    lowpass_2: SVFSimper<2, NonLinear>,
+    shelving_eq_2: SVFSimper<2, Linear>,
+
+    lowpass_4: SVFSimper<4, NonLinear>,
+    shelving_eq_4: SVFSimper<4, Linear>,
+
+    lowpass_8: SVFSimper<8, NonLinear>,
+    shelving_eq_8: SVFSimper<8, Linear>,
+
+    lowpass_16: SVFSimper<16, NonLinear>,
+    shelving_eq_16: SVFSimper<16, Linear>,
+
+    lowpass_32: SVFSimper<32, NonLinear>,
+    shelving_eq_32: SVFSimper<32, Linear>,
+
+    lowpass_64: SVFSimper<64, NonLinear>,
+    shelving_eq_64: SVFSimper<64, Linear>,
 
     // for the smoothers
     dry_wet_block: Box<[f32]>,
@@ -499,6 +518,18 @@ impl Default for Del2 {
             dc_filter: SVFSimper::new(DC_HP_FREQ, DC_HP_RES, 48000.0),
             lowpass: SVFSimper::new(440.0, 0.5, 48000.0),
             shelving_eq: SVFSimper::new(PANNER_EQ_FREQ, PANNER_EQ_RES, 48000.0),
+            lowpass_2: SVFSimper::new(440.0, 0.5, 48000.0),
+            shelving_eq_2: SVFSimper::new(PANNER_EQ_FREQ, PANNER_EQ_RES, 48000.0),
+            lowpass_4: SVFSimper::new(440.0, 0.5, 48000.0),
+            shelving_eq_4: SVFSimper::new(PANNER_EQ_FREQ, PANNER_EQ_RES, 48000.0),
+            lowpass_8: SVFSimper::new(440.0, 0.5, 48000.0),
+            shelving_eq_8: SVFSimper::new(PANNER_EQ_FREQ, PANNER_EQ_RES, 48000.0),
+            lowpass_16: SVFSimper::new(440.0, 0.5, 48000.0),
+            shelving_eq_16: SVFSimper::new(PANNER_EQ_FREQ, PANNER_EQ_RES, 48000.0),
+            lowpass_32: SVFSimper::new(440.0, 0.5, 48000.0),
+            shelving_eq_32: SVFSimper::new(PANNER_EQ_FREQ, PANNER_EQ_RES, 48000.0),
+            lowpass_64: SVFSimper::new(440.0, 0.5, 48000.0),
+            shelving_eq_64: SVFSimper::new(PANNER_EQ_FREQ, PANNER_EQ_RES, 48000.0),
 
             dry_wet_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
             cutoff_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
@@ -1836,21 +1867,6 @@ impl Del2 {
             }
         }
     }
-    fn _get_required_simd_width(&self) -> usize {
-        let active_taps = self
-            .delay_taps
-            .iter()
-            // .filter(|tap| tap.is_alive && tap.is_audible)
-            .filter(|tap| tap.is_audible)
-            .count();
-
-        if active_taps == 0 {
-            return 0;
-        }
-        // Round up to nearest power of 2 for SIMD efficiency
-        let lanes_needed = active_taps * 2; // stereo, so *2
-        lanes_needed.next_power_of_two().min(32)
-    }
 
     /*
 
@@ -1876,11 +1892,37 @@ impl Del2 {
     ) where
         LaneCount<LANES>: SupportedLaneCount,
     {
-        let mut audio = [0.0f32; LANES];
-        let mut cutoff = [0.0f32; LANES];
-        let mut res = [0.0f32; LANES];
-        let mut eq_gain = [0.0f32; LANES];
-        let mut post_gain = [0.0f32; LANES];
+        let active_taps = self.delay_taps.iter().filter(|tap| tap.is_alive).count();
+        if active_taps == 0 {
+            return;
+        };
+        // Round up to nearest power of 2 for SIMD efficiency
+        let lanes_needed = active_taps * 2; // stereo, so *2
+        let width = lanes_needed.next_power_of_two().min(64);
+        match width {
+            2 => self.process_simd_block_2(block_start, block_end, block_len, output),
+            4 => self.process_simd_block_4(block_start, block_end, block_len, output),
+            8 => self.process_simd_block_8(block_start, block_end, block_len, output),
+            16 => self.process_simd_block_16(block_start, block_end, block_len, output),
+            32 => self.process_simd_block_32(block_start, block_end, block_len, output),
+            _ => self.process_simd_block_64(block_start, block_end, block_len, output),
+        }
+    }
+
+    fn process_simd_block_2(
+        &mut self,
+        block_start: usize,
+        block_end: usize,
+        block_len: usize,
+        output: &mut [&mut [f32]],
+    ) where
+        LaneCount<2>: SupportedLaneCount,
+    {
+        let mut audio = [0.0f32; 2];
+        let mut cutoff = [0.0f32; 2];
+        let mut res = [0.0f32; 2];
+        let mut eq_gain = [0.0f32; 2];
+        let mut post_gain = [0.0f32; 2];
 
         let update_filter = (0..NUM_TAPS).any(|tap_index| {
             let base = tap_index * 2 * block_len;
@@ -1889,7 +1931,7 @@ impl Del2 {
         });
 
         for i in block_start..block_end {
-            for j in 0..LANES {
+            for j in 0..2 {
                 let idx = i + block_len * j;
                 audio[j] = self.delayed_audio[idx];
                 cutoff[j] = self.cutoff_freqs[idx];
@@ -1910,25 +1952,362 @@ impl Del2 {
 
             // Update filter parameters if needed
             if update_filter {
-                self.lowpass.set_simd(cutoff_frame, res_frame);
+                self.lowpass_2.set_simd(cutoff_frame, res_frame);
             }
 
             // Apply lowpass filter
-            let frame_filtered = self.lowpass.lowpass(audio_frame);
+            let frame_filtered = self.lowpass_2.lowpass(audio_frame);
 
             // Apply highshelf EQ and post gain
             let frame_out = self
-                .shelving_eq
+                .shelving_eq_2
                 .highshelf_cheap(frame_filtered, eq_gain_frame)
                 * post_gain_frame;
 
             // Store results back for meters
-            for j in 0..LANES {
+            for j in 0..2 {
                 self.delayed_audio[i + block_len * j] = frame_out[j];
             }
 
             // Mix the output
-            for tap_index in 0..NUM_TAPS {
+            for tap_index in 0..1 {
+                output_left[i] += frame_out[tap_index * 2];
+                output_right[i] += frame_out[tap_index * 2 + 1];
+            }
+        }
+    }
+    fn process_simd_block_4(
+        &mut self,
+        block_start: usize,
+        block_end: usize,
+        block_len: usize,
+        output: &mut [&mut [f32]],
+    ) where
+        LaneCount<4>: SupportedLaneCount,
+    {
+        let mut audio = [0.0f32; 4];
+        let mut cutoff = [0.0f32; 4];
+        let mut res = [0.0f32; 4];
+        let mut eq_gain = [0.0f32; 4];
+        let mut post_gain = [0.0f32; 4];
+
+        let update_filter = (0..NUM_TAPS).any(|tap_index| {
+            let base = tap_index * 2 * block_len;
+            self.cutoff_freqs[base] != self.cutoff_freqs[base + 1]
+                || self.resonances[base] != self.resonances[base + 1]
+        });
+
+        for i in block_start..block_end {
+            for j in 0..4 {
+                let idx = i + block_len * j;
+                audio[j] = self.delayed_audio[idx];
+                cutoff[j] = self.cutoff_freqs[idx];
+                res[j] = self.resonances[idx];
+                eq_gain[j] = self.eq_gains[idx];
+                post_gain[j] = self.post_gains[idx];
+            }
+            // Create SIMD frames from the arrays
+            let audio_frame = Simd::from_array(audio);
+            let cutoff_frame = Simd::from_array(cutoff);
+            let res_frame = Simd::from_array(res);
+            let eq_gain_frame = Simd::from_array(eq_gain);
+            let post_gain_frame = Simd::from_array(post_gain);
+
+            let (output_left, rest) = output.split_at_mut(1);
+            let output_left = &mut output_left[0];
+            let output_right = &mut rest[0];
+
+            // Update filter parameters if needed
+            if update_filter {
+                self.lowpass_4.set_simd(cutoff_frame, res_frame);
+            }
+
+            // Apply lowpass filter
+            let frame_filtered = self.lowpass_4.lowpass(audio_frame);
+
+            // Apply highshelf EQ and post gain
+            let frame_out = self
+                .shelving_eq_4
+                .highshelf_cheap(frame_filtered, eq_gain_frame)
+                * post_gain_frame;
+
+            // Store results back for meters
+            for j in 0..4 {
+                self.delayed_audio[i + block_len * j] = frame_out[j];
+            }
+
+            // Mix the output
+            for tap_index in 0..2 {
+                output_left[i] += frame_out[tap_index * 2];
+                output_right[i] += frame_out[tap_index * 2 + 1];
+            }
+        }
+    }
+    fn process_simd_block_8(
+        &mut self,
+        block_start: usize,
+        block_end: usize,
+        block_len: usize,
+        output: &mut [&mut [f32]],
+    ) where
+        LaneCount<8>: SupportedLaneCount,
+    {
+        let mut audio = [0.0f32; 8];
+        let mut cutoff = [0.0f32; 8];
+        let mut res = [0.0f32; 8];
+        let mut eq_gain = [0.0f32; 8];
+        let mut post_gain = [0.0f32; 8];
+
+        let update_filter = (0..NUM_TAPS).any(|tap_index| {
+            let base = tap_index * 2 * block_len;
+            self.cutoff_freqs[base] != self.cutoff_freqs[base + 1]
+                || self.resonances[base] != self.resonances[base + 1]
+        });
+
+        for i in block_start..block_end {
+            for j in 0..8 {
+                let idx = i + block_len * j;
+                audio[j] = self.delayed_audio[idx];
+                cutoff[j] = self.cutoff_freqs[idx];
+                res[j] = self.resonances[idx];
+                eq_gain[j] = self.eq_gains[idx];
+                post_gain[j] = self.post_gains[idx];
+            }
+            // Create SIMD frames from the arrays
+            let audio_frame = Simd::from_array(audio);
+            let cutoff_frame = Simd::from_array(cutoff);
+            let res_frame = Simd::from_array(res);
+            let eq_gain_frame = Simd::from_array(eq_gain);
+            let post_gain_frame = Simd::from_array(post_gain);
+
+            let (output_left, rest) = output.split_at_mut(1);
+            let output_left = &mut output_left[0];
+            let output_right = &mut rest[0];
+
+            // Update filter parameters if needed
+            if update_filter {
+                self.lowpass_8.set_simd(cutoff_frame, res_frame);
+            }
+
+            // Apply lowpass filter
+            let frame_filtered = self.lowpass_8.lowpass(audio_frame);
+
+            // Apply highshelf EQ and post gain
+            let frame_out = self
+                .shelving_eq_8
+                .highshelf_cheap(frame_filtered, eq_gain_frame)
+                * post_gain_frame;
+
+            // Store results back for meters
+            for j in 0..8 {
+                self.delayed_audio[i + block_len * j] = frame_out[j];
+            }
+
+            // Mix the output
+            for tap_index in 0..4 {
+                output_left[i] += frame_out[tap_index * 2];
+                output_right[i] += frame_out[tap_index * 2 + 1];
+            }
+        }
+    }
+    fn process_simd_block_16(
+        &mut self,
+        block_start: usize,
+        block_end: usize,
+        block_len: usize,
+        output: &mut [&mut [f32]],
+    ) where
+        LaneCount<16>: SupportedLaneCount,
+    {
+        let mut audio = [0.0f32; 16];
+        let mut cutoff = [0.0f32; 16];
+        let mut res = [0.0f32; 16];
+        let mut eq_gain = [0.0f32; 16];
+        let mut post_gain = [0.0f32; 16];
+
+        let update_filter = (0..NUM_TAPS).any(|tap_index| {
+            let base = tap_index * 2 * block_len;
+            self.cutoff_freqs[base] != self.cutoff_freqs[base + 1]
+                || self.resonances[base] != self.resonances[base + 1]
+        });
+
+        for i in block_start..block_end {
+            for j in 0..16 {
+                let idx = i + block_len * j;
+                audio[j] = self.delayed_audio[idx];
+                cutoff[j] = self.cutoff_freqs[idx];
+                res[j] = self.resonances[idx];
+                eq_gain[j] = self.eq_gains[idx];
+                post_gain[j] = self.post_gains[idx];
+            }
+            // Create SIMD frames from the arrays
+            let audio_frame = Simd::from_array(audio);
+            let cutoff_frame = Simd::from_array(cutoff);
+            let res_frame = Simd::from_array(res);
+            let eq_gain_frame = Simd::from_array(eq_gain);
+            let post_gain_frame = Simd::from_array(post_gain);
+
+            let (output_left, rest) = output.split_at_mut(1);
+            let output_left = &mut output_left[0];
+            let output_right = &mut rest[0];
+
+            // Update filter parameters if needed
+            if update_filter {
+                self.lowpass_16.set_simd(cutoff_frame, res_frame);
+            }
+
+            // Apply lowpass filter
+            let frame_filtered = self.lowpass_16.lowpass(audio_frame);
+
+            // Apply highshelf EQ and post gain
+            let frame_out = self
+                .shelving_eq_16
+                .highshelf_cheap(frame_filtered, eq_gain_frame)
+                * post_gain_frame;
+
+            // Store results back for meters
+            for j in 0..16 {
+                self.delayed_audio[i + block_len * j] = frame_out[j];
+            }
+
+            // Mix the output
+            for tap_index in 0..8 {
+                output_left[i] += frame_out[tap_index * 2];
+                output_right[i] += frame_out[tap_index * 2 + 1];
+            }
+        }
+    }
+
+    fn process_simd_block_32(
+        &mut self,
+        block_start: usize,
+        block_end: usize,
+        block_len: usize,
+        output: &mut [&mut [f32]],
+    ) where
+        LaneCount<32>: SupportedLaneCount,
+    {
+        let mut audio = [0.0f32; 32];
+        let mut cutoff = [0.0f32; 32];
+        let mut res = [0.0f32; 32];
+        let mut eq_gain = [0.0f32; 32];
+        let mut post_gain = [0.0f32; 32];
+
+        let update_filter = (0..NUM_TAPS).any(|tap_index| {
+            let base = tap_index * 2 * block_len;
+            self.cutoff_freqs[base] != self.cutoff_freqs[base + 1]
+                || self.resonances[base] != self.resonances[base + 1]
+        });
+
+        for i in block_start..block_end {
+            for j in 0..32 {
+                let idx = i + block_len * j;
+                audio[j] = self.delayed_audio[idx];
+                cutoff[j] = self.cutoff_freqs[idx];
+                res[j] = self.resonances[idx];
+                eq_gain[j] = self.eq_gains[idx];
+                post_gain[j] = self.post_gains[idx];
+            }
+            // Create SIMD frames from the arrays
+            let audio_frame = Simd::from_array(audio);
+            let cutoff_frame = Simd::from_array(cutoff);
+            let res_frame = Simd::from_array(res);
+            let eq_gain_frame = Simd::from_array(eq_gain);
+            let post_gain_frame = Simd::from_array(post_gain);
+
+            let (output_left, rest) = output.split_at_mut(1);
+            let output_left = &mut output_left[0];
+            let output_right = &mut rest[0];
+
+            // Update filter parameters if needed
+            if update_filter {
+                self.lowpass_32.set_simd(cutoff_frame, res_frame);
+            }
+
+            // Apply lowpass filter
+            let frame_filtered = self.lowpass_32.lowpass(audio_frame);
+
+            // Apply highshelf EQ and post gain
+            let frame_out = self
+                .shelving_eq_32
+                .highshelf_cheap(frame_filtered, eq_gain_frame)
+                * post_gain_frame;
+
+            // Store results back for meters
+            for j in 0..32 {
+                self.delayed_audio[i + block_len * j] = frame_out[j];
+            }
+
+            // Mix the output
+            for tap_index in 0..16 {
+                output_left[i] += frame_out[tap_index * 2];
+                output_right[i] += frame_out[tap_index * 2 + 1];
+            }
+        }
+    }
+
+    fn process_simd_block_64(
+        &mut self,
+        block_start: usize,
+        block_end: usize,
+        block_len: usize,
+        output: &mut [&mut [f32]],
+    ) where
+        LaneCount<64>: SupportedLaneCount,
+    {
+        let mut audio = [0.0f32; 64];
+        let mut cutoff = [0.0f32; 64];
+        let mut res = [0.0f32; 64];
+        let mut eq_gain = [0.0f32; 64];
+        let mut post_gain = [0.0f32; 64];
+
+        let update_filter = (0..NUM_TAPS).any(|tap_index| {
+            let base = tap_index * 2 * block_len;
+            self.cutoff_freqs[base] != self.cutoff_freqs[base + 1]
+                || self.resonances[base] != self.resonances[base + 1]
+        });
+
+        for i in block_start..block_end {
+            for j in 0..64 {
+                let idx = i + block_len * j;
+                audio[j] = self.delayed_audio[idx];
+                cutoff[j] = self.cutoff_freqs[idx];
+                res[j] = self.resonances[idx];
+                eq_gain[j] = self.eq_gains[idx];
+                post_gain[j] = self.post_gains[idx];
+            }
+            // Create SIMD frames from the arrays
+            let audio_frame = Simd::from_array(audio);
+            let cutoff_frame = Simd::from_array(cutoff);
+            let res_frame = Simd::from_array(res);
+            let eq_gain_frame = Simd::from_array(eq_gain);
+            let post_gain_frame = Simd::from_array(post_gain);
+
+            let (output_left, rest) = output.split_at_mut(1);
+            let output_left = &mut output_left[0];
+            let output_right = &mut rest[0];
+
+            // Update filter parameters if needed
+            if update_filter {
+                self.lowpass_64.set_simd(cutoff_frame, res_frame);
+            }
+
+            // Apply lowpass filter
+            let frame_filtered = self.lowpass_64.lowpass(audio_frame);
+
+            // Apply highshelf EQ and post gain
+            let frame_out = self
+                .shelving_eq_64
+                .highshelf_cheap(frame_filtered, eq_gain_frame)
+                * post_gain_frame;
+
+            // Store results back for meters
+            for j in 0..64 {
+                self.delayed_audio[i + block_len * j] = frame_out[j];
+            }
+
+            // Mix the output
+            for tap_index in 0..32 {
                 output_left[i] += frame_out[tap_index * 2];
                 output_right[i] += frame_out[tap_index * 2 + 1];
             }
