@@ -1907,13 +1907,15 @@ impl Del2 {
 
         // Check if we need to transition
         if new_width != self.current_width {
-            // Store filter states before transition
-            let mut stored_states = Vec::new();
+            // Fixed-size array for storing states, each element is (lowpass_l, shelving_l, lowpass_r, shelving_r)
+            let mut stored_states =
+                [(((0.0, 0.0), (0.0, 0.0)), ((0.0, 0.0), (0.0, 0.0))); NUM_TAPS];
+            let mut stored_count = 0;
 
             // Collect states from currently active filters
             let mut current_lane = 0;
             for delay_tap in self.delay_taps.iter().filter(|tap| tap.is_alive) {
-                if current_lane >= self.current_width {
+                if current_lane >= self.current_width || stored_count >= NUM_TAPS {
                     break;
                 }
 
@@ -1976,66 +1978,67 @@ impl Del2 {
                     ),
                 };
 
-                stored_states.push((lowpass_l, shelving_l, lowpass_r, shelving_r));
+                stored_states[stored_count] = ((lowpass_l, shelving_l), (lowpass_r, shelving_r));
+                stored_count += 1;
                 current_lane += 2;
             }
 
             // Apply stored states to new width filters
-            for (i, (lowpass_l, shelving_l, lowpass_r, shelving_r)) in
-                stored_states.iter().enumerate()
-            {
+            for i in 0..stored_count {
                 let lane = i * 2;
                 if lane >= new_width {
                     break;
                 }
 
+                let ((lowpass_l, shelving_l), (lowpass_r, shelving_r)) = stored_states[i];
+
                 match new_width {
                     2 => {
-                        self.lowpass_2.set_state_lane(lane, *lowpass_l);
-                        self.shelving_eq_2.set_state_lane(lane, *shelving_l);
+                        self.lowpass_2.set_state_lane(lane, lowpass_l);
+                        self.shelving_eq_2.set_state_lane(lane, shelving_l);
                         if lane + 1 < new_width {
-                            self.lowpass_2.set_state_lane(lane + 1, *lowpass_r);
-                            self.shelving_eq_2.set_state_lane(lane + 1, *shelving_r);
+                            self.lowpass_2.set_state_lane(lane + 1, lowpass_r);
+                            self.shelving_eq_2.set_state_lane(lane + 1, shelving_r);
                         }
                     }
                     4 => {
-                        self.lowpass_4.set_state_lane(lane, *lowpass_l);
-                        self.shelving_eq_4.set_state_lane(lane, *shelving_l);
+                        self.lowpass_4.set_state_lane(lane, lowpass_l);
+                        self.shelving_eq_4.set_state_lane(lane, shelving_l);
                         if lane + 1 < new_width {
-                            self.lowpass_4.set_state_lane(lane + 1, *lowpass_r);
-                            self.shelving_eq_4.set_state_lane(lane + 1, *shelving_r);
+                            self.lowpass_4.set_state_lane(lane + 1, lowpass_r);
+                            self.shelving_eq_4.set_state_lane(lane + 1, shelving_r);
                         }
                     }
                     8 => {
-                        self.lowpass_8.set_state_lane(lane, *lowpass_l);
-                        self.shelving_eq_8.set_state_lane(lane, *shelving_l);
+                        self.lowpass_8.set_state_lane(lane, lowpass_l);
+                        self.shelving_eq_8.set_state_lane(lane, shelving_l);
                         if lane + 1 < new_width {
-                            self.lowpass_8.set_state_lane(lane + 1, *lowpass_r);
-                            self.shelving_eq_8.set_state_lane(lane + 1, *shelving_r);
+                            self.lowpass_8.set_state_lane(lane + 1, lowpass_r);
+                            self.shelving_eq_8.set_state_lane(lane + 1, shelving_r);
                         }
                     }
                     16 => {
-                        self.lowpass_16.set_state_lane(lane, *lowpass_l);
-                        self.shelving_eq_16.set_state_lane(lane, *shelving_l);
+                        self.lowpass_16.set_state_lane(lane, lowpass_l);
+                        self.shelving_eq_16.set_state_lane(lane, shelving_l);
                         if lane + 1 < new_width {
-                            self.lowpass_16.set_state_lane(lane + 1, *lowpass_r);
-                            self.shelving_eq_16.set_state_lane(lane + 1, *shelving_r);
+                            self.lowpass_16.set_state_lane(lane + 1, lowpass_r);
+                            self.shelving_eq_16.set_state_lane(lane + 1, shelving_r);
                         }
                     }
                     32 => {
-                        self.lowpass_32.set_state_lane(lane, *lowpass_l);
-                        self.shelving_eq_32.set_state_lane(lane, *shelving_l);
+                        self.lowpass_32.set_state_lane(lane, lowpass_l);
+                        self.shelving_eq_32.set_state_lane(lane, shelving_l);
                         if lane + 1 < new_width {
-                            self.lowpass_32.set_state_lane(lane + 1, *lowpass_r);
-                            self.shelving_eq_32.set_state_lane(lane + 1, *shelving_r);
+                            self.lowpass_32.set_state_lane(lane + 1, lowpass_r);
+                            self.shelving_eq_32.set_state_lane(lane + 1, shelving_r);
                         }
                     }
                     _ => {
-                        self.lowpass_64.set_state_lane(lane, *lowpass_l);
-                        self.shelving_eq_64.set_state_lane(lane, *shelving_l);
+                        self.lowpass_64.set_state_lane(lane, lowpass_l);
+                        self.shelving_eq_64.set_state_lane(lane, shelving_l);
                         if lane + 1 < new_width {
-                            self.lowpass_64.set_state_lane(lane + 1, *lowpass_r);
-                            self.shelving_eq_64.set_state_lane(lane + 1, *shelving_r);
+                            self.lowpass_64.set_state_lane(lane + 1, lowpass_r);
+                            self.shelving_eq_64.set_state_lane(lane + 1, shelving_r);
                         }
                     }
                 }
