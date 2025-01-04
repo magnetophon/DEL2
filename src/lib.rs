@@ -20,7 +20,8 @@ use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::ops::Index;
-use std::simd::{f32x2, f32x32};
+use std::simd::{f32x2, LaneCount, Simd, SupportedLaneCount};
+
 use std::sync::atomic::{
     AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering,
 };
@@ -62,6 +63,7 @@ const MIN_PAN_GAIN: f32 = -3.0;
 const DC_HP_FREQ: f32 = 80.0;
 const DC_HP_RES: f32 = 0.0;
 const DEFAULT_TEMPO: f32 = 60.0;
+const LANES: usize = 2 * NUM_TAPS;
 
 pub struct Del2 {
     params: Arc<Del2Params>,
@@ -89,8 +91,8 @@ pub struct Del2 {
 
     // todo: make stereo, or integrate into per tap dsp
     dc_filter: SVFSimper<2, Linear>,
-    lowpass: SVFSimper<32, NonLinear>,
-    shelving_eq: SVFSimper<32, Linear>,
+    lowpass: SVFSimper<LANES, NonLinear>,
+    shelving_eq: SVFSimper<LANES, Linear>,
 
     // for the smoothers
     dry_wet_block: Box<[f32]>,
@@ -1058,14 +1060,14 @@ impl Plugin for Del2 {
                     || self.resonances[base] != self.resonances[base + 1]
             });
 
-            let mut audio = [0.0f32; 32];
-            let mut cutoff = [0.0f32; 32];
-            let mut res = [0.0f32; 32];
-            let mut eq_gain = [0.0f32; 32];
-            let mut post_gain = [0.0f32; 32];
+            let mut audio = [0.0f32; LANES];
+            let mut cutoff = [0.0f32; LANES];
+            let mut res = [0.0f32; LANES];
+            let mut eq_gain = [0.0f32; LANES];
+            let mut post_gain = [0.0f32; LANES];
 
             for i in block_start..block_end {
-                for j in 0..32 {
+                for j in 0..LANES {
                     let idx = i + block_len * j;
                     audio[j] = self.delayed_audio[idx];
                     cutoff[j] = self.cutoff_freqs[idx];
@@ -1882,7 +1884,7 @@ impl Del2 {
             }
         }
     }
-    fn get_required_simd_width(&self) -> usize {
+    fn _get_required_simd_width(&self) -> usize {
         let active_taps = self
             .delay_taps
             .iter()
@@ -1900,22 +1902,24 @@ impl Del2 {
 
     fn process_simd_block(
         &mut self,
-        audio: &[f32; 32],
-        cutoff: &[f32; 32],
-        res: &[f32; 32],
-        eq_gain: &[f32; 32],
-        post_gain: &[f32; 32],
+        audio: &[f32; LANES],
+        cutoff: &[f32; LANES],
+        res: &[f32; LANES],
+        eq_gain: &[f32; LANES],
+        post_gain: &[f32; LANES],
         block_len: usize,
         i: usize,
         output: &mut [&mut [f32]],
         update_filter: bool,
-    ) {
+    ) where
+        LaneCount<LANES>: SupportedLaneCount,
+    {
         // Create SIMD frames from the arrays
-        let audio_frame = f32x32::from_array(*audio);
-        let cutoff_frame = f32x32::from_array(*cutoff);
-        let res_frame = f32x32::from_array(*res);
-        let eq_gain_frame = f32x32::from_array(*eq_gain);
-        let post_gain_frame = f32x32::from_array(*post_gain);
+        let audio_frame = Simd::from_array(*audio);
+        let cutoff_frame = Simd::from_array(*cutoff);
+        let res_frame = Simd::from_array(*res);
+        let eq_gain_frame = Simd::from_array(*eq_gain);
+        let post_gain_frame = Simd::from_array(*post_gain);
 
         let (output_left, rest) = output.split_at_mut(1);
         let output_left = &mut output_left[0];
@@ -1936,7 +1940,7 @@ impl Del2 {
             * post_gain_frame;
 
         // Store results back for meters
-        for j in 0..32 {
+        for j in 0..LANES {
             self.delayed_audio[i + block_len * j] = frame_out[j];
         }
 
