@@ -1060,33 +1060,8 @@ impl Plugin for Del2 {
                     || self.resonances[base] != self.resonances[base + 1]
             });
 
-            let mut audio = [0.0f32; LANES];
-            let mut cutoff = [0.0f32; LANES];
-            let mut res = [0.0f32; LANES];
-            let mut eq_gain = [0.0f32; LANES];
-            let mut post_gain = [0.0f32; LANES];
-
             for i in block_start..block_end {
-                for j in 0..LANES {
-                    let idx = i + block_len * j;
-                    audio[j] = self.delayed_audio[idx];
-                    cutoff[j] = self.cutoff_freqs[idx];
-                    res[j] = self.resonances[idx];
-                    eq_gain[j] = self.eq_gains[idx];
-                    post_gain[j] = self.post_gains[idx];
-                }
-
-                self.process_simd_block(
-                    &audio,
-                    &cutoff,
-                    &res,
-                    &eq_gain,
-                    &post_gain,
-                    block_len,
-                    i,
-                    output,
-                    update_filter,
-                );
+                self.process_simd_block(block_len, i, output, update_filter);
             }
 
             // meters:
@@ -1903,11 +1878,6 @@ impl Del2 {
 
     fn process_simd_block(
         &mut self,
-        audio: &[f32; LANES],
-        cutoff: &[f32; LANES],
-        res: &[f32; LANES],
-        eq_gain: &[f32; LANES],
-        post_gain: &[f32; LANES],
         block_len: usize,
         i: usize,
         output: &mut [&mut [f32]],
@@ -1915,12 +1885,26 @@ impl Del2 {
     ) where
         LaneCount<LANES>: SupportedLaneCount,
     {
+        let mut audio = [0.0f32; LANES];
+        let mut cutoff = [0.0f32; LANES];
+        let mut res = [0.0f32; LANES];
+        let mut eq_gain = [0.0f32; LANES];
+        let mut post_gain = [0.0f32; LANES];
+
+        for j in 0..LANES {
+            let idx = i + block_len * j;
+            audio[j] = self.delayed_audio[idx];
+            cutoff[j] = self.cutoff_freqs[idx];
+            res[j] = self.resonances[idx];
+            eq_gain[j] = self.eq_gains[idx];
+            post_gain[j] = self.post_gains[idx];
+        }
         // Create SIMD frames from the arrays
-        let audio_frame = Simd::from_array(*audio);
-        let cutoff_frame = Simd::from_array(*cutoff);
-        let res_frame = Simd::from_array(*res);
-        let eq_gain_frame = Simd::from_array(*eq_gain);
-        let post_gain_frame = Simd::from_array(*post_gain);
+        let audio_frame = Simd::from_array(audio);
+        let cutoff_frame = Simd::from_array(cutoff);
+        let res_frame = Simd::from_array(res);
+        let eq_gain_frame = Simd::from_array(eq_gain);
+        let post_gain_frame = Simd::from_array(post_gain);
 
         let (output_left, rest) = output.split_at_mut(1);
         let output_left = &mut output_left[0];
