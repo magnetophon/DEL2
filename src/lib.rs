@@ -146,6 +146,7 @@ pub struct Del2 {
     enabled_actions: Arc<AtomicBoolArray>,
     running_delay_tempo: f32,
     first_process_after_reset: bool,
+    current_width: usize,
 }
 
 /// All the parameters
@@ -566,6 +567,7 @@ impl Default for Del2 {
             enabled_actions,
             running_delay_tempo: DEFAULT_TEMPO,
             first_process_after_reset: true,
+            current_width: 0,
         }
     }
 }
@@ -1884,6 +1886,7 @@ impl Del2 {
     700..799 = right tap 3
 
      */
+
     fn process_simd_block(
         &mut self,
         block_start: usize,
@@ -1896,11 +1899,153 @@ impl Del2 {
         let active_taps = self.delay_taps.iter().filter(|tap| tap.is_alive).count();
         if active_taps == 0 {
             return;
-        };
-        // Round up to nearest power of 2 for SIMD efficiency
+        }
+
+        // Calculate required SIMD width
         let lanes_needed = active_taps * 2; // stereo, so *2
-        let width = lanes_needed.next_power_of_two().min(64);
-        match width {
+        let new_width = lanes_needed.next_power_of_two().min(64);
+
+        // Check if we need to transition
+        if new_width != self.current_width {
+            // Store filter states before transition
+            let mut stored_states = Vec::new();
+
+            // Collect states from currently active filters
+            let mut current_lane = 0;
+            for delay_tap in self.delay_taps.iter().filter(|tap| tap.is_alive) {
+                if current_lane >= self.current_width {
+                    break;
+                }
+
+                // Get states for stereo pair
+                let (lowpass_l, shelving_l) = match self.current_width {
+                    2 => (
+                        self.lowpass_2.get_state_lane(current_lane),
+                        self.shelving_eq_2.get_state_lane(current_lane),
+                    ),
+                    4 => (
+                        self.lowpass_4.get_state_lane(current_lane),
+                        self.shelving_eq_4.get_state_lane(current_lane),
+                    ),
+                    8 => (
+                        self.lowpass_8.get_state_lane(current_lane),
+                        self.shelving_eq_8.get_state_lane(current_lane),
+                    ),
+                    16 => (
+                        self.lowpass_16.get_state_lane(current_lane),
+                        self.shelving_eq_16.get_state_lane(current_lane),
+                    ),
+                    32 => (
+                        self.lowpass_32.get_state_lane(current_lane),
+                        self.shelving_eq_32.get_state_lane(current_lane),
+                    ),
+                    _ => (
+                        self.lowpass_64.get_state_lane(current_lane),
+                        self.shelving_eq_64.get_state_lane(current_lane),
+                    ),
+                };
+
+                if current_lane + 1 >= self.current_width {
+                    break;
+                }
+
+                let (lowpass_r, shelving_r) = match self.current_width {
+                    2 => (
+                        self.lowpass_2.get_state_lane(current_lane + 1),
+                        self.shelving_eq_2.get_state_lane(current_lane + 1),
+                    ),
+                    4 => (
+                        self.lowpass_4.get_state_lane(current_lane + 1),
+                        self.shelving_eq_4.get_state_lane(current_lane + 1),
+                    ),
+                    8 => (
+                        self.lowpass_8.get_state_lane(current_lane + 1),
+                        self.shelving_eq_8.get_state_lane(current_lane + 1),
+                    ),
+                    16 => (
+                        self.lowpass_16.get_state_lane(current_lane + 1),
+                        self.shelving_eq_16.get_state_lane(current_lane + 1),
+                    ),
+                    32 => (
+                        self.lowpass_32.get_state_lane(current_lane + 1),
+                        self.shelving_eq_32.get_state_lane(current_lane + 1),
+                    ),
+                    _ => (
+                        self.lowpass_64.get_state_lane(current_lane + 1),
+                        self.shelving_eq_64.get_state_lane(current_lane + 1),
+                    ),
+                };
+
+                stored_states.push((lowpass_l, shelving_l, lowpass_r, shelving_r));
+                current_lane += 2;
+            }
+
+            // Apply stored states to new width filters
+            for (i, (lowpass_l, shelving_l, lowpass_r, shelving_r)) in
+                stored_states.iter().enumerate()
+            {
+                let lane = i * 2;
+                if lane >= new_width {
+                    break;
+                }
+
+                match new_width {
+                    2 => {
+                        self.lowpass_2.set_state_lane(lane, *lowpass_l);
+                        self.shelving_eq_2.set_state_lane(lane, *shelving_l);
+                        if lane + 1 < new_width {
+                            self.lowpass_2.set_state_lane(lane + 1, *lowpass_r);
+                            self.shelving_eq_2.set_state_lane(lane + 1, *shelving_r);
+                        }
+                    }
+                    4 => {
+                        self.lowpass_4.set_state_lane(lane, *lowpass_l);
+                        self.shelving_eq_4.set_state_lane(lane, *shelving_l);
+                        if lane + 1 < new_width {
+                            self.lowpass_4.set_state_lane(lane + 1, *lowpass_r);
+                            self.shelving_eq_4.set_state_lane(lane + 1, *shelving_r);
+                        }
+                    }
+                    8 => {
+                        self.lowpass_8.set_state_lane(lane, *lowpass_l);
+                        self.shelving_eq_8.set_state_lane(lane, *shelving_l);
+                        if lane + 1 < new_width {
+                            self.lowpass_8.set_state_lane(lane + 1, *lowpass_r);
+                            self.shelving_eq_8.set_state_lane(lane + 1, *shelving_r);
+                        }
+                    }
+                    16 => {
+                        self.lowpass_16.set_state_lane(lane, *lowpass_l);
+                        self.shelving_eq_16.set_state_lane(lane, *shelving_l);
+                        if lane + 1 < new_width {
+                            self.lowpass_16.set_state_lane(lane + 1, *lowpass_r);
+                            self.shelving_eq_16.set_state_lane(lane + 1, *shelving_r);
+                        }
+                    }
+                    32 => {
+                        self.lowpass_32.set_state_lane(lane, *lowpass_l);
+                        self.shelving_eq_32.set_state_lane(lane, *shelving_l);
+                        if lane + 1 < new_width {
+                            self.lowpass_32.set_state_lane(lane + 1, *lowpass_r);
+                            self.shelving_eq_32.set_state_lane(lane + 1, *shelving_r);
+                        }
+                    }
+                    _ => {
+                        self.lowpass_64.set_state_lane(lane, *lowpass_l);
+                        self.shelving_eq_64.set_state_lane(lane, *shelving_l);
+                        if lane + 1 < new_width {
+                            self.lowpass_64.set_state_lane(lane + 1, *lowpass_r);
+                            self.shelving_eq_64.set_state_lane(lane + 1, *shelving_r);
+                        }
+                    }
+                }
+            }
+
+            self.current_width = new_width;
+        }
+
+        // Process with the appropriate SIMD width
+        match new_width {
             2 => self.process_simd_block_2(block_start, block_end, block_len, output),
             4 => self.process_simd_block_4(block_start, block_end, block_len, output),
             8 => self.process_simd_block_8(block_start, block_end, block_len, output),

@@ -138,6 +138,34 @@ where
         self.a3 = Simd::splat(a3);
     }
 
+    // Get the state for a specific lane
+    pub fn get_state_lane(&self, lane: usize) -> (f32, f32) {
+        assert!(
+            lane < LANES,
+            "Lane index {} out of bounds for LANES {}",
+            lane,
+            LANES
+        );
+        (self.ic1eq[lane], self.ic2eq[lane])
+    }
+
+    // Set the state for a specific lane
+    pub fn set_state_lane(&mut self, lane: usize, state: (f32, f32)) {
+        assert!(
+            lane < LANES,
+            "Lane index {} out of bounds for LANES {}",
+            lane,
+            LANES
+        );
+        let (ic1, ic2) = state;
+        let mut new_ic1eq = self.ic1eq;
+        let mut new_ic2eq = self.ic2eq;
+        new_ic1eq[lane] = ic1;
+        new_ic2eq[lane] = ic2;
+        self.ic1eq = new_ic1eq;
+        self.ic2eq = new_ic2eq;
+    }
+
     #[inline]
     fn compute_parameters(cutoff: f32, resonance: f32, pi_over_sr: f32) -> (f32, f32, f32, f32) {
         let g = (cutoff * pi_over_sr).tan();
