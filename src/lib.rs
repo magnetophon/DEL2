@@ -958,7 +958,8 @@ impl Plugin for Del2 {
                         write_index - (delay_time - 1),
                     );
 
-                    if delay_tap.is_audible {
+                    if delay_tap.is_alive {
+                        // nih_log!("fill tap_index: {tap_index}");
                         let pan = ((f32::from(delay_tap.note) - panning_center) * panning_amount)
                             .clamp(-1.0, 1.0);
                         let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
@@ -1072,7 +1073,7 @@ impl Plugin for Del2 {
             self.process_simd_block(block_start, block_end, block_len, output);
 
             // meters:
-            for tap_index in 0..tap_counter {
+            for tap_index in 0..NUM_TAPS {
                 let mut amplitude = 0.0;
 
                 for sample_idx in block_start..block_end {
