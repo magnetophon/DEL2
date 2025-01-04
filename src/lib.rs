@@ -1038,31 +1038,7 @@ impl Plugin for Del2 {
                     }
                 }); // end for each tap
 
-            /*
-
-            000..099 = left tap 0
-            100..199 = right tap 0
-
-            200..299 = left tap 1
-            300..399 = right tap 1
-
-            400..499 = left tap 2
-            500..599 = right tap 2
-
-            600..699 = left tap 3
-            700..799 = right tap 3
-
-             */
-
-            let update_filter = (0..NUM_TAPS).any(|tap_index| {
-                let base = tap_index * 2 * block_len;
-                self.cutoff_freqs[base] != self.cutoff_freqs[base + 1]
-                    || self.resonances[base] != self.resonances[base + 1]
-            });
-
-            for i in block_start..block_end {
-                self.process_simd_block(block_len, i, output, update_filter);
-            }
+            self.process_simd_block(block_start, block_end, block_len, output);
 
             // meters:
             for tap_index in 0..tap_counter {
@@ -1876,12 +1852,27 @@ impl Del2 {
         lanes_needed.next_power_of_two().min(32)
     }
 
+    /*
+
+    000..099 = left tap 0
+    100..199 = right tap 0
+
+    200..299 = left tap 1
+    300..399 = right tap 1
+
+    400..499 = left tap 2
+    500..599 = right tap 2
+
+    600..699 = left tap 3
+    700..799 = right tap 3
+
+     */
     fn process_simd_block(
         &mut self,
+        block_start: usize,
+        block_end: usize,
         block_len: usize,
-        i: usize,
         output: &mut [&mut [f32]],
-        update_filter: bool,
     ) where
         LaneCount<LANES>: SupportedLaneCount,
     {
@@ -1891,48 +1882,56 @@ impl Del2 {
         let mut eq_gain = [0.0f32; LANES];
         let mut post_gain = [0.0f32; LANES];
 
-        for j in 0..LANES {
-            let idx = i + block_len * j;
-            audio[j] = self.delayed_audio[idx];
-            cutoff[j] = self.cutoff_freqs[idx];
-            res[j] = self.resonances[idx];
-            eq_gain[j] = self.eq_gains[idx];
-            post_gain[j] = self.post_gains[idx];
-        }
-        // Create SIMD frames from the arrays
-        let audio_frame = Simd::from_array(audio);
-        let cutoff_frame = Simd::from_array(cutoff);
-        let res_frame = Simd::from_array(res);
-        let eq_gain_frame = Simd::from_array(eq_gain);
-        let post_gain_frame = Simd::from_array(post_gain);
+        let update_filter = (0..NUM_TAPS).any(|tap_index| {
+            let base = tap_index * 2 * block_len;
+            self.cutoff_freqs[base] != self.cutoff_freqs[base + 1]
+                || self.resonances[base] != self.resonances[base + 1]
+        });
 
-        let (output_left, rest) = output.split_at_mut(1);
-        let output_left = &mut output_left[0];
-        let output_right = &mut rest[0];
+        for i in block_start..block_end {
+            for j in 0..LANES {
+                let idx = i + block_len * j;
+                audio[j] = self.delayed_audio[idx];
+                cutoff[j] = self.cutoff_freqs[idx];
+                res[j] = self.resonances[idx];
+                eq_gain[j] = self.eq_gains[idx];
+                post_gain[j] = self.post_gains[idx];
+            }
+            // Create SIMD frames from the arrays
+            let audio_frame = Simd::from_array(audio);
+            let cutoff_frame = Simd::from_array(cutoff);
+            let res_frame = Simd::from_array(res);
+            let eq_gain_frame = Simd::from_array(eq_gain);
+            let post_gain_frame = Simd::from_array(post_gain);
 
-        // Update filter parameters if needed
-        if update_filter {
-            self.lowpass.set_simd(cutoff_frame, res_frame);
-        }
+            let (output_left, rest) = output.split_at_mut(1);
+            let output_left = &mut output_left[0];
+            let output_right = &mut rest[0];
 
-        // Apply lowpass filter
-        let frame_filtered = self.lowpass.lowpass(audio_frame);
+            // Update filter parameters if needed
+            if update_filter {
+                self.lowpass.set_simd(cutoff_frame, res_frame);
+            }
 
-        // Apply highshelf EQ and post gain
-        let frame_out = self
-            .shelving_eq
-            .highshelf_cheap(frame_filtered, eq_gain_frame)
-            * post_gain_frame;
+            // Apply lowpass filter
+            let frame_filtered = self.lowpass.lowpass(audio_frame);
 
-        // Store results back for meters
-        for j in 0..LANES {
-            self.delayed_audio[i + block_len * j] = frame_out[j];
-        }
+            // Apply highshelf EQ and post gain
+            let frame_out = self
+                .shelving_eq
+                .highshelf_cheap(frame_filtered, eq_gain_frame)
+                * post_gain_frame;
 
-        // Mix the output
-        for tap_index in 0..NUM_TAPS {
-            output_left[i] += frame_out[tap_index * 2];
-            output_right[i] += frame_out[tap_index * 2 + 1];
+            // Store results back for meters
+            for j in 0..LANES {
+                self.delayed_audio[i + block_len * j] = frame_out[j];
+            }
+
+            // Mix the output
+            for tap_index in 0..NUM_TAPS {
+                output_left[i] += frame_out[tap_index * 2];
+                output_right[i] += frame_out[tap_index * 2 + 1];
+            }
         }
     }
 }
