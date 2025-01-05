@@ -1,6 +1,7 @@
 #+title: Todo
 * INBOX
 
+** remove is_audible?
 ** https://moonbase.sh/
 *** features:
 payment / global tax
@@ -32,16 +33,6 @@ Marius — Today at 12:08 PM
 to the user, the flow is as follows: buy plugin, with or without creating an account, and then when first starting the plugin, there's an "Activate" button that opens their browser where they are likely already logged in to their account. Then, they can immediately return to their DAW and use the plugin!
 
 ** tap/meter life cycle
-*** create tap 0,1,2
-*** wait for time-out
-*** tm0,tm1,tm2 are releasing
-*** create m3 = t0
-*** create m4 = t1
-*** m0,m1,m2 are done releasing
-*** create m0 = t2
-*** create m1 = t3
-*** create m2 = t4
-*** create m5 = t5
 
 *** constrains:
 **** run_index
@@ -51,11 +42,23 @@ managed "automagically", so needs to be source of truth
 always lowest N alive taps
 keep taps running in the place it was before: minimal state copying
 **** display_at_meter
-always lowest N
+always lowest N taps of current pattern
 N = tap_counter, is not the same as nr of active taps, cause taps can be releasing
 match tap_index with run_index
 
 *** life-cycle summary
+**** as steps:
+***** create tap 0,1,2
+***** wait for time-out
+***** tm0,tm1,tm2 are releasing
+***** create m3 = t0
+***** create m4 = t1
+***** m0,m1,m2 are done releasing
+***** create m0 = t2
+***** create m1 = t3
+***** create m2 = t4
+***** create m5 = t5
+**** summary table
 | event                 | tap_index | run_index | nr taps | simd_width | run_at_simd | display_at_meter | action                           |
 |-----------------------+-----------+-----------+---------+------------+-------------+--------------+----------------------------------|
 | 1 new                 |         0 |         0 |       1 |          2 | 0           | 0            |                                  |
@@ -206,6 +209,45 @@ https://discord.com/channels/590254806208217089/948004564005703740/1185546968206
 ** resize window on easy/expert change, so that button stays in the same place
   works, but with glitches: https://github.com/robbert-vdh/nih-plug/issues/127#issuecomment-2555783459
 ** oversampling?
+** nih audio unit AUv2 for logic
+https://github.com/robbert-vdh/nih-plug/issues/63#issuecomment-2403367665
+cmake_minimum_required(VERSION 3.15)
+project(gain) # <-- change me
+
+# this CMakeLists.txt has a "gain_auv2" target that
+# converts the "gain.clap" file into AUv2 plugin "gain.component".
+
+# assumes the "gain.clap" file is located next to this CMakeLists.txt
+set(CLAP_PLUGIN_PATH "${CMAKE_CURRENT_SOURCE_DIR}/gain.clap") # <-- change me
+
+# the following lines are required to build AU SDK on macOS
+set(CMAKE_CXX_STANDARD 17)
+enable_language(OBJC)
+enable_language(OBJCXX)
+
+# ensure clap-wrapper lives as a submodule next to this CMakeLists.txt
+# https://github.com/free-audio/clap-wrapper/
+set(CLAP_WRAPPER_DOWNLOAD_DEPENDENCIES ON)
+add_subdirectory(clap-wrapper)
+
+# create AUv2 target
+set(AUV2_TARGET ${PROJECT_NAME}_auv2)
+add_library(${AUV2_TARGET} MODULE)
+
+# use clap-wrapper to populate the AUv2 target
+target_add_auv2_wrapper(
+        TARGET ${AUV2_TARGET}
+        MACOS_EMBEDDED_CLAP_LOCATION ${CLAP_PLUGIN_PATH}
+
+        # change all of the below
+        OUTPUT_NAME "gain"
+        BUNDLE_IDENTIFIER "com.yourcompany.gainclap"
+        BUNDLE_VERSION "1.0"
+        MANUFACTURER_NAME "Your Company"
+        MANUFACTURER_CODE "YuCu"
+        SUBTYPE_CODE "Gain"
+        INSTRUMENT_TYPE "aufx"
+)
 ** choke filter:  add DC offset to the input
 * sometime
 ** other way to change the delay time: https://signalsmith-audio.co.uk/writing/2021/stride-interpolated-delay/

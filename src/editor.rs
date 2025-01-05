@@ -41,7 +41,7 @@ pub struct Data {
     pub input_meter: Arc<AtomicF32>,
     pub output_meter: Arc<AtomicF32>,
     pub tap_meters: Arc<AtomicF32Array>,
-    pub meter_indexes: Arc<AtomicUsizeArray>,
+    // pub meter_indexes: Arc<AtomicUsizeArray>,
     pub is_learning: Arc<AtomicBool>,
     pub learning_index: Arc<AtomicUsize>,
     pub learned_notes: Arc<AtomicByteArray>,
@@ -86,8 +86,8 @@ pub fn create(editor_data: Data, editor_state: Arc<ViziaState>) -> Option<Box<dy
         ZStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
                 ZStack::new(cx, |cx| {
-                    DelayGraph::new(cx, Data::params, Data::tap_meters, Data::input_meter, Data::output_meter, Data::meter_indexes)
-                // .overflow(Overflow::Hidden)
+                    DelayGraph::new(cx, Data::params, Data::tap_meters, Data::input_meter, Data::output_meter)
+                    // .overflow(Overflow::Hidden)
                     ;
                     Label::new(cx, "DEL2").class("plugin-name");
                 });
@@ -517,7 +517,7 @@ pub struct DelayGraph {
     tap_meters: Arc<AtomicF32Array>,
     input_meter: Arc<AtomicF32>,
     output_meter: Arc<AtomicF32>,
-    meter_indexes: Arc<AtomicUsizeArray>,
+    // meter_indexes: Arc<AtomicUsizeArray>,
 }
 
 // TODO: add grid to show bars & beats
@@ -531,7 +531,7 @@ impl View for DelayGraph {
         let params = self.params.clone();
         let tap_counter = params.tap_counter.load(Ordering::SeqCst);
         let tap_meters = self.tap_meters.clone();
-        let meter_indexes = self.meter_indexes.clone();
+        // let meter_indexes = self.meter_indexes.clone();
 
         let input_meter = &self.input_meter;
         let output_meter = &self.output_meter;
@@ -575,7 +575,7 @@ impl View for DelayGraph {
                 canvas,
                 &params,
                 &tap_meters,
-                &meter_indexes,
+                // &meter_indexes,
                 bounds,
                 outline_color,
                 border_color,
@@ -627,27 +627,32 @@ impl View for DelayGraph {
 }
 
 impl DelayGraph {
-    fn new<ParamsL, TapMetersL, InputMeterL, OutputMeterL, MeterIndexL>(
+    fn new<
+        ParamsL,
+        TapMetersL,
+        InputMeterL,
+        OutputMeterL, // , MeterIndexL
+    >(
         cx: &mut Context,
         params: ParamsL,
         tap_meters: TapMetersL,
         input_meter: InputMeterL,
         output_meter: OutputMeterL,
-        meter_indexes: MeterIndexL,
+        // meter_indexes: MeterIndexL,
     ) -> Handle<Self>
     where
         ParamsL: Lens<Target = Arc<Del2Params>>,
         TapMetersL: Lens<Target = Arc<AtomicF32Array>>,
         InputMeterL: Lens<Target = Arc<AtomicF32>>,
         OutputMeterL: Lens<Target = Arc<AtomicF32>>,
-        MeterIndexL: Lens<Target = Arc<AtomicUsizeArray>>,
+        // MeterIndexL: Lens<Target = Arc<AtomicUsizeArray>>,
     {
         Self {
             params: params.get(cx),
             tap_meters: tap_meters.get(cx),
             input_meter: input_meter.get(cx),
             output_meter: output_meter.get(cx),
-            meter_indexes: meter_indexes.get(cx),
+            // meter_indexes: meter_indexes.get(cx),
         }
         .build(cx, |cx| {
             Label::new(
@@ -974,7 +979,7 @@ impl DelayGraph {
         canvas: &mut Canvas,
         params: &Arc<Del2Params>,
         tap_meters: &Arc<AtomicF32Array>,
-        meter_indexes: &Arc<AtomicUsizeArray>,
+        // meter_indexes: &Arc<AtomicUsizeArray>,
         bounds: BoundingBox,
         velocity_color: vg::Color,
         meter_color: vg::Color,
@@ -1049,8 +1054,8 @@ impl DelayGraph {
             let delay_time = params.delay_times[i].load(Ordering::SeqCst);
             let x_offset = delay_time.mul_add(time_scaling_factor, border_width * 0.5);
 
-            let meter_index = meter_indexes[i].load(Ordering::Relaxed);
-            let meter_db = util::gain_to_db(tap_meters[meter_index].load(Ordering::Relaxed));
+            // let meter_index = meter_indexes[i].load(Ordering::Relaxed);
+            let meter_db = util::gain_to_db(tap_meters[i].load(Ordering::Relaxed));
             let meter_height = {
                 let tick_fraction = (meter_db - MIN_TICK) / (MAX_TICK - MIN_TICK);
                 (tick_fraction * bounds.h).max(0.0)

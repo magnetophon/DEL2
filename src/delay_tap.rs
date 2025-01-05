@@ -21,18 +21,20 @@ pub struct DelayTap {
     /// The taps delay time.
     /// A new tap will be created if the `delay_time` and note are not the same as one that is currently playing.
     pub delay_time: u32,
-    // for modulated delay times from panning
+    /// the amount of drive velocity modulation
     pub drive_mod_smoother: Smoother<f32>,
     pub cutoff_smoother: Smoother<f32>,
     pub res_smoother: Smoother<f32>,
+    /// for modulated delay times from panning
     // TODO: make l/r a single smoother
     pub smoothed_offset_l: Smoother<f32>,
     pub smoothed_offset_r: Smoother<f32>,
     pub eq_gain: Smoother<f32>,
     pub pan_gain: Smoother<f32>,
-    /// The note's key/note, in `0..128`. Only used for the delay tap terminated event.
+    /// The tap's key/note, in `0..128`.
+    /// Used for panning and filter freq
     pub note: u8,
-    /// The note's velocity. This is used to interpollate it's dsp parameters.
+    /// The tap's velocity. This is used to interpollate it's dsp parameters.
     pub velocity: f32,
     /// Whether the key has been released and the delay tap is in its release stage. The delay tap will be
     /// terminated when the amplitude envelope hits 0 while the note is releasing.
@@ -40,12 +42,13 @@ pub struct DelayTap {
 
     /// Are we currently muting? To determine if we need to trigger the amp envelope,
     pub is_muted: bool,
-    /// Is set to true when the tap is created and false  is created
+    /// Is set to true when the tap is created
     /// and false when the amplitude envelope hits 0 while the note is releasing.
     /// when we mute a tap, we don't set releasing so the tap stays alive
     pub is_alive: bool,
     /// is the amp envelope > 0.0?  otherwise stop doing dsp for that tap
     pub is_audible: bool,
+    pub meter_index: usize,
 }
 
 impl DelayTap {
@@ -70,6 +73,7 @@ impl DelayTap {
             is_muted: true,
             is_alive: false,
             is_audible: false,
+            meter_index: 0,
         }
     }
 
