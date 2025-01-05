@@ -1080,29 +1080,32 @@ impl Plugin for Del2 {
                 // meters:
                 // for tap_index in 0..tap_counter {
                 let mut amplitude = 0.0;
-                for sample_idx in block_start..block_end {
-                    let left_index = sample_idx + tap_index * 2 * block_len;
-                    let right_index = sample_idx + (tap_index * 2 + 1) * block_len;
-                    amplitude += (self.delayed_audio[left_index].abs()
-                        + self.delayed_audio[right_index].abs())
-                        * 0.5;
-                }
+                if !delay_tap.releasing {
+                    for sample_idx in block_start..block_end {
+                        let left_index = sample_idx + tap_index * 2 * block_len;
+                        let right_index = sample_idx + (tap_index * 2 + 1) * block_len;
+                        amplitude += (self.delayed_audio[left_index].abs()
+                            + self.delayed_audio[right_index].abs())
+                            * 0.5;
+                    }
 
-                if self.params.editor_state.is_open() {
-                    amplitude = (amplitude / block_len as f32).min(1.0);
-                    // TODO:  this scaling shouldn't be needed, but without it, the meter decays way too slow
-                    let weight = self.peak_meter_decay_weight * 0.7;
-                    // let meter_index = array_index; // Use the actual array index instead of filtered index
-                    // let meter_index = tap_index; // Use the actual array index instead of filtered index
-                    let meter_index = delay_tap.meter_index; // Use the taps stored index
-                    let current_peak_meter = self.tap_meters[meter_index].load(Ordering::Relaxed);
-                    let new_peak_meter = if amplitude > current_peak_meter {
-                        amplitude
-                    } else {
-                        current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
-                    };
+                    if self.params.editor_state.is_open() {
+                        amplitude = (amplitude / block_len as f32).min(1.0);
+                        // TODO:  this scaling shouldn't be needed, but without it, the meter decays way too slow
+                        let weight = self.peak_meter_decay_weight * 0.7;
+                        // let meter_index = array_index; // Use the actual array index instead of filtered index
+                        // let meter_index = tap_index; // Use the actual array index instead of filtered index
+                        let meter_index = delay_tap.meter_index; // Use the taps stored index
+                        let current_peak_meter =
+                            self.tap_meters[meter_index].load(Ordering::Relaxed);
+                        let new_peak_meter = if amplitude > current_peak_meter {
+                            amplitude
+                        } else {
+                            current_peak_meter.mul_add(weight, amplitude * (1.0 - weight))
+                        };
 
-                    self.tap_meters[meter_index].store(new_peak_meter, Ordering::Relaxed);
+                        self.tap_meters[meter_index].store(new_peak_meter, Ordering::Relaxed);
+                    }
                 }
             }
             block_start = block_end;
@@ -1760,7 +1763,7 @@ impl Del2 {
                         SmoothingStyle::Linear(self.params.global.attack_ms.value());
                     delay_tap.amp_envelope.set_target(sample_rate, 1.0);
                     // Reset the old meter value
-                    self.tap_meters[index].store(util::MINUS_INFINITY_DB, Ordering::Relaxed);
+                    // self.tap_meters[index].store(util::MINUS_INFINITY_DB, Ordering::Relaxed);
 
                     // self.meter_indexes[new_index].store(index, Ordering::Relaxed);
                     delay_tap.meter_index = index;
@@ -1797,8 +1800,8 @@ impl Del2 {
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
 
             // Reset the old meter value
-            self.tap_meters[found_inactive_index.unwrap()]
-                .store(util::MINUS_INFINITY_DB, Ordering::Relaxed);
+            // self.tap_meters[found_inactive_index.unwrap()]
+            //     .store(util::MINUS_INFINITY_DB, Ordering::Relaxed);
             // self.meter_indexes[new_index].store(found_inactive_index.unwrap(), Ordering::Relaxed);
             delay_tap.meter_index = found_inactive_index.unwrap();
         } else if let Some(oldest_delay_tap) = found_oldest {
@@ -1816,8 +1819,8 @@ impl Del2 {
             );
             self.next_internal_id = self.next_internal_id.wrapping_add(1);
             // Reset the old meter value
-            self.tap_meters[found_oldest_index.unwrap()]
-                .store(util::MINUS_INFINITY_DB, Ordering::Relaxed);
+            // self.tap_meters[found_oldest_index.unwrap()]
+            //     .store(util::MINUS_INFINITY_DB, Ordering::Relaxed);
             oldest_delay_tap.meter_index = found_oldest_index.unwrap();
             // self.meter_indexes[new_index].store(found_oldest_index.unwrap(), Ordering::Relaxed);
         }
