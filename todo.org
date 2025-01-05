@@ -1,6 +1,45 @@
 #+title: Todo
 * INBOX
 
+** tap/meter life cycle
+*** create tap 0,1,2
+*** wait for time-out
+*** tm0,tm1,tm2 are releasing
+*** create m3 = t0
+*** create m4 = t1
+*** m0,m1,m2 are done releasing
+*** create m0 = t2
+*** create m1 = t3
+*** create m2 = t4
+*** create m5 = t5
+
+*** constrains:
+**** run_index
+needs to stay consistent, for smoothers
+managed "automagically", so needs to be source of truth
+**** simd_layout
+always lowest N alive taps
+keep taps running in the place it was before: minimal state copying
+**** meter_layout
+always lowest N
+N = tap_counter, is not the same as nr of active taps, cause taps can be releasing
+match tap_index with run_index
+
+| event               | tap_index | run_index | nr taps | simd_width | simd_layout | meter_layout | action                           |
+|---------------------+-----------+-----------+---------+------------+-------------+--------------+----------------------------------|
+| new                 |         0 |         0 |       1 |          2 | 0           | 0            |                                  |
+| new                 |         1 |         1 |       2 |          4 | 0,1         | 0,1          | copy state 0   from sim2 -> sim4 |
+| new                 |         2 |         2 |       3 |          8 | 0,1,2       | 0,1,2        | copy state 0,1 from sim4 -> sim8 |
+| time-out            |           |           |         |            |             |              |                                  |
+| run 0,1,2 releasing |           |           |         |            |             |              |                                  |
+| new                 |         0 |         3 |       4 |          8 | 0,1,2,3     | 3            |                                  |
+| new                 |         1 |         4 |       5 |         16 | 0,1,2,3,4   | 3,4          | 0,1,2,3 from sim8 -> sim16       |
+| run 0,1,2 released  |           |           |       2 |          4 | 3,4         | 3,4          | 3,4 from sim16 -> sim4           |
+| new                 |         2 |         0 |       3 |          8 | 3,4,0       | 3,4,0        | 3,4 from sim4 -> sim8            |
+| new                 |         3 |         1 |       4 |          8 | 3,4,0,1     | 3,4,0,1      |                                  |
+| new                 |         4 |         2 |       5 |         16 | 3,4,0,1,2   | 3,4,0,1,2    | 3,4,0,1 from sim8 -> sim16       |
+| new                 |         5 |         5 |       6 |         16 | 3,4,0,1,2,5 | 3,4,0,1,2,5  |                                  |
+
 
 * today
 ** smarter s2v hz:  1k is 1000
