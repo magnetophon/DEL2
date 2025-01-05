@@ -1,6 +1,15 @@
 #+title: Todo
 * INBOX
 
+** https://moonbase.sh/
+*** features:
+payment / global tax
+licencing / encryption
+trials
+marketing
+*** alternatives:
+https://www.kvraudio.com/forum/viewtopic.php?t=612462&start=15
+
 ** tap/meter life cycle
 *** create tap 0,1,2
 *** wait for time-out
@@ -17,29 +26,127 @@
 **** run_index
 needs to stay consistent, for smoothers
 managed "automagically", so needs to be source of truth
-**** simd_layout
+**** run_at_simd
 always lowest N alive taps
 keep taps running in the place it was before: minimal state copying
-**** meter_layout
+**** display_at_meter
 always lowest N
 N = tap_counter, is not the same as nr of active taps, cause taps can be releasing
 match tap_index with run_index
 
-| event               | tap_index | run_index | nr taps | simd_width | simd_layout | meter_layout | action                           |
-|---------------------+-----------+-----------+---------+------------+-------------+--------------+----------------------------------|
-| new                 |         0 |         0 |       1 |          2 | 0           | 0            |                                  |
-| new                 |         1 |         1 |       2 |          4 | 0,1         | 0,1          | copy state 0   from sim2 -> sim4 |
-| new                 |         2 |         2 |       3 |          8 | 0,1,2       | 0,1,2        | copy state 0,1 from sim4 -> sim8 |
-| time-out            |           |           |         |            |             |              |                                  |
-| run 0,1,2 releasing |           |           |         |            |             |              |                                  |
-| new                 |         0 |         3 |       4 |          8 | 0,1,2,3     | 3            |                                  |
-| new                 |         1 |         4 |       5 |         16 | 0,1,2,3,4   | 3,4          | 0,1,2,3 from sim8 -> sim16       |
-| run 0,1,2 released  |           |           |       2 |          4 | 3,4         | 3,4          | 3,4 from sim16 -> sim4           |
-| new                 |         2 |         0 |       3 |          8 | 3,4,0       | 3,4,0        | 3,4 from sim4 -> sim8            |
-| new                 |         3 |         1 |       4 |          8 | 3,4,0,1     | 3,4,0,1      |                                  |
-| new                 |         4 |         2 |       5 |         16 | 3,4,0,1,2   | 3,4,0,1,2    | 3,4,0,1 from sim8 -> sim16       |
-| new                 |         5 |         5 |       6 |         16 | 3,4,0,1,2,5 | 3,4,0,1,2,5  |                                  |
+| event                 | tap_index | run_index | nr taps | simd_width | run_at_simd | display_at_meter | action                           |
+|-----------------------+-----------+-----------+---------+------------+-------------+--------------+----------------------------------|
+| 1 new                 |         0 |         0 |       1 |          2 | 0           | 0            |                                  |
+| 2 new                 |         1 |         1 |       2 |          4 | 0,1         | 0,1          | copy state 0   from sim2 -> sim4 |
+| 3 new                 |         2 |         2 |       3 |          8 | 0,1,2       | 0,1,2        | copy state 0,1 from sim4 -> sim8 |
+| 4 time-out            |           |           |         |            |             |              |                                  |
+| 5 run 0,1,2 releasing |           |           |         |            |             |              |                                  |
+| 6 new                 |         0 |         3 |       4 |          8 | 0,1,2,3     | 3            |                                  |
+| 7 new                 |         1 |         4 |       5 |         16 | 0,1,2,3,4   | 3,4          | 0,1,2,3 from sim8 -> sim16       |
+| 8 run 0,1,2 released  |           |           |       2 |          4 | 3,4         | 3,4          | 3,4 from sim16 -> sim4           |
+| 9 new                 |         2 |         0 |       3 |          8 | 3,4,0       | 3,4,0        | 3,4 from sim4 -> sim8            |
+| 10 new                |         3 |         1 |       4 |          8 | 3,4,0,1     | 3,4,0,1      |                                  |
+| 11 new                |         4 |         2 |       5 |         16 | 3,4,0,1,2   | 3,4,0,1,2    | 3,4,0,1 from sim8 -> sim16       |
+| 12 new                |         5 |         5 |       6 |         16 | 3,4,0,1,2,5 | 3,4,0,1,2,5  |                                  |
 
+*** lookup table
+**** example tables
+***** simd_nr
+this is the key to the table
+range: 0..nr_taps_alive
+***** run_at_simd
+which run_index are we processing at this simd_nr
+***** display_at_meter
+which meter should we write this simd_nr to?
+
+
+1) new
+| simd_nr | run_at_simd | display_at_meter |
+|---------+-------------+------------------|
+|       0 |           0 |                0 |
+
+2) new
+| simd_nr | run_at_simd | display_at_meter |
+|---------+-------------+------------------|
+|       0 |           0 |                0 |
+|       1 |           1 |                1 |
+
+3) new
+| simd_nr | run_at_simd | display_at_meter |
+|---------+-------------+------------------|
+|       0 |           0 |                0 |
+|       1 |           1 |                1 |
+|       2 |           2 |                2 |
+
+4) time-out
+
+5) new first-note: 0,1,2 start releasing
+
+6) new
+| simd_nr | run_at_simd | display_at_meter |
+|---------+-------------+------------------|
+|       0 |           0 |                - |
+|       1 |           1 |                - |
+|       2 |           2 |                - |
+|       3 |           3 |                0 |
+
+7) new
+| simd_nr | run_at_simd | display_at_meter |
+|---------+-------------+------------------|
+|       0 |           0 |                - |
+|       1 |           1 |                - |
+|       2 |           2 |                - |
+|       3 |           3 |                0 |
+|       4 |           4 |                1 |
+
+8) run 0,1,2 released
+| simd_nr | run_at_simd | display_at_meter |
+|---------+-------------+------------------|
+|       0 |           3 |                0 |
+|       1 |           4 |                1 |
+
+9) new
+| simd_nr | run_at_simd | display_at_meter |
+|---------+-------------+------------------|
+|       0 |           3 |                0 |
+|       1 |           4 |                1 |
+|       2 |           0 |                2 |
+
+10) new
+| simd_nr | run_at_simd | display_at_meter |
+|---------+-------------+------------------|
+|       0 |           3 |                0 |
+|       1 |           4 |                1 |
+|       2 |           0 |                2 |
+|       3 |           1 |                3 |
+
+11) new
+| simd_nr | run_at_simd | display_at_meter |
+|---------+-------------+------------------|
+|       0 |           3 |                0 |
+|       1 |           4 |                1 |
+|       2 |           0 |                2 |
+|       3 |           1 |                3 |
+|       4 |           2 |                4 |
+
+
+12) new
+| simd_nr | run_at_simd | display_at_meter |
+|---------+-------------+------------------|
+|       0 |           3 |                0 |
+|       1 |           4 |                1 |
+|       2 |           0 |                2 |
+|       3 |           1 |                3 |
+|       4 |           2 |                4 |
+|       5 |           5 |                5 |
+
+
+
+
+
+*** mappings:
+**** run_to_simd
+| event nr |
 
 * today
 ** smarter s2v hz:  1k is 1000
