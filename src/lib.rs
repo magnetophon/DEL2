@@ -36,7 +36,7 @@ use svf_simper::{Linear, NonLinear, SVFSimper};
 
 // max seconds per tap
 const MAX_TAP_SECONDS: usize = 20;
-const NUM_TAPS: usize = 32;
+const NUM_TAPS: usize = 16;
 const TOTAL_DELAY_SECONDS: usize = MAX_TAP_SECONDS * NUM_TAPS;
 const MAX_SAMPLE_RATE: usize = 192_000;
 const TOTAL_DELAY_SAMPLES: usize = TOTAL_DELAY_SECONDS * MAX_SAMPLE_RATE;
