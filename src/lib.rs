@@ -26,13 +26,12 @@ use std::sync::atomic::{
     AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering,
 };
 use std::sync::Arc;
-use synfx_dsp::fh_va::{FilterParams, LadderMode};
-
+use synfx_dsp::fh_va::{FilterParams, LadderFilter, LadderMode};
 mod delay_tap;
 mod editor;
 mod svf_simper;
 use delay_tap::DelayTap;
-use svf_simper::{Linear, NonLinear, SVFSimper};
+use svf_simper::{Linear, SVFSimper};
 
 // max seconds per tap
 const MAX_TAP_SECONDS: usize = 20;
@@ -91,7 +90,8 @@ pub struct Del2 {
 
     // todo: make stereo, or integrate into per tap dsp
     dc_filter: SVFSimper<2, Linear>,
-    lowpass: SVFSimper<LANES, NonLinear>,
+    filter_params: Arc<FilterParams<LANES>>,
+    ladders: LadderFilter<LANES>,
     shelving_eq: SVFSimper<LANES, Linear>,
 
     // for the smoothers
@@ -473,6 +473,7 @@ impl Default for Del2 {
         let should_update_filter = Arc::new(AtomicBool::new(false));
         let learned_notes = Arc::new(AtomicByteArray::new(NO_LEARNED_NOTE));
         let enabled_actions = Arc::new(AtomicBoolArray::new());
+        let filter_params = Arc::new(FilterParams::new());
 
         Self {
             params: Arc::new(Del2Params::new(
@@ -481,7 +482,8 @@ impl Default for Del2 {
                 learned_notes.clone(),
             )),
 
-            delay_taps: array_init(|_| DelayTap::new(&Arc::new(FilterParams::new()))),
+            // delay_taps: array_init(|_| DelayTap::new(&Arc::new(FilterParams::new()))),
+            delay_taps: array_init(|_| DelayTap::new()),
             next_internal_id: 0,
 
             delay_buffer: [
@@ -497,7 +499,8 @@ impl Default for Del2 {
             post_gains: vec![0.0; MAX_BLOCK_SIZE * NUM_TAPS * 2].into_boxed_slice(),
 
             dc_filter: SVFSimper::new(DC_HP_FREQ, DC_HP_RES, 48000.0),
-            lowpass: SVFSimper::new(440.0, 0.5, 48000.0),
+            filter_params: filter_params.clone(),
+            ladders: LadderFilter::new(filter_params),
             shelving_eq: SVFSimper::new(PANNER_EQ_FREQ, PANNER_EQ_RES, 48000.0),
 
             dry_wet_block: f32::default_boxed_array::<MAX_BLOCK_SIZE>(),
@@ -653,6 +656,14 @@ impl Plugin for Del2 {
     ) -> bool {
         // Set the sample rate from the buffer configuration
         let sample_rate = buffer_config.sample_rate;
+        // Perform operations that require mutable access to filter_params first
+        {
+            let filter_params = unsafe { Arc::get_mut_unchecked(&mut self.filter_params) };
+            filter_params.set_sample_rate(sample_rate);
+            filter_params.set_resonance(Simd::splat(0.5));
+            filter_params.set_frequency(Simd::splat(440.0));
+            self.ladders.reset();
+        }
         self.params.sample_rate.store(sample_rate, Ordering::SeqCst);
         // After `PEAK_METER_DECAY_MS` milliseconds of pure silence, the peak meter's value should
         // have dropped by 12 dB
@@ -661,18 +672,9 @@ impl Plugin for Del2 {
         // Calculate and set the delay buffer size
         self.set_delay_buffer_size(buffer_config);
         self.dc_filter.reset(DC_HP_FREQ, DC_HP_RES, sample_rate);
-        self.lowpass.reset(4400.0, 0.5, sample_rate);
         self.shelving_eq
             .reset(PANNER_EQ_FREQ, PANNER_EQ_RES, sample_rate);
 
-        // Initialize filter parameters for each tap
-        self.initialize_filter_parameters();
-        // for delay_tap in &mut self.delay_taps {
-        //     delay_tap.lowpass.reset(440.0, 0.5, sample_rate);
-        //     delay_tap
-        //         .shelving_eq
-        //         .reset(PANNER_EQ_FREQ, PANNER_EQ_RES, sample_rate);
-        // }
         true
     }
 
@@ -1470,13 +1472,6 @@ impl Del2 {
             .clear_set_len(self.delay_buffer_size as usize);
     }
 
-    fn initialize_filter_parameters(&mut self) {
-        for delay_tap in &mut self.delay_taps {
-            let filter_params = unsafe { Arc::get_mut_unchecked(&mut delay_tap.filter_params) };
-            filter_params.set_sample_rate(self.params.sample_rate.load(Ordering::SeqCst));
-        }
-    }
-
     fn update_peak_meter(&self, buffer: &mut Buffer, peak_meter: &AtomicF32) {
         // Access samples using the iterator
         for channel_samples in buffer.iter_samples() {
@@ -1910,11 +1905,22 @@ impl Del2 {
 
             // Update filter parameters if needed
             if update_filter {
-                self.lowpass.set_simd(cutoff_frame, res_frame);
+                let filter_params = unsafe { Arc::get_mut_unchecked(&mut self.filter_params) };
+                let filter_type = &self.params.taps.filter_type.value();
+                filter_params.set_resonance(res_frame);
+                filter_params.set_frequency(cutoff_frame);
+                // static:
+                // filter_params.drive = 1.0;
+                // TODO: test if gets updated:
+                filter_params.ladder_mode = filter_type.0;
+
+                // Update filter mix mode
+                self.ladders.set_mix(filter_type.0);
             }
 
             // Apply lowpass filter
-            let frame_filtered = self.lowpass.lowpass(audio_frame);
+            let frame_filtered = self.ladders.tick_pivotal(audio_frame);
+            // let frame_filtered = self.ladders.tick_linear(audio_frame).as_array();
 
             // Apply highshelf EQ and post gain
             let frame_out = self

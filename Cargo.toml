@@ -22,7 +22,8 @@ nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["a
 bit_mask_ring_buf = "0.5"
 
 nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git" }
-synfx-dsp     = { version = "0.5.6" }
+# synfx-dsp     = { version = "0.5.6" }
+synfx-dsp     = { path = "../synfx-dsp" }
 array-init = "2.1.0"
 default-boxed = { version = "0.2.0" }
 

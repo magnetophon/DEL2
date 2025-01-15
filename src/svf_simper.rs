@@ -33,7 +33,7 @@ DEALINGS IN THE SOFTWARE.
 
 // implemented from https://cytomic.com/files/dsp/SvfLinearTrapOptimised2.pdf
 // thanks, andy!
-
+#![allow(dead_code)]
 use std::f32::consts;
 use std::marker::PhantomData;
 use std::simd::num::SimdFloat;
