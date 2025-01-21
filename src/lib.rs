@@ -882,7 +882,7 @@ impl Plugin for Del2 {
 
             self.delay_taps
                 .iter_mut()
-                .filter(|tap| tap.is_alive)
+                // .filter(|tap| tap.is_alive)
                 .enumerate()
                 .for_each(|(tap_index, delay_tap)| {
                     // nih_log!("delay_tap {tap_index} is_audible: {}", delay_tap.is_audible);
@@ -929,7 +929,9 @@ impl Plugin for Del2 {
                         write_index - (delay_time - 1),
                     );
 
-                    if delay_tap.is_audible {
+                    // TODO: remove "if true" (and is_audible too?) :
+                    // if delay_tap.is_audible {
+                    if true {
                         let pan = ((f32::from(delay_tap.note) - panning_center) * panning_amount)
                             .clamp(-1.0, 1.0);
                         let (offset_l, offset_r) = Self::pan_to_haas_samples(pan, sample_rate);
@@ -1379,7 +1381,7 @@ impl Del2 {
         // Use par_iter_mut() if the collection is large enough to benefit from parallelization
         self.delay_taps
             .iter_mut()
-            .filter(|tap| tap.is_alive)
+            // .filter(|tap| tap.is_alive)
             .for_each(|delay_tap| {
                 let velocity = delay_tap.velocity;
                 let velocity_factor = (velocity - 0.5) * 2.0; // Scale 0.0 to 1.0 range to -1.0 to 1.0.
@@ -1403,7 +1405,10 @@ impl Del2 {
                 } else {
                     velocity_cutoff
                 }
-                .clamp(10.0, 18_000.0);
+                // TODO: choose:
+                ;
+                // .clamp(10.0, 18_000.0);
+                // .clamp(500.0, 5_000.0);
 
                 delay_tap.cutoff_smoother.set_target(sample_rate, cutoff);
                 delay_tap.res_smoother.set_target(sample_rate, res);
@@ -1877,11 +1882,11 @@ impl Del2 {
         let mut eq_gain = [0.0f32; LANES];
         let mut post_gain = [0.0f32; LANES];
 
-        let update_filter = (0..NUM_TAPS).any(|tap_index| {
-            let base = tap_index * 2 * block_len;
-            self.cutoff_freqs[base] != self.cutoff_freqs[base + 1]
-                || self.resonances[base] != self.resonances[base + 1]
-        });
+        // let update_filter = (0..NUM_TAPS).any(|tap_index| {
+        // let base = tap_index * 2 * block_len;
+        // self.cutoff_freqs[base] != self.cutoff_freqs[base + 1]
+        // || self.resonances[base] != self.resonances[base + 1]
+        // });
 
         for i in block_start..block_end {
             for j in 0..LANES {
@@ -1904,7 +1909,9 @@ impl Del2 {
             let output_right = &mut rest[0];
 
             // Update filter parameters if needed
-            if update_filter {
+            // TODO: choose:
+            if true {
+                // if update_filter {
                 let filter_params = unsafe { Arc::get_mut_unchecked(&mut self.filter_params) };
                 let filter_type = &self.params.taps.filter_type.value();
                 filter_params.set_resonance(res_frame);
